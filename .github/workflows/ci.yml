@@ -16,6 +16,6 @@ jobs:
       - name: Install dev dependencies
         run: pip install -r requirements-dev.txt
       - name: Run test suite
-        run: python -m pytest -q
+        run: python -m pytest -q --timeout=60
       - name: Run notifier shell test
         run: bash tests/test_notify_telegram.sh

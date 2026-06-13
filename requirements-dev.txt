@@ -9,3 +9,4 @@ babel==2.*
 python-multipart==0.0.*
 phonenumbers==8.*
 aiosqlite==0.20.*
+pytest-timeout==2.*
