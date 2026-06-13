@@ -18,4 +18,4 @@ jobs:
       - name: Run test suite
         run: python -m pytest -q --timeout=60
       - name: Run notifier shell test
-        run: bash tests/test_notify_telegram.sh
+        run: timeout 60 bash tests/test_notify_telegram.sh

@@ -24,15 +24,15 @@ CHAT="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
 
 HOST=$(hostname)
 WHEN=$(date '+%Y-%m-%d %H:%M:%S %Z')
-STATE=$(systemctl show "$UNIT" -p ActiveState,SubState,NRestarts,ExecMainStatus 2>/dev/null | tr '\n' ' ')
-LOGS=$(journalctl -u "$UNIT" -n 30 --no-pager -o cat 2>/dev/null)
+STATE=$(timeout 5 systemctl show "$UNIT" -p ActiveState,SubState,NRestarts,ExecMainStatus 2>/dev/null | tr '\n' ' ')
+LOGS=$(timeout 5 journalctl -u "$UNIT" -n 30 --no-pager -o cat 2>/dev/null)
 
 # Header reflects the unit's ACTUAL state when sampled, not the trigger. A failed unit gets
 # 🔴 FAILED; but a manual test (`systemctl start sms-gate-notify@...`) or a unit that already
 # auto-restarted (Restart=on-failure) before we sampled is healthy now — say so instead of
 # crying FAILED. (ALERT_TEST_* override the probes so the smoke test can drive both branches.)
-ACTIVE="${ALERT_TEST_ACTIVE:-$(systemctl show "$UNIT" -p ActiveState --value 2>/dev/null)}"
-RESULT="${ALERT_TEST_RESULT:-$(systemctl show "$UNIT" -p Result --value 2>/dev/null)}"
+ACTIVE="${ALERT_TEST_ACTIVE:-$(timeout 5 systemctl show "$UNIT" -p ActiveState --value 2>/dev/null)}"
+RESULT="${ALERT_TEST_RESULT:-$(timeout 5 systemctl show "$UNIT" -p Result --value 2>/dev/null)}"
 if [ "$ACTIVE" = "active" ] && [ "$RESULT" = "success" ]; then
     HEADER=$(printf '⚠️ %s on %s — notifier fired, but the service is currently healthy (test or already recovered)' "$UNIT" "$HOST")
 else
