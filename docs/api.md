@@ -1,9 +1,10 @@
 # SMS Gate — API Reference
 
-Base URL: `http://<server>:80`
+Base URL: `http://<your-host>:8000` (exact host/port depends on your deployment)
 
 All endpoints require `Authorization: Bearer <token>` header.
-Each token is tied to an app_id (e.g. `sp_bot`, `rk_bot`).
+Each token is tied to an `app_id` (e.g. `my_bot`, `another_app`). Tokens are
+managed in the admin UI at `/admin/apps`.
 
 ---
 
@@ -28,7 +29,7 @@ Content-Type: application/json
 
 | Field | Type | Rules |
 |-------|------|-------|
-| phone | string | Required. Russian mobile only: must match `+79XXXXXXXXX` (11 digits, starts with `+79`) |
+| phone | string | Required. Validated by the `phonenumbers` library against the configured region (default `RU`). National-format input is accepted and normalized to E.164 on ingress. The region is configurable at `/admin/settings`. |
 | text | string | Required. 1-160 characters (single SMS segment) |
 
 ### Response 200
@@ -47,7 +48,7 @@ Content-Type: application/json
   "detail": [
     {
       "loc": ["body", "phone"],
-      "msg": "Phone must be a Russian mobile number in +79XXXXXXXXX format",
+      "msg": "Invalid phone number for region RU",
       "type": "value_error"
     }
   ]
@@ -146,6 +147,8 @@ Browser-only admin at `/admin/...`, protected by HTTP Basic auth (credentials in
 | `/admin/messages` | Paginated list of all messages with status & phone filters |
 | `/admin/blacklist` | Auto-populated bad-numbers list with manual unblock |
 | `/admin/stats` | Status counts + 14-day breakdown |
+| `/admin/apps` | Manage client apps and their Bearer tokens |
+| `/admin/settings` | Runtime settings (e.g. `phone_region` for phone validation) |
 
 ### Blacklist policy
 

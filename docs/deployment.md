@@ -118,21 +118,43 @@ The main unit limits restarts (`StartLimitBurst=5` / `StartLimitIntervalSec=300`
 
 ## 5. Create .env on Server
 
+`.env` holds only **bootstrap / infrastructure** keys — the values the process needs before
+the database is open. Everything else (voxlink credentials, Telegram alerting, inbound
+dispatch rules, blacklist threshold, delivery timeout, phone region) is configured at
+runtime via the admin UI (`/admin/settings`) and stored in the database. Client app tokens
+are managed at `/admin/apps`. No restart is required when changing those values.
+
 ```bash
 # On server — this file is NOT in git
 cat > /opt/sms-gate/.env << 'EOF'
-SERIAL_PORT=/dev/ttyUSB2
+# Modem / serial
+SERIAL_SEND_PORT=/dev/ttyUSB2
+SERIAL_READ_PORT=/dev/ttyUSB3
+SERIAL_BAUDRATE=115200
+
+# Storage
 DB_PATH=/opt/sms-gate/data/sms.db
+
+# Server
+HOST=0.0.0.0
+PORT=80
+
+# Admin UI (HTTP Basic) — change before exposing the service
+ADMIN_USER=admin
+ADMIN_PASSWORD=change-me
 EOF
 ```
 
+> **Legacy env vars:** if `ALERT_BOT_TOKEN`, `ALERT_CHAT_ID`, or other soft-config keys are
+> present in `.env` from an older install, they are migrated into the DB automatically on
+> the first start and ignored afterwards. You can remove them from `.env` once the service
+> has started successfully.
+
 ### Telegram Alerting
 
-Add the bot credentials to the server `.env` (never committed to git):
-
-```bash
-printf '\nALERT_BOT_TOKEN=<token>\nALERT_CHAT_ID=<chat_id>\n' | sudo tee -a /opt/sms-gate/.env
-```
+Telegram bot credentials are configured in the admin UI, not in `.env`.
+Navigate to `/admin/settings` after the service is running and fill in
+`ALERT_BOT_TOKEN` and `ALERT_CHAT_ID`. No restart is required.
 
 Test the notifier end-to-end without breaking anything:
 
@@ -144,8 +166,7 @@ sudo ALERT_DRY_RUN=1 /opt/sms-gate/deploy/notify-telegram.sh sms-gate.service
 sudo systemctl start sms-gate-notify@sms-gate.service
 ```
 
-A Telegram message should arrive within a few seconds. App-level ERROR logs are alerted
-automatically once `ALERT_BOT_TOKEN`/`ALERT_CHAT_ID` are set and the service is restarted.
+A Telegram message should arrive within a few seconds.
 
 **Note on timing:** the systemd crash alert fires when the unit gives up restarting —
 after ~5 failures (`StartLimitBurst`), so expect it ≈40–50s into a crash loop, not on the

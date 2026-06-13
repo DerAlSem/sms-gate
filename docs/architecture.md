@@ -7,11 +7,11 @@ An HTTP service running on an Ubuntu server with a Quectel EP06E LTE modem. It a
 ## System Diagram
 
 ```
-┌──────────────┐     HTTP :80      ┌──────────────┐    AT commands    ┌─────────┐
-│  sp_bot      │───────────────────│              │──────────────────│         │
-│  rk_bot      │   POST /sms/send │   SMS Gate   │  /dev/ttyUSB*   │  EP06E  │
-│  gm_bot      │◄──────────────────│   (FastAPI)  │◄─────────────────│  Modem  │
-│  ...         │   GET /sms/{id}   │              │  +CDS (delivery)│         │
+┌──────────────┐        HTTP       ┌──────────────┐    AT commands    ┌─────────┐
+│  my_bot      │───────────────────│              │──────────────────│         │
+│  another_app │   POST /sms/send │   SMS Gate   │  /dev/ttyUSB*   │  EP06E  │
+│  ...         │◄──────────────────│   (FastAPI)  │◄─────────────────│  Modem  │
+│              │   GET /sms/{id}   │              │  +CDS (delivery)│         │
 └──────────────┘                   └──────┬───────┘                 └─────────┘
                                           │
                                    ┌──────┴───────┐
@@ -27,6 +27,8 @@ An HTTP service running on an Ubuntu server with a Quectel EP06E LTE modem. It a
 | Language | Python 3.12+ | pyserial mature, FastAPI async, widely known |
 | Framework | FastAPI | Async, auto-docs (Swagger), Pydantic validation |
 | Database | SQLite (WAL mode) | Sufficient for tens of SMS/day, zero config |
+| Settings store | DB-backed key/value (`app/settings_store.py`) | Runtime config (e.g. `phone_region`) editable via admin UI without restart |
+| Admin UI | Jinja2 templates, bilingual (RU/EN) | Browser-only operator interface; Basic-auth protected |
 | Modem comms | pyserial + AT commands | Direct control, delivery report support |
 | Process mgmt | systemd | Native, reliable, auto-restart |
 
