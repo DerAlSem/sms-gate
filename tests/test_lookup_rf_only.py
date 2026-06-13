@@ -23,7 +23,10 @@ def test_record_operator_skips_non_ru(monkeypatch):
 
     async def run():
         await _fresh()
-        await operator.record_operator("+441234567890")
+        try:
+            await operator.record_operator("+441234567890")
+        finally:
+            await close_db()
     asyncio.run(run())
     assert calls == []
 
@@ -37,7 +40,10 @@ def test_record_operator_runs_for_ru(monkeypatch):
 
     async def run():
         await _fresh()
-        await operator.record_operator("+79991234567")
+        try:
+            await operator.record_operator("+79991234567")
+        finally:
+            await close_db()
     asyncio.run(run())
     assert calls == ["9991234567"]
 
@@ -45,9 +51,12 @@ def test_record_operator_runs_for_ru(monkeypatch):
 def test_list_unresolved_excludes_non_ru():
     async def run():
         await _fresh()
-        await queries.create_message("admin", "+79991234567", "a")
-        await queries.create_message("admin", "+441234567890", "b")
-        rows = await queries.list_unresolved_numbers()
-        return [r["phone"] for r in rows]
+        try:
+            await queries.create_message("admin", "+79991234567", "a")
+            await queries.create_message("admin", "+441234567890", "b")
+            rows = await queries.list_unresolved_numbers()
+            return [r["phone"] for r in rows]
+        finally:
+            await close_db()
     phones = asyncio.run(run())
     assert phones == ["+79991234567"]
