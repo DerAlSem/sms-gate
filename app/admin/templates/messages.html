@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="filters" method="get">
+  <input type="text" name="phone" placeholder="{{ _('Phone') }}" value="{{ phone }}">
+  <select name="status">
+    <option value="">{{ _('— any status —') }}</option>
+    {% for s in ['pending','sent','delivered','failed','expired'] %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">{% trans %}Filter{% endtrans %}</button>
+  <span class="info">{% trans count=total %}{{ count }} records{% endtrans %}</span>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th><th>{% trans %}Phone{% endtrans %}</th><th>{% trans %}Operator{% endtrans %}</th><th>{% trans %}Text{% endtrans %}</th><th>{% trans %}Status{% endtrans %}</th>
+      <th>{% trans %}Created{% endtrans %}</th><th>{% trans %}Sent{% endtrans %}</th><th>{% trans %}Delivered{% endtrans %}</th><th>{% trans %}Error{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for m in messages %}
+    <tr>
+      <td>{{ m.id }}</td>
+      <td><code>{{ m.phone }}</code></td>
+      <td class="muted" style="font-size:11px;">
+        {% if m.operator %}{{ m.operator }}<br>{{ m.region }}{% else %}—{% endif %}
+      </td>
+      <td class="text-truncate" title="{{ m.text }}">{{ m.text }}</td>
+      <td><span class="status status-{{ m.status }}">{{ m.status }}</span></td>
+      <td>{{ m.created_at | msk }}</td>
+      <td>{{ m.sent_at | msk }}</td>
+      <td>{{ m.delivered_at | msk }}</td>
+      <td class="text-truncate muted" title="{{ m.error or '' }}">{{ m.error or '' }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="9" class="muted">{% trans %}No records{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<div class="pager">
+  {% if page > 1 %}
+    <a href="?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if phone %}&phone={{ phone }}{% endif %}">{% trans %}‹ Back{% endtrans %}</a>
+  {% endif %}
+  <span class="info">{% trans page=page, pages=pages or 1 %}Page {{ page }} of {{ pages }}{% endtrans %}</span>
+  {% if page < pages %}
+    <a href="?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if phone %}&phone={{ phone }}{% endif %}">{% trans %}Forward ›{% endtrans %}</a>
+  {% endif %}
+</div>
+{% endblock %}

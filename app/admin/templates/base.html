@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="{{ current_locale }}">
+<head>
+<meta charset="utf-8">
+<title>SMS Gate — admin</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #f6f7f9; color: #222; }
+  header { background: #1f2937; color: #fff; padding: 12px 20px; display: flex; gap: 16px; align-items: center; position: sticky; top: 0; z-index: 100; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  nav a { color: #cbd5e1; text-decoration: none; margin-right: 16px; padding: 4px 8px; border-radius: 4px; }
+  nav a.active { background: #374151; color: #fff; }
+  nav a:hover { color: #fff; }
+  @media (max-width: 640px) {
+    header { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 12px; }
+    nav { display: flex; align-items: center; overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; scrollbar-width: none; }
+    nav::-webkit-scrollbar { display: none; }
+    nav a { flex: 0 0 auto; padding: 10px 12px; margin-right: 4px; }
+    nav span { margin-left: 0 !important; }
+  }
+  main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  table { width: 100%; border-collapse: collapse; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.06); border-radius: 6px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; font-size: 13px; }
+  th { background: #f3f4f6; font-weight: 600; font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: none; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .status-pending   { background: #e0e7ff; color: #3730a3; }
+  .status-sent      { background: #dbeafe; color: #1e40af; }
+  .status-delivered { background: #d1fae5; color: #065f46; }
+  .status-failed    { background: #fee2e2; color: #991b1b; }
+  .status-expired   { background: #fef3c7; color: #92400e; }
+  form.filters { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
+  form.filters input, form.filters select { padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; }
+  button { padding: 6px 12px; border: none; background: #2563eb; color: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  button.danger { background: #dc2626; }
+  button:hover { opacity: .9; }
+  .pager { margin-top: 16px; display: flex; gap: 8px; align-items: center; }
+  .pager a { padding: 6px 10px; background: #fff; border: 1px solid #d1d5db; border-radius: 4px; text-decoration: none; color: #374151; font-size: 13px; }
+  .pager .info { color: #6b7280; font-size: 13px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .card { background: #fff; border-radius: 6px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .card .label { font-size: 12px; text-transform: uppercase; color: #6b7280; letter-spacing: .03em; }
+  .card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+  .muted { color: #9ca3af; }
+  .text-truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* dialog timeline */
+  .timeline { display: flex; flex-direction: column; gap: 8px; max-width: 760px; margin: 0 auto; }
+  .bubble { max-width: 70%; padding: 8px 12px; border-radius: 12px; word-wrap: break-word; }
+  .bubble .meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
+  .bubble.in  { align-self: flex-start; background: #fff; border: 1px solid #e5e7eb; }
+  .bubble.out { align-self: flex-end;   background: #dbeafe; }
+  .bubble.out.failed  { background: #fee2e2; }
+  .bubble.out.expired { background: #fef3c7; }
+  .reply-form { display: flex; gap: 8px; margin-top: 16px; max-width: 760px; margin-left: auto; margin-right: auto; }
+  .reply-form input[type=text] { flex: 1; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SMS Gate</h1>
+  <nav>
+    <a href="/admin/messages" class="{% if active == 'messages' %}active{% endif %}">{% trans %}Outbound{% endtrans %}</a>
+    <a href="/admin/inbound" class="{% if active == 'inbound' %}active{% endif %}">{% trans %}Inbound{% endtrans %}</a>
+    <a href="/admin/dialogs" class="{% if active == 'dialogs' %}active{% endif %}">{% trans %}Dialogs{% endtrans %}</a>
+    <a href="/admin/blacklist" class="{% if active == 'blacklist' %}active{% endif %}">{% trans %}Blacklist{% endtrans %}</a>
+    <a href="/admin/ranges" class="{% if active == 'ranges' %}active{% endif %}">{% trans %}Prefixes{% endtrans %}</a>
+    <a href="/admin/stats" class="{% if active == 'stats' %}active{% endif %}">{% trans %}Statistics{% endtrans %}</a>
+    <a href="/admin/apps" class="{% if active == 'apps' %}active{% endif %}">{% trans %}Apps{% endtrans %}</a>
+    <a href="/admin/settings" class="{% if active == 'settings' %}active{% endif %}">{% trans %}Settings{% endtrans %}</a>
+    <span style="margin-left:auto;font-size:12px;">
+      <a href="/admin/lang/ru" class="{% if current_locale == 'ru' %}active{% endif %}">RU</a>
+      <a href="/admin/lang/en" class="{% if current_locale == 'en' %}active{% endif %}">EN</a>
+    </span>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

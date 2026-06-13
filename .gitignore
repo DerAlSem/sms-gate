@@ -1,0 +1,8 @@
+.claude/
+__pycache__/
+*.pyc
+data/sms.db*
+.env
+venv/
+*.mo
+docs/superpowers/

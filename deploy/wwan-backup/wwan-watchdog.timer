@@ -1,0 +1,10 @@
+[Unit]
+Description=Run wwan watchdog every 30s
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=30
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target

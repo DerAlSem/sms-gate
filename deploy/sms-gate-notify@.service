@@ -1,0 +1,6 @@
+[Unit]
+Description=Telegram alert for %i failure
+
+[Service]
+Type=oneshot
+ExecStart=/opt/sms-gate/deploy/notify-telegram.sh %i

@@ -1,0 +1,17 @@
+[Unit]
+Description=Backup internet via Quectel EM06 (QMI data session)
+# AT ports ttyUSB2/3 are not touched — sms-gate runs in parallel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/wwan-backup up
+ExecStop=/usr/local/sbin/wwan-backup down
+# modem after reboot may come up slower than the server
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

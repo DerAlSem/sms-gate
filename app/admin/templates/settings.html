@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{% trans %}Settings{% endtrans %}</h2>
+<form method="post" action="/admin/settings">
+  {% for section, fields in sections.items() %}
+  <div class="card" style="margin-bottom:16px;">
+    <div class="label">{{ section }}</div>
+    <table>
+      {% for f in fields %}
+      <tr>
+        <td style="width:240px;"><label for="set-{{ f.key }}"><code>{{ f.key }}</code></label><br>
+            <span class="muted" style="font-size:11px;">{{ f.description }}</span></td>
+        <td>
+          {% if f.is_secret %}
+            <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
+          {% elif f.key == 'phone_region' %}
+            <select name="{{ f.key }}" id="set-{{ f.key }}">
+              {% for code, label in countries %}
+                <option value="{{ code }}" {% if f.value == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          {% elif f.type == 'bool' %}
+            <select name="{{ f.key }}" id="set-{{ f.key }}">
+              <option value="true" {% if f.value %}selected{% endif %}>true</option>
+              <option value="false" {% if not f.value %}selected{% endif %}>false</option>
+            </select>
+          {% elif f.key == 'inbound_dispatch' %}
+            <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+          {% else %}
+            <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
+          {% endif %}
+          {% if errors.get(f.key) %}<div style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+  <button type="submit">{% trans %}Save{% endtrans %}</button>
+</form>
+{% endblock %}

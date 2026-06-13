@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Phone{% endtrans %}</th>
+      <th>{% trans %}Inbound{% endtrans %}</th>
+      <th>{% trans %}Outbound{% endtrans %}</th>
+      <th>{% trans %}Last activity{% endtrans %}</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><code>{{ r.phone }}</code></td>
+      <td>{{ r.in_n }}</td>
+      <td>{{ r.out_n }}</td>
+      <td>{{ r.last_ts }}</td>
+      <td><a href="/admin/dialogs/{{ r.phone }}">{% trans %}open →{% endtrans %}</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">{% trans %}No dialogs{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

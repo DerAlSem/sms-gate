@@ -1,0 +1,7 @@
+[Unit]
+Description=Uplink health check + failover to wwan0
+After=wwan-backup.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wwan-backup watchdog

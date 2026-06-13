@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width: 760px; margin: 0 auto 16px;">
+  <a href="/admin/dialogs">← {% trans %}All dialogs{% endtrans %}</a>
+  <h2 style="margin: 8px 0;"><code>{{ phone }}</code></h2>
+</div>
+
+<div class="timeline">
+{% for r in rows %}
+  {% if r.direction == 'in' %}
+    <div class="bubble in">
+      {{ r.text }}
+      <div class="meta">
+        {{ r.ts | msk }}
+      </div>
+    </div>
+  {% else %}
+    <div class="bubble out {{ r.status }}">
+      {{ r.text }}
+      <div class="meta">
+        {{ r.ts | msk }} ·
+        <span class="status status-{{ r.status }}">{{ r.status }}</span>
+        {% if r.error %} · <span class="muted">{{ r.error }}</span>{% endif %}
+      </div>
+    </div>
+  {% endif %}
+{% else %}
+  <div class="muted" style="text-align: center;">{% trans %}No messages{% endtrans %}</div>
+{% endfor %}
+</div>
+
+<form class="reply-form" method="post" action="/admin/dialogs/{{ phone }}/reply">
+  <input type="text" name="text" maxlength="160" required placeholder="{{ _('Reply (up to 160 chars)') }}">
+  <button type="submit">{% trans %}Send{% endtrans %}</button>
+</form>
+{% endblock %}

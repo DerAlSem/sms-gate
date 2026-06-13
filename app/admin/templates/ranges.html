@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<form method="post" action="/admin/ranges/backfill" style="margin-bottom:1rem">
+  <button type="submit">{% trans %}Fill gaps (voxlink){% endtrans %}</button>
+</form>
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Number{% endtrans %}</th><th>{% trans %}Operator{% endtrans %}</th><th>{% trans %}Region{% endtrans %}</th><th>{% trans %}Checked{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><code>{{ r.phone }}</code></td>
+      <td>{{ r.operator or '' }}</td>
+      <td>{{ r.region or '' }}</td>
+      <td>{{ r.checked_at | msk }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">{% trans %}Cache is empty{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

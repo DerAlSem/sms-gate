@@ -1,0 +1,212 @@
+msgid ""
+msgstr ""
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language: ru\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+
+msgid "Outbound"
+msgstr "Исходящие"
+
+msgid "Inbound"
+msgstr "Входящие"
+
+msgid "Dialogs"
+msgstr "Диалоги"
+
+msgid "Blacklist"
+msgstr "Чёрный список"
+
+msgid "Prefixes"
+msgstr "Префиксы"
+
+msgid "Statistics"
+msgstr "Статистика"
+
+msgid "Phone"
+msgstr "Телефон"
+
+msgid "— any status —"
+msgstr "— любой статус —"
+
+msgid "Filter"
+msgstr "Фильтр"
+
+msgid "%(count)s records"
+msgstr "%(count)s записей"
+
+msgid "Operator"
+msgstr "Оператор"
+
+msgid "Text"
+msgstr "Текст"
+
+msgid "Status"
+msgstr "Статус"
+
+msgid "Created"
+msgstr "Создано"
+
+msgid "Sent"
+msgstr "Отправлено"
+
+msgid "Delivered"
+msgstr "Доставлено"
+
+msgid "Error"
+msgstr "Ошибка"
+
+msgid "No records"
+msgstr "Нет записей"
+
+msgid "‹ Back"
+msgstr "‹ Назад"
+
+msgid "Page %(page)s of %(pages)s"
+msgstr "Стр. %(page)s из %(pages)s"
+
+msgid "Forward ›"
+msgstr "Вперёд ›"
+
+msgid "Failures"
+msgstr "Фейлов"
+
+msgid "Blocked"
+msgstr "Заблокирован"
+
+msgid "Last error"
+msgstr "Последняя ошибка"
+
+msgid "Last failure"
+msgstr "Последний фейл"
+
+msgid "not blocked"
+msgstr "не заблокирован"
+
+msgid "Unblock"
+msgstr "Разблокировать"
+
+msgid "List is empty"
+msgstr "Список пуст"
+
+msgid "Received"
+msgstr "Получено"
+
+msgid "Delete"
+msgstr "Удалить"
+
+msgid "dialog →"
+msgstr "диалог →"
+
+msgid "Last activity"
+msgstr "Последняя активность"
+
+msgid "open →"
+msgstr "открыть →"
+
+msgid "No dialogs"
+msgstr "Нет диалогов"
+
+msgid "All dialogs"
+msgstr "Все диалоги"
+
+msgid "No messages"
+msgstr "Нет сообщений"
+
+msgid "Reply (up to 160 chars)"
+msgstr "Ответ (до 160 симв.)"
+
+msgid "Send"
+msgstr "Отправить"
+
+msgid "Fill gaps (voxlink)"
+msgstr "Заполнить пропуски (voxlink)"
+
+msgid "Number"
+msgstr "Номер"
+
+msgid "Region"
+msgstr "Регион"
+
+msgid "Checked"
+msgstr "Проверено"
+
+msgid "Cache is empty"
+msgstr "Кэш пуст"
+
+msgid "Last 14 days"
+msgstr "За 14 дней"
+
+msgid "Day"
+msgstr "День"
+
+msgid "Total"
+msgstr "Всего"
+
+msgid "No data"
+msgstr "Нет данных"
+
+msgid "Apps"
+msgstr "Приложения"
+
+msgid "Client apps"
+msgstr "Приложения-клиенты"
+
+msgid "Token for %(app_id)s — copy it now, shown only once"
+msgstr "Токен для %(app_id)s — скопируйте сейчас, показывается один раз"
+
+msgid "app id (e.g. my_bot)"
+msgstr "id приложения (напр. my_bot)"
+
+msgid "Description"
+msgstr "Описание"
+
+msgid "Create"
+msgstr "Создать"
+
+msgid "Token"
+msgstr "Токен"
+
+msgid "Messages"
+msgstr "Сообщения"
+
+msgid "Active"
+msgstr "Активно"
+
+msgid "yes"
+msgstr "да"
+
+msgid "no"
+msgstr "нет"
+
+msgid "Deactivate"
+msgstr "Деактивировать"
+
+msgid "Activate"
+msgstr "Активировать"
+
+msgid "Delete app"
+msgstr "Удалить приложение"
+
+msgid "internal"
+msgstr "внутреннее"
+
+msgid "An app with that id already exists"
+msgstr "Приложение с таким id уже существует"
+
+msgid "App id cannot be empty"
+msgstr "id приложения не может быть пустым"
+
+msgid "Settings"
+msgstr "Настройки"
+
+msgid "Save"
+msgstr "Сохранить"
+
+msgid "configured (blank = keep)"
+msgstr "задано (пусто = не менять)"
+
+msgid "not set"
+msgstr "не задано"
+
+msgid "error"
+msgstr "ошибка"

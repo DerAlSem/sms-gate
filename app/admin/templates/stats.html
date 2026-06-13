@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="cards">
+  {% for s in ['pending','sent','delivered','failed','expired'] %}
+    <div class="card">
+      <div class="label">{{ s }}</div>
+      <div class="value">{{ counts.get(s, 0) }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<h3 style="margin-top: 24px; font-size: 14px; text-transform: uppercase; color: #6b7280;">{% trans %}Last 14 days{% endtrans %}</h3>
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Day{% endtrans %}</th>
+      {% for s in ['pending','sent','delivered','failed','expired'] %}
+        <th>{{ s }}</th>
+      {% endfor %}
+      <th>{% trans %}Total{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for day, statuses in by_day %}
+    {% set total_for_day = statuses.values() | sum %}
+    <tr>
+      <td>{{ day }}</td>
+      {% for s in ['pending','sent','delivered','failed','expired'] %}
+        <td>{{ statuses.get(s, 0) }}</td>
+      {% endfor %}
+      <td><strong>{{ total_for_day }}</strong></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">{% trans %}No data{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Phone{% endtrans %}</th><th>{% trans %}Failures{% endtrans %}</th><th>{% trans %}Blocked{% endtrans %}</th>
+      <th>{% trans %}Last error{% endtrans %}</th><th>{% trans %}Last failure{% endtrans %}</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><code>{{ r.phone }}</code></td>
+      <td>{{ r.fail_count }}</td>
+      <td>
+        {% if r.blocked_at %}
+          <span class="status status-failed">{{ r.blocked_at | msk }}</span>
+        {% else %}
+          <span class="muted">{% trans %}not blocked{% endtrans %}</span>
+        {% endif %}
+      </td>
+      <td class="muted">{{ r.last_error or '' }}</td>
+      <td>{{ r.last_fail_at | msk }}</td>
+      <td>
+        <form method="post" action="/admin/blacklist/unblock" onsubmit="return confirm('{{ _('Unblock') }} {{ r.phone }}?');">
+          <input type="hidden" name="phone" value="{{ r.phone }}">
+          <button type="submit" class="danger">{% trans %}Unblock{% endtrans %}</button>
+        </form>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">{% trans %}List is empty{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
