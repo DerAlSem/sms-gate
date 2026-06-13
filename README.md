@@ -1,5 +1,7 @@
 # SMS Gate
 
+[![CI](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml)
+
 **Self-hosted SMS that doesn't bleed money.** Send your one-time codes through a cheap
 USB LTE modem and a regular SIM instead of renting delivery from an aggregator per message.
 
