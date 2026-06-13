@@ -43,6 +43,18 @@ for supervision. No external broker, no container required.
 - **Tests** — `pytest` suite covering PDU parsing, assembly, alerting, lookup, stats,
   settings, phone validation, and the admin pages
 
+## Screenshots
+
+The admin UI is bilingual (Russian default, English switchable). _(Sample data below.)_
+
+| Outbound messages | Dialog (chat) view |
+|---|---|
+| ![Outbound messages](docs/img/messages.png) | ![Dialog view](docs/img/dialog.png) |
+
+| Runtime settings (country picker, no `.env` edits) | Client app tokens |
+|---|---|
+| ![Settings](docs/img/settings.png) | ![Apps](docs/img/apps.png) |
+
 ## Architecture
 
 ```
