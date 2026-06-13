@@ -1,5 +1,14 @@
 # SMS Gate
 
+**Self-hosted SMS that doesn't bleed money.** Send your one-time codes through a cheap
+USB LTE modem and a regular SIM instead of renting delivery from an aggregator per message.
+
+Commercial SMS providers charge **~5–80 ₽ _per message_** — fine for dozens, brutal at
+volume. A consumer SIM with an unlimited-SMS plan is a flat **~100 ₽/month**. Send 100
+codes a month or 100 000 — your bill doesn't move, so your per-message cost collapses
+toward zero _(your savings → ∞ 😉)_. Your numbers and message history stay on **your own
+server** — no third party in the loop.
+
 A small, self-hosted HTTP gateway for sending and receiving SMS through an LTE
 modem (built for a **Quectel EP06E / EM06**, but any AT-command modem exposing
 serial ports should work). Client apps POST a phone number and text; the gateway
