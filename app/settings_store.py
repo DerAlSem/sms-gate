@@ -32,6 +32,8 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("inbound_dispatch_timeout", "float", 10.0, "Inbound dispatch", False, "POST timeout (s)"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
+    Spec("max_sms_parts", "int", 6, "Sending", False,
+         "Max parts for a multipart SMS; longer text fails before sending"),
     Spec("phone_region", "region", "RU", "Sending", False,
          "ISO country code for phone validation (e.g. RU, US, GB)"),
 ]

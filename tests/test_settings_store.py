@@ -11,7 +11,7 @@ def test_spec_has_all_soft_keys():
         "alert_bot_token", "alert_chat_id", "alert_dedup_window",
         "inbound_dispatch", "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
-        "phone_region",
+        "phone_region", "max_sms_parts",
     }
 
 
@@ -132,3 +132,9 @@ def test_inbound_dispatch_parsed_filters_invalid_rows():
     store._cache["inbound_dispatch"] = '[{"prefix":"X","webhook_url":"u"},{"prefix":"Y"}]'
     parsed = store.inbound_dispatch_parsed
     assert parsed == [{"prefix": "X", "webhook_url": "u"}]
+
+
+def test_max_sms_parts_default_is_6():
+    from app.settings_store import SPEC_BY_KEY, store
+    assert "max_sms_parts" in SPEC_BY_KEY
+    assert store.max_sms_parts == 6
