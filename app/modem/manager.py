@@ -12,6 +12,7 @@ from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
 from app.db import queries
+from app.alerting import notify
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +59,13 @@ class ModemManager:
                 if len(parts) > store.max_sms_parts:
                     error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
                     await queries.set_message_failed(msg.message_id, error)
-                    logger.error(
+                    logger.warning(
                         "Rejected message %d (app=%s to=%s): %s",
                         msg.message_id, msg.app_id or "?", msg.phone, error,
                     )
+                    notify("send_error",
+                           f"Rejected message {msg.message_id} to {msg.phone}: {error}",
+                           dedup_extra="too_long")
                     continue
 
                 total = len(parts)
@@ -75,10 +79,13 @@ class ModemManager:
                 logger.info("Sent message %d in %d part(s)", msg.message_id, total)
             except ATCommandError as e:
                 await queries.set_message_failed(msg.message_id, str(e))
-                logger.error(
+                logger.warning(
                     "Failed to send message %d (app=%s to=%s text=%r): %s",
                     msg.message_id, msg.app_id or "?", msg.phone, msg.text, e,
                 )
+                notify("send_error",
+                       f"Send failed id={msg.message_id} app={msg.app_id or '?'} to={msg.phone}: {e}",
+                       dedup_extra=str(e))
             finally:
                 self._queue.task_done()
 
@@ -147,6 +154,9 @@ class ModemManager:
                 await queries.record_permanent_fail(
                     phone, error, store.blacklist_threshold,
                 )
+            notify("delivery_error",
+                   f"Delivery failed id={message_id} to={phone} st={report.status_code}",
+                   dedup_extra=report.status_code)
 
     async def inbound_loop(self) -> None:
         """Read SMS at indexes posted from reader_loop, persist, then delete from SIM."""
@@ -187,6 +197,7 @@ class ModemManager:
     def _spawn_dispatch(self, phone: str, text: str) -> None:
         """Fire-and-forget dispatch with a strong reference: the event loop holds
         tasks weakly, and a sleeping retry-ladder could be collected by the GC."""
+        notify("inbound", f"Inbound from {phone}: {text}")
         task = asyncio.create_task(dispatch_inbound(phone, text))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
