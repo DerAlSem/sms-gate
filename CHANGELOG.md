@@ -1,0 +1,27 @@
+# Changelog
+
+All notable changes to this project are documented here.
+This project adheres to [Semantic Versioning](https://semver.org/).
+
+## [0.2.0] - 2026-06-14
+
+### Added
+- Outbound Cyrillic and Unicode SMS via PDU-mode sending, with automatic
+  GSM 7-bit / UCS2 encoding (`app/modem/pdu_encode.py`, `app/modem/gsm7.py`).
+- Multipart (UDH-concatenated) outbound SMS, reassembled into one message on
+  the recipient's handset.
+- Per-part delivery tracking via the new `message_parts` table; a message is
+  marked `delivered` only when every part's `+CDS` report arrives.
+- `max_sms_parts` setting (default 6) capping multipart length.
+
+### Changed
+- Outbound send path moved from AT text mode to PDU mode (`send_sms_pdu`).
+- API `text` field limit raised from 160 to 1000 characters.
+- `+CMS`/`+CME` errors are now surfaced as clean, human-readable messages
+  instead of raw byte dumps, and no longer block for the full send timeout.
+- Admin UI gained a favicon.
+
+## [0.1.0]
+
+- Initial release: HTTP SMS API, delivery tracking, inbound PDU decoding with
+  multipart reassembly, admin UI, operator/region lookup, auto-blacklist.

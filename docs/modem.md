@@ -26,8 +26,8 @@ Run these AT commands on startup, in order:
 ```
 AT                          # Check modem alive → expect "OK"
 ATE0                        # Disable echo
-AT+CMGF=1                  # Text mode (not PDU)
-AT+CSCS="GSM"              # GSM character set (for Latin + basic Cyrillic)
+AT+CMGF=1                  # Default text mode; sends/reads toggle to PDU (CMGF=0) per operation
+AT+CSCS="GSM"              # Text-mode charset default; outbound now uses PDU mode (encoding chosen per message)
 AT+CNMI=2,1,2,1,0          # Enable delivery report notifications
 AT+CSMP=49,167,0,0         # Request delivery reports on send
 ```
@@ -55,6 +55,11 @@ Without this, the network won't generate delivery reports even if the modem is l
 ---
 
 ## Sending an SMS
+
+> **Note:** Outbound sending now uses **PDU mode** (`AT+CMGF=0`), with the
+> encoding chosen automatically per message (GSM 7-bit when the text fits the
+> GSM alphabet, otherwise UCS2) and UDH multipart concatenation for long text.
+> The text-mode flow below is kept for reference.
 
 ```
 AT+CMGS="+79991234567"      # Start send, modem responds with "> "

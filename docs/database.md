@@ -50,7 +50,7 @@ CREATE TABLE messages (
     text         TEXT NOT NULL,           -- SMS body
     status       TEXT NOT NULL DEFAULT 'pending',
                                           -- pending|sent|delivered|failed|expired
-    modem_ref    INTEGER,                 -- AT+CMGS message reference number
+    modem_ref    INTEGER,                 -- first part's AT+CMGS ref (per-part refs live in message_parts)
     sent_at      TIMESTAMP,              -- when modem accepted the message
     delivered_at TIMESTAMP,              -- when +CDS delivery report received
     error        TEXT,                    -- error description if failed
@@ -134,6 +134,26 @@ CREATE TABLE inbound_parts (
 ```
 
 Once all `total` parts for a `(phone, ref, total)` group are present they are assembled, written to `inbound_messages`, and the parts are deleted.
+
+---
+
+## Table: message_parts
+
+Per-part tracking for outbound multipart (UDH-concatenated) SMS. One row per
+segment; a message is marked `delivered` only when every part's `+CDS` report
+arrives. For a single-part SMS there is exactly one row.
+
+```sql
+CREATE TABLE message_parts (
+    modem_ref   INTEGER PRIMARY KEY,      -- TP-MR returned by AT+CMGS for this part
+    message_id  INTEGER NOT NULL REFERENCES messages(id),
+    seq         INTEGER NOT NULL,         -- this part's 1-based sequence number
+    total       INTEGER NOT NULL,         -- total number of parts
+    status      TEXT NOT NULL DEFAULT 'sent'  -- sent|delivered|failed
+);
+
+CREATE INDEX idx_message_parts_message ON message_parts(message_id);
+```
 
 ---
 

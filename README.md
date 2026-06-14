@@ -24,6 +24,7 @@ for supervision. No external broker, no container required.
 ## Features
 
 - **HTTP API** — `POST /sms/send`, `GET /sms/{id}`, Bearer-token auth per client app
+- **Outbound Cyrillic & multipart** — sends in PDU mode with automatic GSM 7-bit/UCS2 encoding; long messages are split into UDH-concatenated parts and reassembled as one message on the recipient's phone
 - **Delivery tracking** — parses `+CDS` delivery reports; marks messages
   `pending → sent → delivered/failed`, expires stale ones
 - **Inbound SMS** — decodes PDU-mode messages (incl. UCS2 and multipart reassembly),

@@ -110,12 +110,24 @@ systemd + journalctl will capture stdout/stderr automatically.
 
 ## Cyrillic in SMS
 
-`AT+CSCS="GSM"` supports basic Latin only. For Cyrillic there are two options:
+Outbound SMS is sent in **PDU mode** (`AT+CMGF=0` per send). The encoder
+(`app/modem/pdu_encode.py`) chooses the alphabet automatically:
 
-1. **UCS2 encoding** — `AT+CSCS="UCS2"`, but the maximum message length drops from 160 to 70 characters
-2. **Transliteration** — if SMS messages contain only authorization codes (digits + Latin), Cyrillic is not needed
+- **GSM 7-bit** when every character fits the GSM default alphabet (up to 160
+  chars single / 153 per concatenated part).
+- **UCS2** (UTF-16) otherwise — this is what carries Cyrillic and emoji (up to
+  70 chars single / 67 per concatenated part).
 
-**Recommendation**: send authorization codes in Latin (`Your code: 1234`). This is simpler and fits more text.
+Long messages are split into **UDH-concatenated** parts (8-bit reference =
+`message_id % 256`), so the recipient's handset reassembles them into one
+message. UCS2 splits never sever a surrogate pair; GSM7 splits never sever an
+escape sequence. Each part is sent with its own `AT+CMGS` and tracked in the
+`message_parts` table; the message becomes `delivered` only once every part's
+`+CDS` report arrives. The `max_sms_parts` setting (default 6) caps length;
+longer text fails before anything is transmitted.
+
+Shared GSM7 alphabet tables live in `app/modem/gsm7.py` (used by both the
+encoder and the inbound decoder in `app/modem/pdu.py`).
 
 ---
 

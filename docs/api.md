@@ -30,7 +30,7 @@ Content-Type: application/json
 | Field | Type | Rules |
 |-------|------|-------|
 | phone | string | Required. Validated by the `phonenumbers` library against the configured region (default `RU`). National-format input is accepted and normalized to E.164 on ingress. The region is configurable at `/admin/settings`. |
-| text | string | Required. 1-160 characters (single SMS segment) |
+| text | string | Required. 1-1000 characters. Any Unicode is accepted — the gateway picks GSM 7-bit or UCS2 automatically and splits long text into concatenated (multipart) SMS. The precise part limit is enforced server-side by the `max_sms_parts` setting; over-long messages are rejected as `failed`. |
 
 ### Response 200
 
