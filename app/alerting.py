@@ -177,3 +177,27 @@ def reconfigure(source) -> "TelegramAlertHandler | None":
         _notifier.close()
         _notifier = None
     return setup_telegram_alerts(source)
+
+
+_EVENT_TOGGLE = {
+    "send_error": "notify_send_errors",
+    "delivery_error": "notify_delivery_errors",
+    "inbound": "notify_inbound",
+}
+
+
+def notify(event_type: str, text: str, dedup_extra=None) -> None:
+    """Send a typed operator notification if its toggle is on and a notifier is
+    configured. event_type in {'send_error','delivery_error','inbound'}.
+    Error types dedup on (event_type, dedup_extra); inbound (dedup_extra None) is
+    never deduped."""
+    from app.settings_store import store
+
+    if _notifier is None:
+        return
+    toggle = _EVENT_TOGGLE.get(event_type)
+    if toggle is None or not store.get(toggle):
+        return
+    body = f"\U0001F4E8 sms-gate {event_type} on {socket.gethostname()}\n{text}"
+    dedup_sig = (event_type, dedup_extra) if dedup_extra is not None else None
+    _notifier.maybe_send(body, dedup_sig=dedup_sig)
