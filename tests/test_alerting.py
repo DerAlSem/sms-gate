@@ -9,6 +9,7 @@ from app.alerting import (
     setup_telegram_alerts,
     reconfigure as _reconfigure,
 )
+from app.settings_store import store as _store
 
 
 class FakeClock:
@@ -252,3 +253,44 @@ def test_bounded_never_splits_an_entity():
     assert "&amp;" in out
     assert not out.rstrip("…").endswith("&am")
     assert not out.rstrip("…").endswith("&")
+
+
+# --- HTML send + handler format ---
+def test_http_send_sets_parse_mode_html(monkeypatch):
+    captured = {}
+
+    class FakeClient:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def post(self, url, json=None):
+            captured.update(json)
+
+    import app.alerting as alerting
+    monkeypatch.setattr(alerting.httpx, "Client", lambda *a, **k: FakeClient())
+    n = make_notifier()
+    n._http_send("hi")
+    assert captured["parse_mode"] == "HTML"
+    assert captured["text"] == "hi"
+
+
+def test_handler_format_is_html_with_bold_title(monkeypatch):
+    monkeypatch.setitem(_store._cache, "instance_name", "sms.deralsem.ru")
+    n = make_notifier()
+    h = TelegramAlertHandler(n)
+    text = h.format_alert(make_record(name="app.modem.manager", msg="fail %d", args=(7,)))
+    assert text.startswith("<b>🔴 ERROR · sms.deralsem.ru</b>")
+    assert "<code>app.modem.manager</code>" in text
+    assert "fail 7" in text
+
+
+def test_handler_format_escapes_and_wraps_traceback():
+    n = make_notifier()
+    h = TelegramAlertHandler(n)
+    try:
+        raise ValueError("kab<oom> & stuff")
+    except ValueError:
+        rec = make_record(msg="oops", args=(), exc_info=sys.exc_info())
+    text = h.format_alert(rec)
+    assert "<pre>" in text and text.rstrip().endswith("</pre>")
+    assert "ValueError" in text
+    assert "&lt;oom&gt;" in text

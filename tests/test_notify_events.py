@@ -128,3 +128,27 @@ def test_inbound_notifies(monkeypatch):
     asyncio.run(run())
     types = [a[0] for a, k in calls]
     assert "inbound" in types
+
+
+def test_notify_inbound_html_format(monkeypatch):
+    fake = _install(monkeypatch, notify_inbound=True)
+    monkeypatch.setitem(store._cache, "instance_name", "sms.deralsem.ru")
+    notify("inbound", "+79261234567: Привет")
+    text, sig = fake.calls[0]
+    assert text.startswith("<b>📨 Inbound · sms.deralsem.ru</b>\n")
+    assert text.endswith("+79261234567: Привет")
+    assert sig is None
+
+
+def test_notify_escapes_html_in_body(monkeypatch):
+    fake = _install(monkeypatch, notify_inbound=True)
+    notify("inbound", "a <b> & c")
+    text, _ = fake.calls[0]
+    assert "a &lt;b&gt; &amp; c" in text
+
+
+def test_notify_send_error_title(monkeypatch):
+    fake = _install(monkeypatch, notify_send_errors=True)
+    notify("send_error", "+7999 (id 5): boom", dedup_extra="boom")
+    text, _ = fake.calls[0]
+    assert text.startswith("<b>🔴 Send failed · ")
