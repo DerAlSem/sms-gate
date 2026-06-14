@@ -113,7 +113,7 @@ All "soft" settings live in the `settings` table and are managed through the adm
 | Section | Keys |
 |---|---|
 | Voxlink | `voxlink_enabled`, `voxlink_url`, `voxlink_timeout`, `voxlink_cache_ttl_days` |
-| Alerting | `alert_bot_token`, `alert_chat_id`, `alert_dedup_window`, `notify_system_errors`, `notify_send_errors`, `notify_delivery_errors`, `notify_inbound` |
+| Alerting | `alert_bot_token`, `alert_chat_id`, `alert_dedup_window`, `instance_name`, `notify_system_errors`, `notify_send_errors`, `notify_delivery_errors`, `notify_inbound` |
 | Inbound dispatch | `inbound_dispatch` (JSON list), `inbound_dispatch_retries`, `inbound_dispatch_timeout` |
 | Limits | `blacklist_threshold`, `delivery_timeout_seconds` |
 | Sending | `phone_region` |
