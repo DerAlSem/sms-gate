@@ -26,7 +26,7 @@ async def send_sms(
     await record_operator(body.phone)
     modem: ModemManager = request.app.state.modem
     message_id = await queries.create_message(app_id, body.phone, body.text)
-    await modem.enqueue(message_id, body.phone, body.text)
+    await modem.enqueue(message_id, body.phone, body.text, app_id)
     return SmsSendResponse(id=message_id, status="pending")
 
 

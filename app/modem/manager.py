@@ -25,6 +25,7 @@ class OutgoingMessage:
     message_id: int
     phone: str
     text: str
+    app_id: str = ""
 
 
 class ModemManager:
@@ -43,8 +44,8 @@ class ModemManager:
     async def disconnect(self) -> None:
         await self._sender.close()
 
-    async def enqueue(self, message_id: int, phone: str, text: str) -> None:
-        await self._queue.put(OutgoingMessage(message_id, phone, text))
+    async def enqueue(self, message_id: int, phone: str, text: str, app_id: str = "") -> None:
+        await self._queue.put(OutgoingMessage(message_id, phone, text, app_id))
 
     async def sender_loop(self) -> None:
         """Pick messages from queue and send via modem."""
@@ -57,7 +58,10 @@ class ModemManager:
                 logger.info("Sent message %d, modem_ref=%d", msg.message_id, ref)
             except ATCommandError as e:
                 await queries.set_message_failed(msg.message_id, str(e))
-                logger.error("Failed to send message %d: %s", msg.message_id, e)
+                logger.error(
+                    "Failed to send message %d (app=%s to=%s text=%r): %s",
+                    msg.message_id, msg.app_id or "?", msg.phone, msg.text, e,
+                )
             finally:
                 self._queue.task_done()
 

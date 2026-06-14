@@ -162,7 +162,7 @@ async def admin_dialog_reply(
     await record_operator(phone)
     message_id = await queries.create_message("admin", phone, text)
     modem = request.app.state.modem
-    await modem.enqueue(message_id, phone, text)
+    await modem.enqueue(message_id, phone, text, "admin")
     return RedirectResponse(url=f"/admin/dialogs/{phone}", status_code=303)
 
 

@@ -35,6 +35,69 @@ _CMGL_PDU_PATTERN = re.compile(
 _HEX_RE = re.compile(r'^[0-9A-Fa-f]+$')
 
 
+# GSM 07.05 +CMS / +CME numeric result codes we actually see in the wild.
+# Anything not listed falls back to the bare "+CMS ERROR <n>" label.
+_CMS_ERRORS = {
+    1: "unassigned number",
+    21: "short message transfer rejected",
+    28: "unidentified subscriber",
+    38: "network out of order",
+    41: "temporary failure",
+    42: "congestion",
+    50: "operation barred",
+    69: "requested facility not implemented",
+    96: "invalid mandatory information",
+    300: "modem failure",
+    301: "SMS service reserved",
+    302: "operation not allowed",
+    303: "operation not supported",
+    304: "invalid PDU mode parameter",
+    305: "invalid text mode parameter",
+    310: "SIM not inserted",
+    311: "SIM PIN required",
+    313: "SIM failure",
+    321: "invalid memory index",
+    330: "SMSC address unknown",
+    331: "no network service",
+    332: "network timeout",
+    500: "unknown error",
+}
+_CME_ERRORS = {
+    3: "operation not allowed",
+    4: "operation not supported",
+    10: "SIM not inserted",
+    11: "SIM PIN required",
+    13: "SIM failure",
+    30: "no network service",
+    31: "network timeout",
+    100: "unknown error",
+}
+_AT_ERROR_NUM = re.compile(r'\+(CM[SE]) ERROR:\s*(\d+)')
+_AT_ERROR_TXT = re.compile(r'\+(CM[SE]) ERROR:\s*([^\r\n]+)')
+
+
+def describe_at_error(response: str) -> str:
+    """Turn a raw modem reply into a short, human-readable error string.
+
+    Examples:
+        '\\r\\n+CMS ERROR: 305\\r\\n' -> '+CMS ERROR 305 (invalid text mode parameter)'
+        '\\r\\nERROR\\r\\n'           -> 'modem returned ERROR'
+    """
+    m = _AT_ERROR_NUM.search(response)
+    if m:
+        kind, code = m.group(1), int(m.group(2))
+        table = _CMS_ERRORS if kind == 'CMS' else _CME_ERRORS
+        desc = table.get(code)
+        label = f"+{kind} ERROR {code}"
+        return f"{label} ({desc})" if desc else label
+    m = _AT_ERROR_TXT.search(response)
+    if m:
+        return f"+{m.group(1)} ERROR: {m.group(2).strip()}"
+    if 'ERROR' in response:
+        return "modem returned ERROR"
+    return response.strip()
+
+
 def parse_cmgs_ref(response: str) -> int | None:
     """Extract message reference from +CMGS: <ref> response."""
     match = re.search(r'\+CMGS:\s*(\d+)', response)

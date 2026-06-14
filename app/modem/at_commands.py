@@ -2,6 +2,8 @@ import asyncio
 import logging
 import serial_asyncio
 
+from app.modem.parser import describe_at_error
+
 logger = logging.getLogger(__name__)
 
 CTRL_Z = b'\x1a'
@@ -10,6 +12,16 @@ PROMPT = b'> '
 
 class ATCommandError(Exception):
     pass
+
+
+def _clean_error(buf: bytes, expected: bytes) -> str:
+    """Human-readable error for a read that ended without `expected`."""
+    text = buf.decode(errors='replace')
+    if 'ERROR' in text:
+        return describe_at_error(text)
+    if not buf.strip():
+        return "no response from modem (timeout)"
+    return f"timeout waiting for {expected.decode(errors='replace')!r}, got: {text.strip()!r}"
 
 
 class ATSerial:
@@ -38,20 +50,23 @@ class ATSerial:
         await self._writer.drain()
 
     async def _read_until(self, expected: bytes, timeout: float) -> str:
+        """Read until `expected` is seen. Returns early (without raising) when the
+        modem emits a final error result code so callers can surface a clean
+        message instead of blocking until `timeout` and dumping raw bytes."""
         assert self._reader
         buf = b''
         deadline = asyncio.get_event_loop().time() + timeout
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise ATCommandError(f"Timeout waiting for {expected!r}, got: {buf!r}")
+                raise ATCommandError(_clean_error(buf, expected))
             try:
                 chunk = await asyncio.wait_for(self._reader.read(256), timeout=remaining)
                 buf += chunk
-                if expected in buf:
+                if expected in buf or b'ERROR' in buf:
                     return buf.decode(errors='replace')
             except asyncio.TimeoutError:
-                raise ATCommandError(f"Timeout waiting for {expected!r}, got: {buf!r}")
+                raise ATCommandError(_clean_error(buf, expected))
 
     async def command(self, cmd: str, timeout: float = 5.0) -> str:
         """Send AT command, return full response."""
@@ -59,7 +74,7 @@ class ATSerial:
             await self._send(f"{cmd}\r".encode())
             response = await self._read_until(b'OK', timeout)
             if 'ERROR' in response:
-                raise ATCommandError(f"Command {cmd!r} failed: {response.strip()}")
+                raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
             return response
 
     async def send_sms(self, phone: str, text: str, timeout: float = 30.0) -> int:
@@ -68,12 +83,14 @@ class ATSerial:
 
         async with self._lock:
             await self._send(f'AT+CMGS="{phone}"\r'.encode())
-            await self._read_until(b'> ', timeout=5.0)
+            prompt = await self._read_until(b'> ', timeout=5.0)
+            if 'ERROR' in prompt:
+                raise ATCommandError(describe_at_error(prompt))
             await self._send(text.encode() + CTRL_Z)
             response = await self._read_until(b'OK', timeout=timeout)
 
         if 'ERROR' in response:
-            raise ATCommandError(f"SMS send failed: {response.strip()}")
+            raise ATCommandError(describe_at_error(response))
 
         ref = parse_cmgs_ref(response)
         if ref is None:
