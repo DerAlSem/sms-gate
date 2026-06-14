@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-06-14
+
+### Added
+- Per-type Telegram notifications, each toggled in the admin UI (section
+  "Alerting"): system errors (default on), send failures, delivery
+  failures / blacklist, and inbound SMS (the last three default off).
+- `notify(event_type, text, dedup_extra=None)` for typed event notifications,
+  sharing the Telegram delivery machinery with the log handler.
+
+### Changed
+- Refactored alerting: delivery (bounded queue + daemon worker + windowed
+  dedup + truncation) extracted into a reusable `TelegramNotifier`;
+  `TelegramAlertHandler` is now a thin ERROR-level adapter over it.
+- Send-failure logs downgraded ERROR→WARNING so they no longer also fire the
+  system-error alert (the typed `send_error` notification covers them).
+
 ## [0.2.0] - 2026-06-14
 
 ### Added
