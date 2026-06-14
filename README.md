@@ -42,7 +42,7 @@ for supervision. No external broker, no container required.
 - **Bilingual admin UI** (Russian default + English, switchable) — messages, dialogs,
   inbound, blacklist, number ranges, daily stats, runtime **settings**, and client
   **token management**
-- **Telegram notifications** — per-type, each toggled in the admin UI: system errors (ERROR logs), outbound send failures, delivery failures / blacklisting, and inbound SMS; all to one chat with windowed dedup
+- **Telegram notifications** — per-type, each toggled in the admin UI: system errors (ERROR logs), outbound send failures, delivery failures / blacklisting, and inbound SMS; all to one chat with windowed dedup and a configurable instance label
 - **Tests** — `pytest` suite covering PDU parsing, assembly, alerting, lookup, stats,
   settings, phone validation, and the admin pages
 

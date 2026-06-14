@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-06-14
+
+### Changed
+- Telegram notifications are now HTML-formatted: a bold title line
+  (`📨 Inbound` / `🔴 Send failed` / `🚫 Delivery failed`) and a clean
+  `+phone: text` body, removing the previous doubled event type. Sent with
+  `parse_mode=HTML`; all dynamic fields are escaped and truncated before
+  wrapping so the markup is always well-formed.
+
+### Added
+- `instance_name` setting (section "Alerting", blank = server hostname) — the
+  label shown in notifications, e.g. `sms.deralsem.ru`.
+
 ## [0.3.0] - 2026-06-14
 
 ### Added
