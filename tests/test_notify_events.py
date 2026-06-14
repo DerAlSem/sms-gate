@@ -92,8 +92,9 @@ def test_send_failure_notifies_send_error(monkeypatch):
         await close_db()
 
     asyncio.run(run())
-    types = [a[0] for a, k in calls]
-    assert "send_error" in types
+    sent = [(a[0], a[1]) for a, k in calls if a[0] == "send_error"]
+    assert sent, "expected a send_error notification"
+    assert sent[0][1].startswith("+79991234567 (id ")
 
 
 def test_delivery_failure_notifies(monkeypatch):
@@ -111,8 +112,9 @@ def test_delivery_failure_notifies(monkeypatch):
         await close_db()
 
     asyncio.run(run())
-    types = [a[0] for a, k in calls]
-    assert "delivery_error" in types
+    sent = [(a[0], a[1]) for a, k in calls if a[0] == "delivery_error"]
+    assert sent, "expected a delivery_error notification"
+    assert sent[0][1] == "+79991234567 (id 1): st=65"
 
 
 def test_inbound_notifies(monkeypatch):
@@ -126,8 +128,9 @@ def test_inbound_notifies(monkeypatch):
         await asyncio.sleep(0)
 
     asyncio.run(run())
-    types = [a[0] for a, k in calls]
-    assert "inbound" in types
+    sent = [(a[0], a[1]) for a, k in calls if a[0] == "inbound"]
+    assert sent, "expected an inbound notification"
+    assert sent[0][1] == "+79991234567: hello"
 
 
 def test_notify_inbound_html_format(monkeypatch):
