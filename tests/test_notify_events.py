@@ -51,3 +51,80 @@ def test_notify_delivery_error_dedup_sig(monkeypatch):
     fake = _install(monkeypatch, notify_delivery_errors=True)
     notify("delivery_error", "fail", dedup_extra=65)
     assert fake.calls[0][1] == ("delivery_error", 65)
+
+
+# --- manager call sites ---
+import asyncio
+
+import app.modem.manager as manager_mod
+from app.db.connection import init_db, close_db
+from app.db.migrate import run_migrations
+from app.db import queries
+from app.modem.manager import ModemManager
+from app.modem.parser import DeliveryReport
+from app.modem.at_commands import ATCommandError
+
+
+def _record_notify(monkeypatch):
+    calls = []
+    monkeypatch.setattr(manager_mod, "notify", lambda *a, **k: calls.append((a, k)))
+    return calls
+
+
+def test_send_failure_notifies_send_error(monkeypatch):
+    calls = _record_notify(monkeypatch)
+
+    async def run():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.create_app("app1", "tok1", "t")
+        mid = await queries.create_message("app1", "+79991234567", "hi")
+        m = ModemManager("/dev/null", "/dev/null")
+
+        async def boom(parts, on_part_sent, timeout=30.0):
+            raise ATCommandError("+CMS ERROR 305 (invalid text mode parameter)")
+        monkeypatch.setattr(m._sender, "send_sms_pdu", boom)
+
+        await m.enqueue(mid, "+79991234567", "hi", "app1")
+        task = asyncio.create_task(m.sender_loop())
+        await m._queue.join()
+        task.cancel()
+        await close_db()
+
+    asyncio.run(run())
+    types = [a[0] for a, k in calls]
+    assert "send_error" in types
+
+
+def test_delivery_failure_notifies(monkeypatch):
+    calls = _record_notify(monkeypatch)
+
+    async def run():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.create_app("app1", "tok1", "t")
+        mid = await queries.create_message("app1", "+79991234567", "hi")
+        await queries.set_message_sent(mid, 200)
+        await queries.add_message_part(mid, 200, 1, 1)
+        m = ModemManager("/dev/null", "/dev/null")
+        await m._handle_cds(DeliveryReport(modem_ref=200, delivered=False, status_code=0x41))
+        await close_db()
+
+    asyncio.run(run())
+    types = [a[0] for a, k in calls]
+    assert "delivery_error" in types
+
+
+def test_inbound_notifies(monkeypatch):
+    calls = _record_notify(monkeypatch)
+    monkeypatch.setattr(manager_mod, "dispatch_inbound",
+                        lambda *a, **k: asyncio.sleep(0))
+
+    async def run():
+        m = ModemManager("/dev/null", "/dev/null")
+        m._spawn_dispatch("+79991234567", "hello")
+        await asyncio.sleep(0)
+
+    asyncio.run(run())
+    types = [a[0] for a, k in calls]
+    assert "inbound" in types
