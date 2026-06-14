@@ -64,7 +64,7 @@ class ModemManager:
                         msg.message_id, msg.app_id or "?", msg.phone, error,
                     )
                     notify("send_error",
-                           f"Rejected message {msg.message_id} to {msg.phone}: {error}",
+                           f"{msg.phone} (id {msg.message_id}): {error}",
                            dedup_extra="too_long")
                     continue
 
@@ -84,7 +84,7 @@ class ModemManager:
                     msg.message_id, msg.app_id or "?", msg.phone, msg.text, e,
                 )
                 notify("send_error",
-                       f"Send failed id={msg.message_id} app={msg.app_id or '?'} to={msg.phone}: {e}",
+                       f"{msg.phone} (id {msg.message_id}): {e}",
                        dedup_extra=str(e))
             finally:
                 self._queue.task_done()
@@ -155,7 +155,7 @@ class ModemManager:
                     phone, error, store.blacklist_threshold,
                 )
             notify("delivery_error",
-                   f"Delivery failed id={message_id} to={phone} st={report.status_code}",
+                   f"{phone} (id {message_id}): st={report.status_code}",
                    dedup_extra=report.status_code)
 
     async def inbound_loop(self) -> None:
@@ -197,7 +197,7 @@ class ModemManager:
     def _spawn_dispatch(self, phone: str, text: str) -> None:
         """Fire-and-forget dispatch with a strong reference: the event loop holds
         tasks weakly, and a sleeping retry-ladder could be collected by the GC."""
-        notify("inbound", f"Inbound from {phone}: {text}")
+        notify("inbound", f"{phone}: {text}")
         task = asyncio.create_task(dispatch_inbound(phone, text))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
