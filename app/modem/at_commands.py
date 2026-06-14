@@ -77,25 +77,38 @@ class ATSerial:
                 raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
             return response
 
-    async def send_sms(self, phone: str, text: str, timeout: float = 30.0) -> int:
-        """Send SMS, return modem_ref on success."""
+    async def send_sms_pdu(self, parts, on_part_sent, timeout: float = 30.0):
+        """Send one or more SMS-SUBMIT PDUs in PDU mode. Calls
+        `await on_part_sent(seq, ref)` right after each part's +CMGS so the
+        caller persists the part before the next is sent. Returns the list of
+        modem refs. Raises ATCommandError on the first failing part (remaining
+        parts are not sent)."""
+        from app.modem.pdu_encode import tpdu_length
         from app.modem.parser import parse_cmgs_ref
 
+        refs = []
         async with self._lock:
-            await self._send(f'AT+CMGS="{phone}"\r'.encode())
-            prompt = await self._read_until(b'> ', timeout=5.0)
-            if 'ERROR' in prompt:
-                raise ATCommandError(describe_at_error(prompt))
-            await self._send(text.encode() + CTRL_Z)
-            response = await self._read_until(b'OK', timeout=timeout)
-
-        if 'ERROR' in response:
-            raise ATCommandError(describe_at_error(response))
-
-        ref = parse_cmgs_ref(response)
-        if ref is None:
-            raise ATCommandError(f"Could not parse +CMGS ref from: {response!r}")
-        return ref
+            await self._set_cmgf_unlocked(0)
+            try:
+                for seq, pdu in enumerate(parts, start=1):
+                    await self._send(f"AT+CMGS={tpdu_length(pdu)}\r".encode())
+                    prompt = await self._read_until(b'> ', timeout=5.0)
+                    if 'ERROR' in prompt:
+                        raise ATCommandError(describe_at_error(prompt))
+                    await self._send(pdu.encode() + CTRL_Z)
+                    response = await self._read_until(b'OK', timeout=timeout)
+                    if 'ERROR' in response:
+                        raise ATCommandError(describe_at_error(response))
+                    ref = parse_cmgs_ref(response)
+                    if ref is None:
+                        raise ATCommandError(
+                            f"Could not parse +CMGS ref from: {response!r}"
+                        )
+                    refs.append(ref)
+                    await on_part_sent(seq, ref)
+            finally:
+                await self._set_cmgf_unlocked(1)
+        return refs
 
     async def _cmgr_unlocked(self, index: int, timeout: float) -> str:
         await self._send(f'AT+CMGR={index}\r'.encode())
