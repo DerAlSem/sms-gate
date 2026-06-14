@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.modem.gsm7 import GSM7_BASIC as _GSM7_BASIC, GSM7_EXT as _GSM7_EXT
+
 
 @dataclass
 class ConcatInfo:
@@ -24,23 +26,11 @@ class DeliverPdu:
     concat: ConcatInfo | None
 
 
-_GSM7_BASIC = (
-    "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\x1bÆæßÉ"
-    " !\"#¤%&'()*+,-./0123456789:;<=>?"
-    "¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§"
-    "¿abcdefghijklmnopqrstuvwxyzäöñüà"
-)
-_GSM7_EXT = {
-    0x0A: "\f", 0x14: "^", 0x28: "{", 0x29: "}", 0x2F: "\\",
-    0x3C: "[", 0x3D: "~", 0x3E: "]", 0x40: "|", 0x65: "€",
-}
-
-
 def _unpack_septets(data: bytes, total_septets: int, start_bit: int) -> list[int]:
     """GSM7 bits are packed LSB-first; total_septets is the count of ALL septets
     (including those occupied by UDH), start_bit is where the text begins."""
     septets = []
-    for i in range(total_septets - start_bit // 7):
+    for i in range(total_septets - -(-start_bit // 7)):
         bitpos = start_bit + i * 7
         byte_i, shift = divmod(bitpos, 8)
         if byte_i >= len(data):
