@@ -9,6 +9,7 @@ from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.dispatch import dispatch_inbound
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu
 from app.modem.pdu import decode_deliver
+from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
 from app.db import queries
 
@@ -53,9 +54,25 @@ class ModemManager:
         while True:
             msg = await self._queue.get()
             try:
-                ref = await self._sender.send_sms(msg.phone, msg.text)
-                await queries.set_message_sent(msg.message_id, ref)
-                logger.info("Sent message %d, modem_ref=%d", msg.message_id, ref)
+                parts = encode_submit(msg.phone, msg.text, ref=msg.message_id % 256)
+                if len(parts) > store.max_sms_parts:
+                    error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
+                    await queries.set_message_failed(msg.message_id, error)
+                    logger.error(
+                        "Rejected message %d (app=%s to=%s): %s",
+                        msg.message_id, msg.app_id or "?", msg.phone, error,
+                    )
+                    continue
+
+                total = len(parts)
+
+                async def on_part_sent(seq: int, ref: int) -> None:
+                    await queries.add_message_part(msg.message_id, ref, seq, total)
+                    if seq == 1:
+                        await queries.set_message_sent(msg.message_id, ref)
+
+                await self._sender.send_sms_pdu(parts, on_part_sent)
+                logger.info("Sent message %d in %d part(s)", msg.message_id, total)
             except ATCommandError as e:
                 await queries.set_message_failed(msg.message_id, str(e))
                 logger.error(
@@ -97,30 +114,38 @@ class ModemManager:
                         await self._inbound_indices.put(index)
 
     async def _handle_cds(self, report) -> None:
-        row = await queries.find_message_by_modem_ref(report.modem_ref)
+        row = await queries.find_message_by_part_ref(report.modem_ref)
         if row is None:
             logger.warning(
-                "+CDS for unknown/already-finalized modem_ref=%d st=%d",
+                "+CDS for unknown/already-finalized part ref=%d st=%d",
                 report.modem_ref, report.status_code,
             )
             return
 
-        late = row['status'] != 'sent'
-        prefix = "late +CDS" if late else "+CDS"
+        message_id = row['message_id']
+        phone = row['phone']
 
         if report.delivered:
-            await queries.set_message_delivered(row['id'])
-            logger.info("%s delivered: id=%d phone=%s", prefix, row['id'], row['phone'])
+            await queries.set_part_delivered(report.modem_ref)
+            if await queries.message_parts_all_delivered(message_id):
+                await queries.set_message_delivered(message_id)
+                logger.info("+CDS delivered: id=%d phone=%s", message_id, phone)
+            else:
+                logger.info(
+                    "+CDS part delivered: id=%d seq=%d (awaiting other parts)",
+                    message_id, row['seq'],
+                )
         else:
+            await queries.set_part_failed(report.modem_ref)
             error = f"Delivery failed, st={report.status_code}"
-            await queries.set_message_delivery_failed(row['id'], error)
+            await queries.set_message_delivery_failed(message_id, error)
             logger.warning(
-                "%s failed: id=%d phone=%s st=%d",
-                prefix, row['id'], row['phone'], report.status_code,
+                "+CDS failed: id=%d phone=%s st=%d",
+                message_id, phone, report.status_code,
             )
             if _is_permanent_status(report.status_code):
                 await queries.record_permanent_fail(
-                    row['phone'], error, store.blacklist_threshold,
+                    phone, error, store.blacklist_threshold,
                 )
 
     async def inbound_loop(self) -> None:
