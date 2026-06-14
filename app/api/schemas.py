@@ -11,7 +11,10 @@ StatusType = Literal['pending', 'sent', 'delivered', 'failed', 'expired']
 
 class SmsSendRequest(BaseModel):
     phone: str
-    text: str = Field(min_length=1, max_length=160)
+    # Multipart is supported (PDU + UDH concatenation). This is a coarse sanity
+    # bound; the precise per-message part limit is enforced server-side by the
+    # max_sms_parts setting, which fails over-long messages with a clear error.
+    text: str = Field(min_length=1, max_length=1000)
 
     @field_validator('phone')
     @classmethod
