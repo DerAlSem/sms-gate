@@ -73,4 +73,3 @@ def test_send_raises_clean_error_on_cms_and_stops():
     msg, seen = asyncio.run(run())
     assert "305" in msg and "invalid text mode parameter" in msg
     assert seen == []
-    return msg

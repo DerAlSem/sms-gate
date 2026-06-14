@@ -133,7 +133,8 @@ class ATSerial:
 
     async def read_sms(self, index: int, timeout: float = 5.0) -> str:
         """Read SMS at index in PDU mode (UDH concat metadata survives).
-        CMGF is restored to text mode before returning — sending stays text."""
+        CMGF is restored to the text-mode default before returning; every
+        send/read path toggles CMGF around its own operation."""
         async with self._lock:
             await self._set_cmgf_unlocked(0)
             try:
@@ -158,7 +159,12 @@ class ATSerial:
         return await self.command('AT+CREG?')
 
     async def init(self) -> None:
-        """Run modem initialization sequence."""
+        """Run modem initialization sequence.
+
+        Sending now goes through PDU mode (send_sms_pdu toggles CMGF=0 per send
+        and bakes SRR/VP into the PDU itself), so CMGF=1 / CSCS / CSMP here only
+        set a sane text-mode default for any manual AT use — they no longer
+        affect outbound SMS. CNMI is what matters: it enables +CDS/+CMTI."""
         commands = [
             'AT',
             'ATE0',
