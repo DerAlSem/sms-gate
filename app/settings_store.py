@@ -34,6 +34,8 @@ SETTINGS_SPEC: list[Spec] = [
          "Notify on delivery failure or when a number is blacklisted"),
     Spec("notify_inbound", "bool", False, "Alerting", False,
          "Notify on every inbound SMS received"),
+    Spec("instance_name", "str", "", "Alerting", False,
+         "Label shown in notifications (blank = server hostname)"),
     Spec("inbound_dispatch", "json", "", "Inbound dispatch", False,
          'JSON list, e.g. [{"prefix":"X","webhook_url":"https://...","bearer":"..."}]'),
     Spec("inbound_dispatch_retries", "int", 3, "Inbound dispatch", False, "POST retries"),
