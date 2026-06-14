@@ -8,13 +8,18 @@ def test_spec_has_all_soft_keys():
     keys = {s.key for s in SETTINGS_SPEC}
     assert keys == {
         "voxlink_enabled", "voxlink_url", "voxlink_timeout", "voxlink_cache_ttl_days",
-        "alert_bot_token", "alert_chat_id", "alert_dedup_window",
+        "alert_bot_token", "alert_chat_id", "alert_dedup_window", "instance_name",
         "notify_system_errors", "notify_send_errors",
         "notify_delivery_errors", "notify_inbound",
         "inbound_dispatch", "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
         "phone_region", "max_sms_parts",
     }
+
+
+def test_instance_name_default_is_blank():
+    from app.settings_store import store
+    assert store.instance_name == ""
 
 
 def test_delivery_timeout_default_is_300():
