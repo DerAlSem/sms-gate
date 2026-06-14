@@ -9,6 +9,8 @@ def test_spec_has_all_soft_keys():
     assert keys == {
         "voxlink_enabled", "voxlink_url", "voxlink_timeout", "voxlink_cache_ttl_days",
         "alert_bot_token", "alert_chat_id", "alert_dedup_window",
+        "notify_system_errors", "notify_send_errors",
+        "notify_delivery_errors", "notify_inbound",
         "inbound_dispatch", "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
         "phone_region", "max_sms_parts",
@@ -138,3 +140,11 @@ def test_max_sms_parts_default_is_6():
     from app.settings_store import SPEC_BY_KEY, store
     assert "max_sms_parts" in SPEC_BY_KEY
     assert store.max_sms_parts == 6
+
+
+def test_notification_toggle_defaults():
+    from app.settings_store import store
+    assert store.notify_system_errors is True
+    assert store.notify_send_errors is False
+    assert store.notify_delivery_errors is False
+    assert store.notify_inbound is False
