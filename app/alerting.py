@@ -10,13 +10,14 @@ _TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_LEN = 3500
 
 
-class TelegramAlertHandler(logging.Handler):
-    """Logging handler that pushes ERROR+ records to a Telegram chat.
+class TelegramNotifier:
+    """Owns Telegram delivery: a daemon worker thread draining a bounded queue,
+    plus windowed dedup. Shared by the ERROR log handler and notify().
 
-    Network I/O runs in a daemon thread (never blocks the asyncio event loop).
-    Identical records (same logger+level+message-template) within `dedup_window`
-    seconds are suppressed and counted; the next send after the window reports
-    how many were suppressed.
+    maybe_send(text, dedup_sig=None): dedup_sig=None always enqueues (used for
+    inbound — each message is wanted); otherwise identical signatures within
+    dedup_window seconds are suppressed and counted, and the next send after the
+    window prepends a "(N duplicates suppressed in window)" note.
     """
 
     def __init__(
@@ -30,12 +31,10 @@ class TelegramAlertHandler(logging.Handler):
         queue_maxsize: int = 100,
         start_worker: bool = True,
     ) -> None:
-        super().__init__(level=logging.ERROR)
         self._token = token
         self._chat_id = chat_id
         self._dedup_window = dedup_window
         self._time = time_fn
-        self._hostname = socket.gethostname()
         self._last_sent: dict = {}
         self._suppressed: dict = {}
         self._lock = threading.Lock()
@@ -44,15 +43,8 @@ class TelegramAlertHandler(logging.Handler):
         if start_worker:
             threading.Thread(target=self._worker, daemon=True).start()
 
-    def _signature(self, record: logging.LogRecord):
-        # Keyed on the message TEMPLATE (record.msg), not the formatted message, so
-        # logger.error("Failed to send message %d", mid) dedups across all ids. Log ERRORs
-        # with %-style args, not pre-formatted f-strings, or every message is unique.
-        return (record.name, record.levelno, record.msg)
-
-    def _should_send(self, record: logging.LogRecord):
-        """Return (send, suppressed_count). Thread-safe."""
-        sig = self._signature(record)
+    def _should_send(self, sig):
+        """Return (send, suppressed_count) for a dedup signature. Thread-safe."""
         now = self._time()
         with self._lock:
             last = self._last_sent.get(sig)
@@ -63,45 +55,28 @@ class TelegramAlertHandler(logging.Handler):
             self._last_sent[sig] = now
             return True, suppressed
 
-    def format_alert(self, record: logging.LogRecord, suppressed: int = 0) -> str:
-        lines = [
-            f"\U0001F534 sms-gate {record.levelname} on {self._hostname}",
-            f"logger: {record.name}",
-            "",
-        ]
-        if suppressed:
-            lines.append(f"({suppressed} duplicates suppressed in window)")
-        lines.append(record.getMessage())
-        if record.exc_info:
-            lines.append("")
-            lines.append(logging.Formatter().formatException(record.exc_info))
-        text = "\n".join(lines)
-        if len(text) > _MAX_LEN:
-            text = text[:_MAX_LEN] + "\n…(truncated)"
-        return text
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            send, suppressed = self._should_send(record)
-            if not send:
-                return
-            text = self.format_alert(record, suppressed)
-            try:
-                self._queue.put_nowait(text)
-            except queue.Full:
-                # Dropped: un-arm the dedup window so this error type is not silenced
-                # for the whole window despite nothing having been delivered.
-                self._rollback(record, suppressed)
-        except Exception:
-            self.handleError(record)
-
-    def _rollback(self, record: logging.LogRecord, suppressed: int) -> None:
-        """Undo the _should_send commit when the alert could not be enqueued."""
-        sig = self._signature(record)
+    def _rollback(self, sig, suppressed):
+        """Undo a _should_send commit when the message could not be enqueued."""
         with self._lock:
             self._last_sent.pop(sig, None)
             if suppressed:
                 self._suppressed[sig] = suppressed
+
+    def maybe_send(self, text: str, dedup_sig=None) -> None:
+        suppressed = 0
+        if dedup_sig is not None:
+            send, suppressed = self._should_send(dedup_sig)
+            if not send:
+                return
+        if suppressed:
+            text = f"({suppressed} duplicates suppressed in window)\n{text}"
+        if len(text) > _MAX_LEN:
+            text = text[:_MAX_LEN] + "\n…(truncated)"
+        try:
+            self._queue.put_nowait(text)
+        except queue.Full:
+            if dedup_sig is not None:
+                self._rollback(dedup_sig, suppressed)
 
     def _worker(self) -> None:
         while True:
@@ -112,7 +87,7 @@ class TelegramAlertHandler(logging.Handler):
             try:
                 self._sender(text)
             except Exception:
-                # Never log here: it would re-enter this handler and recurse.
+                # Never log here: it would re-enter the ERROR handler and recurse.
                 pass
             finally:
                 self._queue.task_done()
@@ -122,7 +97,6 @@ class TelegramAlertHandler(logging.Handler):
             self._queue.put_nowait(None)
         except queue.Full:
             pass
-        super().close()
 
     def _http_send(self, text: str) -> None:
         url = _TELEGRAM_API.format(token=self._token)
@@ -130,34 +104,76 @@ class TelegramAlertHandler(logging.Handler):
             client.post(url, json={"chat_id": self._chat_id, "text": text})
 
 
-_current_handler: "TelegramAlertHandler | None" = None
+class TelegramAlertHandler(logging.Handler):
+    """Thin logging handler: formats ERROR+ records and delegates delivery to a
+    TelegramNotifier, deduping by the record's message TEMPLATE (record.msg) so
+    `logger.error("Failed %d", id)` collapses across ids. This is the
+    "system errors" notification type."""
+
+    def __init__(self, notifier: TelegramNotifier, *, level=logging.ERROR) -> None:
+        super().__init__(level=level)
+        self._notifier = notifier
+        self._hostname = socket.gethostname()
+
+    def _signature(self, record: logging.LogRecord):
+        return (record.name, record.levelno, record.msg)
+
+    def format_alert(self, record: logging.LogRecord) -> str:
+        lines = [
+            f"\U0001F534 sms-gate {record.levelname} on {self._hostname}",
+            f"logger: {record.name}",
+            "",
+            record.getMessage(),
+        ]
+        if record.exc_info:
+            lines.append("")
+            lines.append(logging.Formatter().formatException(record.exc_info))
+        return "\n".join(lines)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            text = self.format_alert(record)
+            self._notifier.maybe_send(text, dedup_sig=self._signature(record))
+        except Exception:
+            self.handleError(record)
+
+
+_notifier: "TelegramNotifier | None" = None
+_handler: "TelegramAlertHandler | None" = None
 
 
 def setup_telegram_alerts(source) -> "TelegramAlertHandler | None":
-    """Install a TelegramAlertHandler on the root logger if creds are configured.
-    `source` exposes .alert_bot_token / .alert_chat_id / .alert_dedup_window (Settings
-    or SettingsStore). Returns the handler, or None when alerting is disabled.
-    Tracks the handler so reconfigure() can replace it."""
-    global _current_handler
+    """Build the module TelegramNotifier whenever token+chat are present (notify()
+    needs it even when system-error alerts are off), and install a
+    TelegramAlertHandler on the root logger only when notify_system_errors is on.
+    Returns the handler, or None when no handler was installed."""
+    global _notifier, _handler
     if not source.alert_bot_token or not source.alert_chat_id:
+        _notifier = None
+        _handler = None
         return None
-    handler = TelegramAlertHandler(
+    _notifier = TelegramNotifier(
         source.alert_bot_token,
         source.alert_chat_id,
         dedup_window=source.alert_dedup_window,
     )
-    logging.getLogger().addHandler(handler)
-    _current_handler = handler
-    logging.getLogger(__name__).info("Telegram alerting enabled")
-    return handler
+    if getattr(source, "notify_system_errors", True):
+        _handler = TelegramAlertHandler(_notifier)
+        logging.getLogger().addHandler(_handler)
+        logging.getLogger(__name__).info("Telegram alerting enabled")
+        return _handler
+    _handler = None
+    return None
 
 
 def reconfigure(source) -> "TelegramAlertHandler | None":
-    """Detach the previously-installed handler (if any), then install a fresh one
-    from `source`. Called after alert settings change in the GUI."""
-    global _current_handler
-    if _current_handler is not None:
-        _current_handler.close()
-        logging.getLogger().removeHandler(_current_handler)
-        _current_handler = None
+    """Detach the previous handler + notifier, then rebuild from `source`.
+    Called after alert settings change in the GUI (any "Alerting" change)."""
+    global _notifier, _handler
+    if _handler is not None:
+        logging.getLogger().removeHandler(_handler)
+        _handler = None
+    if _notifier is not None:
+        _notifier.close()
+        _notifier = None
     return setup_telegram_alerts(source)
