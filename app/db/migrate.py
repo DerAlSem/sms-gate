@@ -60,6 +60,16 @@ async def run_migrations() -> None:
             UNIQUE(phone, ref, total, seq)
         );
 
+        CREATE TABLE IF NOT EXISTS message_parts (
+            modem_ref   INTEGER PRIMARY KEY,
+            message_id  INTEGER NOT NULL REFERENCES messages(id),
+            seq         INTEGER NOT NULL,
+            total       INTEGER NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'sent'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_message_parts_message ON message_parts(message_id);
+
         CREATE TABLE IF NOT EXISTS phone_ranges (
             prefix6      TEXT PRIMARY KEY,
             allocated    INTEGER NOT NULL,

@@ -56,19 +56,57 @@ async def set_message_failed(message_id: int, error: str) -> None:
     await db.commit()
 
 
-async def find_message_by_modem_ref(modem_ref: int) -> aiosqlite.Row | None:
-    """Most recent message for modem_ref still awaiting/expired (eligible for late report)."""
+async def add_message_part(message_id: int, modem_ref: int, seq: int, total: int) -> None:
+    db = await get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO message_parts (modem_ref, message_id, seq, total) "
+        "VALUES (?, ?, ?, ?)",
+        (modem_ref, message_id, seq, total),
+    )
+    await db.commit()
+
+
+async def find_message_by_part_ref(modem_ref: int) -> aiosqlite.Row | None:
+    """Part + owning message for a +CDS ref, only while the message is still
+    awaiting/expired (eligible for a delivery report)."""
     db = await get_db()
     async with db.execute(
         """
-        SELECT id, status, phone FROM messages
-        WHERE modem_ref = ? AND status IN ('sent', 'expired')
-        ORDER BY sent_at DESC
-        LIMIT 1
+        SELECT p.message_id, p.seq, m.status AS msg_status, m.phone
+        FROM message_parts p
+        JOIN messages m ON m.id = p.message_id
+        WHERE p.modem_ref = ? AND m.status IN ('sent', 'expired')
         """,
         (modem_ref,),
     ) as cursor:
         return await cursor.fetchone()
+
+
+async def set_part_delivered(modem_ref: int) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE message_parts SET status = 'delivered' WHERE modem_ref = ?",
+        (modem_ref,),
+    )
+    await db.commit()
+
+
+async def set_part_failed(modem_ref: int) -> None:
+    db = await get_db()
+    await db.execute(
+        "UPDATE message_parts SET status = 'failed' WHERE modem_ref = ?",
+        (modem_ref,),
+    )
+    await db.commit()
+
+
+async def message_parts_all_delivered(message_id: int) -> bool:
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM message_parts WHERE message_id = ? AND status != 'delivered' LIMIT 1",
+        (message_id,),
+    ) as cursor:
+        return await cursor.fetchone() is None
 
 
 async def set_message_delivered(message_id: int) -> None:
