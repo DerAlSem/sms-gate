@@ -125,7 +125,8 @@ class TelegramNotifier:
     def _http_send(self, text: str) -> None:
         url = _TELEGRAM_API.format(token=self._token)
         with httpx.Client(timeout=10.0) as client:
-            client.post(url, json={"chat_id": self._chat_id, "text": text})
+            client.post(url, json={"chat_id": self._chat_id, "text": text,
+                                   "parse_mode": "HTML"})
 
 
 class TelegramAlertHandler(logging.Handler):
@@ -137,21 +138,19 @@ class TelegramAlertHandler(logging.Handler):
     def __init__(self, notifier: TelegramNotifier, *, level=logging.ERROR) -> None:
         super().__init__(level=level)
         self._notifier = notifier
-        self._hostname = socket.gethostname()
 
     def _signature(self, record: logging.LogRecord):
         return (record.name, record.levelno, record.msg)
 
     def format_alert(self, record: logging.LogRecord) -> str:
         lines = [
-            f"\U0001F534 sms-gate {record.levelname} on {self._hostname}",
-            f"logger: {record.name}",
-            "",
-            record.getMessage(),
+            f"<b>🔴 {html.escape(record.levelname)} · {html.escape(_instance_label())}</b>",
+            f"<code>{html.escape(record.name)}</code>",
+            _bounded(record.getMessage(), 500),
         ]
         if record.exc_info:
-            lines.append("")
-            lines.append(logging.Formatter().formatException(record.exc_info))
+            tb = logging.Formatter().formatException(record.exc_info)
+            lines.append(f"<pre>{_bounded(tb, _MAX_LEN - 800)}</pre>")
         return "\n".join(lines)
 
     def emit(self, record: logging.LogRecord) -> None:
@@ -209,6 +208,12 @@ _EVENT_TOGGLE = {
     "inbound": "notify_inbound",
 }
 
+_EVENT_TITLE = {
+    "send_error": "🔴 Send failed",
+    "delivery_error": "🚫 Delivery failed",
+    "inbound": "📨 Inbound",
+}
+
 
 def notify(event_type: str, text: str, dedup_extra=None) -> None:
     """Send a typed operator notification if its toggle is on and a notifier is
@@ -222,6 +227,7 @@ def notify(event_type: str, text: str, dedup_extra=None) -> None:
     toggle = _EVENT_TOGGLE.get(event_type)
     if toggle is None or not store.get(toggle):
         return
-    body = f"\U0001F4E8 sms-gate {event_type} on {socket.gethostname()}\n{text}"
+    head = f"<b>{html.escape(_EVENT_TITLE[event_type])} · {html.escape(_instance_label())}</b>"
+    body = f"{head}\n{_bounded(text, _BODY_MAX)}"
     dedup_sig = (event_type, dedup_extra) if dedup_extra is not None else None
     _notifier.maybe_send(body, dedup_sig=dedup_sig)
