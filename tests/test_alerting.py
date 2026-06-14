@@ -218,3 +218,37 @@ def test_reconfigure_blank_creds_detaches_handler():
     _reconfigure(_settings(token="t", chat_id="c"))
     _reconfigure(_settings())
     assert _attached_handlers() == []
+
+
+# --- helpers: _instance_label / _bounded ---
+import html as _html
+import socket as _socket
+from app.alerting import _instance_label, _bounded
+from app.settings_store import store as _store
+
+
+def test_instance_label_falls_back_to_hostname(monkeypatch):
+    monkeypatch.setitem(_store._cache, "instance_name", "")
+    assert _instance_label() == _socket.gethostname()
+
+
+def test_instance_label_uses_setting(monkeypatch):
+    monkeypatch.setitem(_store._cache, "instance_name", "sms.deralsem.ru")
+    assert _instance_label() == "sms.deralsem.ru"
+
+
+def test_bounded_short_text_just_escapes():
+    assert _bounded("a <b> & c", 100) == "a &lt;b&gt; &amp; c"
+
+
+def test_bounded_truncates_long_text_within_budget():
+    out = _bounded("z" * 500, 100)
+    assert len(out) <= 101          # budget + the trailing ellipsis char
+    assert out.endswith("…")
+
+
+def test_bounded_never_splits_an_entity():
+    out = _bounded("&" * 200, 50)
+    assert "&amp;" in out
+    assert not out.rstrip("…").endswith("&am")
+    assert not out.rstrip("…").endswith("&")

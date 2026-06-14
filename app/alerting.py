@@ -1,3 +1,4 @@
+import html
 import logging
 import queue
 import socket
@@ -8,6 +9,29 @@ import httpx
 
 _TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 _MAX_LEN = 3500
+_BODY_MAX = _MAX_LEN - 200   # headroom for the title line + tags
+
+
+def _instance_label() -> str:
+    """Label for notifications: the configured instance_name, or the hostname."""
+    from app.settings_store import store
+    return store.instance_name or socket.gethostname()
+
+
+def _bounded(plain: str, budget: int) -> str:
+    """HTML-escape `plain`, bounding the escaped result to `budget` chars without
+    ever splitting a generated entity. Truncation happens on the plain prefix
+    (escape is applied to a whole prefix), so callers can safely wrap the result
+    in tags — the tags stay whole."""
+    esc = html.escape(plain)
+    if len(esc) <= budget:
+        return esc
+    plain = plain[:budget]
+    esc = html.escape(plain)
+    while len(esc) > budget and plain:
+        plain = plain[:-1]
+        esc = html.escape(plain)
+    return esc + "…"
 
 
 class TelegramNotifier:
