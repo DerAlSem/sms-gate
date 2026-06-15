@@ -98,6 +98,51 @@ def describe_at_error(response: str) -> str:
     return response.strip()
 
 
+# GSM 03.40 §9.2.3.15 TP-Status. Ranges give the class; the table names common codes.
+_TP_STATUS = {
+    0x00: "received by recipient",
+    0x01: "forwarded, delivery not confirmed",
+    0x02: "replaced",
+    0x20: "congestion",
+    0x21: "recipient busy",
+    0x22: "no response from recipient",
+    0x23: "service rejected",
+    0x24: "quality of service not available",
+    0x25: "error in recipient",
+    0x40: "remote procedure error",
+    0x41: "incompatible destination",
+    0x42: "connection rejected by recipient",
+    0x43: "not obtainable",
+    0x44: "quality of service not available",
+    0x45: "no interworking available",
+    0x46: "message validity period expired",
+    0x47: "message deleted by sender",
+    0x48: "message deleted by SMSC admin",
+    0x49: "message does not exist",
+    0x60: "congestion",
+    0x61: "recipient busy",
+    0x62: "no response from recipient",
+    0x63: "service rejected",
+    0x64: "quality of service not available",
+    0x65: "error in recipient",
+}
+
+
+def _tp_status_class(code: int) -> str:
+    if 0x00 <= code <= 0x1F:
+        return "completed"
+    if 0x40 <= code <= 0x5F:
+        return "permanent"
+    return "temporary"   # 0x20–0x3F and 0x60–0x7F
+
+
+def describe_tp_status(code: int) -> str:
+    """Human-readable GSM 03.40 TP-Status, e.g. 'service rejected (temporary, st=99)'.
+    Unknown codes fall back to 'delivery failed' with the range-derived class."""
+    desc = _TP_STATUS.get(code, "delivery failed")
+    return f"{desc} ({_tp_status_class(code)}, st={code})"
+
+
 def parse_cmgs_ref(response: str) -> int | None:
     """Extract message reference from +CMGS: <ref> response."""
     match = re.search(r'\+CMGS:\s*(\d+)', response)
