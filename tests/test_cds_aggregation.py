@@ -47,7 +47,9 @@ def test_one_permanent_fail_part_fails_message():
             m = _manager()
             await m._handle_cds(DeliveryReport(modem_ref=101, delivered=False, status_code=0x41))
             row = await queries.get_message(mid, "app1")
-            return row["status"]
+            return row["status"], row["error"]
         finally:
             await close_db()
-    assert asyncio.run(run()) == "failed"
+    status, error = asyncio.run(run())
+    assert status == "failed"
+    assert "incompatible destination" in error

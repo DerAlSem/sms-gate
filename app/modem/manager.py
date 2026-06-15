@@ -7,7 +7,7 @@ import serial_asyncio
 from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.dispatch import dispatch_inbound
-from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu
+from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
@@ -144,18 +144,18 @@ class ModemManager:
                 )
         else:
             await queries.set_part_failed(report.modem_ref)
-            error = f"Delivery failed, st={report.status_code}"
+            desc = describe_tp_status(report.status_code)
+            error = f"Delivery failed: {desc}"
             await queries.set_message_delivery_failed(message_id, error)
             logger.warning(
-                "+CDS failed: id=%d phone=%s st=%d",
-                message_id, phone, report.status_code,
+                "+CDS failed: id=%d phone=%s %s",
+                message_id, phone, desc,
             )
             if _is_permanent_status(report.status_code):
                 await queries.record_permanent_fail(
                     phone, error, store.blacklist_threshold,
                 )
-            notify("delivery_error",
-                   f"{phone} (id {message_id}): st={report.status_code}",
+            notify("delivery_error", f"{phone} (id {message_id}): {desc}",
                    dedup_extra=report.status_code)
 
     async def inbound_loop(self) -> None:

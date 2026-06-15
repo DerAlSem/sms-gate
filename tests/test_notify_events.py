@@ -114,7 +114,7 @@ def test_delivery_failure_notifies(monkeypatch):
     asyncio.run(run())
     sent = [(a[0], a[1]) for a, k in calls if a[0] == "delivery_error"]
     assert sent, "expected a delivery_error notification"
-    assert sent[0][1] == "+79991234567 (id 1): st=65"
+    assert sent[0][1] == "+79991234567 (id 1): incompatible destination (permanent, st=65)"
 
 
 def test_inbound_notifies(monkeypatch):
