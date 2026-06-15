@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-06-15
+
+### Changed
+- Delivery-failure status is now human-readable everywhere it surfaces
+  (Telegram notification, `messages.error` / admin, blacklist `last_error`):
+  e.g. `service rejected (temporary, st=99)` instead of a bare `st=99`.
+  Decoded via the new `describe_tp_status` (GSM 03.40 TP-Status).
+
 ## [0.3.1] - 2026-06-14
 
 ### Changed
