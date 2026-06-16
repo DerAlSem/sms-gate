@@ -169,6 +169,8 @@ pytest
 [`docs/deployment.md`](docs/deployment.md) и [`deploy/`](deploy/). Пути в этих
 файлах (`/opt/sms-gate`, порты, хостнеймы) — примеры, адаптируйте их под свой хост.
 
+> Документация `README`, `docs/api.md`, `docs/deployment.md` — двуязычная; при правках обновляйте обе секции (RU сверху — основная).
+
 ## License
 
 [MIT](LICENSE)
@@ -179,6 +181,8 @@ pytest
 ## English
 
 > 🇬🇧 Russian version above ↑
+
+> README, `docs/api.md`, `docs/deployment.md` are bilingual — when editing, update both the RU (top, canonical) and EN sections.
 
 [![CI](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml)
 
