@@ -3,6 +3,24 @@ import aiosqlite
 from app.db.connection import get_db
 
 
+async def add_notify_ref(message_id: int, phone: str) -> None:
+    db = await get_db()
+    await db.execute(
+        "INSERT OR REPLACE INTO notify_refs (message_id, phone) VALUES (?, ?)",
+        (message_id, phone),
+    )
+    await db.commit()
+
+
+async def find_notify_ref(message_id: int) -> str | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT phone FROM notify_refs WHERE message_id = ?", (message_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return row["phone"] if row else None
+
+
 async def get_app_by_token(token: str) -> aiosqlite.Row | None:
     db = await get_db()
     async with db.execute(
