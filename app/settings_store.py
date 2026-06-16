@@ -35,7 +35,7 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("notify_inbound", "bool", False, "Alerting", False,
          "Notify on every inbound SMS received"),
     Spec("telegram_replies_enabled", "bool", False, "Alerting", False,
-         "Allow replying to a notification in Telegram to send an SMS back"),
+         "Allow replying to a notification in Telegram to send an SMS back (takes effect after restart)"),
     Spec("instance_name", "str", "", "Alerting", False,
          "Label shown in notifications (blank = server hostname)"),
     Spec("inbound_dispatch", "json", "", "Inbound dispatch", False,
