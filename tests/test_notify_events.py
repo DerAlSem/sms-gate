@@ -7,7 +7,7 @@ class FakeNotifier:
     def __init__(self):
         self.calls = []
 
-    def maybe_send(self, text, dedup_sig=None):
+    def maybe_send(self, text, dedup_sig=None, phone=None):
         self.calls.append((text, dedup_sig))
 
 
@@ -51,6 +51,19 @@ def test_notify_delivery_error_dedup_sig(monkeypatch):
     fake = _install(monkeypatch, notify_delivery_errors=True)
     notify("delivery_error", "fail", dedup_extra=65)
     assert fake.calls[0][1] == ("delivery_error", 65)
+
+
+def test_notify_passes_phone_to_maybe_send(monkeypatch):
+    captured = {}
+
+    class FakeNotifierP:
+        def maybe_send(self, text, dedup_sig=None, phone=None):
+            captured["phone"] = phone
+
+    monkeypatch.setattr(alerting, "_notifier", FakeNotifierP())
+    monkeypatch.setitem(store._cache, "notify_inbound", "true")
+    notify("inbound", "+7999: hi", phone="+7999")
+    assert captured["phone"] == "+7999"
 
 
 # --- manager call sites ---
