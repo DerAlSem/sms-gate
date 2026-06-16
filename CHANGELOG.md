@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] - 2026-06-16
+
+### Added
+- Reply-to-SMS over Telegram: reply to a notification post in the channel and the
+  gateway sends that text back as an SMS to the number the notification was about.
+  Uses long polling (`getUpdates`, CGNAT-friendly), a `notify_refs` message_id→phone
+  map, and a `telegram_replies_enabled` toggle (default off; takes effect after
+  restart). Replies are accepted only from the configured `alert_chat_id`.
+
 ## [0.3.2] - 2026-06-15
 
 ### Changed
