@@ -1,5 +1,249 @@
 # SMS Gate — Deployment Guide
 
+> 🇷🇺 Документация на русском. **English version below ↓** — [jump to English](#english)
+
+<!-- Russian translation: SAME headings/sections/order as the English original -->
+
+## Configuration
+
+Ключи начальной загрузки / инфраструктуры (последовательные порты, `DB_PATH`, `HOST`, `PORT`, `ADMIN_USER`,
+`ADMIN_PASSWORD`) читаются из `.env` при запуске — полный список см. в `.env.example`.
+
+Настройки времени выполнения — учётные данные voxlink, оповещения Telegram, правила маршрутизации входящих,
+порог блокировки и таймаут доставки — управляются в админ-интерфейсе по адресу
+`/admin/settings` и хранятся в базе данных. Токены клиентских приложений создаются и отзываются
+по адресу `/admin/apps`. Перезапуск при изменении этих значений не требуется.
+
+---
+
+## Server Prerequisites
+
+```bash
+# On the server (Ubuntu 24)
+sudo apt update
+sudo apt install python3.12 python3.12-venv git
+
+# Add user to dialout group (for serial port access)
+sudo usermod -aG dialout $USER
+# Re-login after this!
+```
+
+---
+
+## 1. Setup Bare Git Repo on Server
+
+```bash
+# On the server
+sudo mkdir -p /opt/sms-gate.git
+sudo mkdir -p /opt/sms-gate
+sudo chown $USER:$USER /opt/sms-gate.git /opt/sms-gate
+
+git init --bare /opt/sms-gate.git
+```
+
+---
+
+## 2. Create Post-Receive Hook
+
+```bash
+cat > /opt/sms-gate.git/hooks/post-receive << 'EOF'
+#!/bin/bash
+TARGET="/opt/sms-gate"
+GIT_DIR="/opt/sms-gate.git"
+
+echo ">>> Deploying to $TARGET"
+git --work-tree=$TARGET --git-dir=$GIT_DIR checkout -f
+
+cd $TARGET
+
+# Recreate venv if requirements changed
+if [ ! -d "venv" ] || [ requirements.txt -nt venv/timestamp ]; then
+    echo ">>> Updating venv..."
+    python3.12 -m venv venv
+    venv/bin/pip install -r requirements.txt
+    touch venv/timestamp
+fi
+
+echo ">>> Restarting service..."
+sudo systemctl restart sms-gate
+
+echo ">>> Done!"
+EOF
+
+chmod +x /opt/sms-gate.git/hooks/post-receive
+```
+
+---
+
+## 3. Add Git Remote on Laptop
+
+```bash
+# On the laptop, in your local project directory/
+git init
+git remote add deploy ssh://user@server-ip/opt/sms-gate.git
+
+# To deploy:
+git add -A
+git commit -m "initial"
+git push deploy main
+```
+
+---
+
+## 4. Systemd Service
+
+Скопируйте `deploy/sms-gate.service` на сервер:
+
+```bash
+sudo cp /opt/sms-gate/deploy/sms-gate.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable sms-gate
+sudo systemctl start sms-gate
+```
+
+Unit-файлы теперь лежат в репозитории в каталоге `deploy/` (источник истины):
+`deploy/sms-gate.service` и `deploy/sms-gate-notify@.service`.
+
+Установите или обновите их (однократно, и снова всякий раз, когда unit-файлы меняются —
+хук `post-receive` НЕ копирует их):
+
+```bash
+sudo cp /opt/sms-gate/deploy/sms-gate.service /etc/systemd/system/
+sudo cp /opt/sms-gate/deploy/sms-gate-notify@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart sms-gate
+```
+
+Главный unit ограничивает перезапуски (`StartLimitBurst=5` / `StartLimitIntervalSec=300`): после
+5 быстрых сбоев systemd прекращает циклические попытки и переходит в состояние `failed`, что запускает
+`OnFailure=sms-gate-notify@sms-gate.service` → одно оповещение в Telegram с трассировкой.
+
+---
+
+## 5. Create .env on Server
+
+`.env` содержит только ключи **начальной загрузки / инфраструктуры** — значения, которые нужны процессу до
+открытия базы данных. Всё остальное (учётные данные voxlink, оповещения Telegram, правила маршрутизации
+входящих, порог блокировки, таймаут доставки, регион телефона) настраивается во время выполнения
+через админ-интерфейс (`/admin/settings`) и хранится в базе данных. Токены клиентских приложений
+управляются по адресу `/admin/apps`. Перезапуск при изменении этих значений не требуется.
+
+```bash
+# On server — this file is NOT in git
+cat > /opt/sms-gate/.env << 'EOF'
+# Modem / serial
+SERIAL_SEND_PORT=/dev/ttyUSB2
+SERIAL_READ_PORT=/dev/ttyUSB3
+SERIAL_BAUDRATE=115200
+
+# Storage
+DB_PATH=/opt/sms-gate/data/sms.db
+
+# Server
+HOST=0.0.0.0
+PORT=80
+
+# Admin UI (HTTP Basic) — change before exposing the service
+ADMIN_USER=admin
+ADMIN_PASSWORD=change-me
+EOF
+```
+
+> **Устаревшие переменные окружения:** если `ALERT_BOT_TOKEN`, `ALERT_CHAT_ID` или другие ключи
+> мягкой конфигурации присутствуют в `.env` от более старой установки, они автоматически
+> переносятся в БД при первом запуске и далее игнорируются. Вы можете удалить их из `.env`, как только
+> сервис успешно запустится.
+
+### Telegram Alerting
+
+Учётные данные Telegram-бота настраиваются в админ-интерфейсе, а не в `.env`.
+После запуска сервиса перейдите в `/admin/settings` и заполните
+`ALERT_BOT_TOKEN` и `ALERT_CHAT_ID`. Перезапуск не требуется.
+
+Протестируйте уведомитель целиком, ничего не сломав:
+
+```bash
+# Dry run: prints the payload, sends nothing.
+sudo ALERT_DRY_RUN=1 /opt/sms-gate/deploy/notify-telegram.sh sms-gate.service
+
+# Real send via the systemd path:
+sudo systemctl start sms-gate-notify@sms-gate.service
+```
+
+Сообщение в Telegram должно прийти в течение нескольких секунд.
+
+**Замечание о тайминге:** оповещение systemd о падении срабатывает, когда unit прекращает попытки перезапуска —
+после ~5 сбоев (`StartLimitBurst`), так что ожидайте его примерно через 40–50 с после начала цикла падений, а не при
+первом падении. Процесс, который падает медленно (с интервалом дольше 300-секундного окна burst между
+падениями), не записав ERROR, может не вызвать оповещение systemd; обработчик ERROR на уровне приложения
+покрывает всё, что логируется перед смертью.
+
+---
+
+## 6. Sudoers for Restart (no password)
+
+Хуку post-receive нужен `sudo systemctl restart` без пароля:
+
+```bash
+sudo visudo -f /etc/sudoers.d/sms-gate
+```
+
+Добавьте:
+```
+smsgate ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart sms-gate, /usr/bin/systemctl stop sms-gate, /usr/bin/systemctl start sms-gate
+```
+
+---
+
+## Daily Workflow
+
+```bash
+# On laptop — edit code, then:
+git add -A && git commit -m "fix delivery parsing"
+git push deploy main
+# Server auto-deploys and restarts
+```
+
+## Checking Logs
+
+```bash
+# On server
+sudo journalctl -u sms-gate -f          # Live logs
+sudo journalctl -u sms-gate --since today  # Today's logs
+sudo systemctl status sms-gate          # Quick status
+```
+
+---
+
+## Serial Port Permissions
+
+Если сервис не может открыть последовательный порт:
+
+```bash
+# Check which port the modem uses
+ls -la /dev/ttyUSB*
+
+# The service runs as user 'smsgate' in group 'dialout'
+# Make sure the port is owned by dialout:
+ls -la /dev/ttyUSB2
+# Should show: crw-rw---- 1 root dialout ...
+
+# If not, create a udev rule:
+sudo cat > /etc/udev/rules.d/99-quectel.rules << 'EOF'
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", MODE="0660", GROUP="dialout"
+EOF
+sudo udevadm control --reload-rules
+```
+
+---
+
+<a id="english"></a>
+## English
+
+> 🇬🇧 Russian version above ↑
+
+# SMS Gate — Deployment Guide
+
 ## Configuration
 
 Bootstrap / infrastructure keys (serial ports, `DB_PATH`, `HOST`, `PORT`, `ADMIN_USER`,
