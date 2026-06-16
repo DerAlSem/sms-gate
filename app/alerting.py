@@ -1,3 +1,4 @@
+import asyncio
 import html
 import logging
 import queue
@@ -64,6 +65,10 @@ class TelegramNotifier:
         self._lock = threading.Lock()
         self._queue: queue.Queue = queue.Queue(maxsize=queue_maxsize)
         self._sender = sender or self._http_send
+        try:
+            self._loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._loop = None
         if start_worker:
             threading.Thread(target=self._worker, daemon=True).start()
 
@@ -86,7 +91,19 @@ class TelegramNotifier:
             if suppressed:
                 self._suppressed[sig] = suppressed
 
-    def maybe_send(self, text: str, dedup_sig=None) -> None:
+    def _record(self, message_id, phone) -> None:
+        """Persist a Telegram message_id -> phone mapping for reply→SMS. Runs from
+        the worker thread; schedules the async DB write on the captured event loop."""
+        if self._loop is None or message_id is None:
+            return
+        from app.db import queries
+        try:
+            asyncio.run_coroutine_threadsafe(
+                queries.add_notify_ref(message_id, phone), self._loop)
+        except Exception:
+            pass
+
+    def maybe_send(self, text: str, dedup_sig=None, phone=None) -> None:
         suppressed = 0
         if dedup_sig is not None:
             send, suppressed = self._should_send(dedup_sig)
@@ -96,20 +113,24 @@ class TelegramNotifier:
             text = f"({suppressed} duplicates suppressed in window)\n{text}"
         if len(text) > _MAX_LEN:
             text = text[:_MAX_LEN] + "\n…(truncated)"
+        item = (text, phone) if phone is not None else text
         try:
-            self._queue.put_nowait(text)
+            self._queue.put_nowait(item)
         except queue.Full:
             if dedup_sig is not None:
                 self._rollback(dedup_sig, suppressed)
 
     def _worker(self) -> None:
         while True:
-            text = self._queue.get()
-            if text is None:               # stop sentinel
+            item = self._queue.get()
+            if item is None:               # stop sentinel
                 self._queue.task_done()
                 break
+            text, phone = item if isinstance(item, tuple) else (item, None)
             try:
-                self._sender(text)
+                message_id = self._sender(text)
+                if phone is not None:
+                    self._record(message_id, phone)
             except Exception:
                 # Never log here: it would re-enter the ERROR handler and recurse.
                 pass
@@ -122,11 +143,17 @@ class TelegramNotifier:
         except queue.Full:
             pass
 
-    def _http_send(self, text: str) -> None:
+    def _http_send(self, text: str):
         url = _TELEGRAM_API.format(token=self._token)
         with httpx.Client(timeout=10.0) as client:
-            client.post(url, json={"chat_id": self._chat_id, "text": text,
-                                   "parse_mode": "HTML"})
+            resp = client.post(url, json={"chat_id": self._chat_id, "text": text,
+                                          "parse_mode": "HTML"})
+        if resp.status_code != 200:
+            return None
+        try:
+            return resp.json()["result"]["message_id"]
+        except (ValueError, KeyError, TypeError):
+            return None
 
 
 class TelegramAlertHandler(logging.Handler):
@@ -215,7 +242,7 @@ _EVENT_TITLE = {
 }
 
 
-def notify(event_type: str, text: str, dedup_extra=None) -> None:
+def notify(event_type: str, text: str, dedup_extra=None, phone=None) -> None:
     """Send a typed operator notification if its toggle is on and a notifier is
     configured. event_type in {'send_error','delivery_error','inbound'}.
     Error types dedup on (event_type, dedup_extra); inbound (dedup_extra None) is
@@ -230,4 +257,4 @@ def notify(event_type: str, text: str, dedup_extra=None) -> None:
     head = f"<b>{html.escape(_EVENT_TITLE[event_type])} · {html.escape(_instance_label())}</b>"
     body = f"{head}\n{_bounded(text, _BODY_MAX)}"
     dedup_sig = (event_type, dedup_extra) if dedup_extra is not None else None
-    _notifier.maybe_send(body, dedup_sig=dedup_sig)
+    _notifier.maybe_send(body, dedup_sig=dedup_sig, phone=phone)

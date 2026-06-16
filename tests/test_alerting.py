@@ -256,21 +256,64 @@ def test_bounded_never_splits_an_entity():
 
 
 # --- HTML send + handler format ---
-def test_http_send_sets_parse_mode_html(monkeypatch):
+def test_http_send_sets_parse_mode_and_returns_message_id(monkeypatch):
     captured = {}
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return {"ok": True, "result": {"message_id": 42}}
 
     class FakeClient:
         def __enter__(self): return self
         def __exit__(self, *a): return False
         def post(self, url, json=None):
             captured.update(json)
+            return FakeResp()
 
     import app.alerting as alerting
     monkeypatch.setattr(alerting.httpx, "Client", lambda *a, **k: FakeClient())
     n = make_notifier()
-    n._http_send("hi")
+    mid = n._http_send("hi")
     assert captured["parse_mode"] == "HTML"
     assert captured["text"] == "hi"
+    assert mid == 42
+
+
+def test_http_send_returns_none_on_error_status(monkeypatch):
+    class FakeResp:
+        status_code = 400
+        def json(self):
+            return {"ok": False}
+
+    class FakeClient:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def post(self, url, json=None):
+            return FakeResp()
+
+    import app.alerting as alerting
+    monkeypatch.setattr(alerting.httpx, "Client", lambda *a, **k: FakeClient())
+    n = make_notifier()
+    assert n._http_send("hi") is None
+
+
+def test_maybe_send_with_phone_enqueues_tuple():
+    n = make_notifier()
+    n.maybe_send("body", dedup_sig=None, phone="+79991234567")
+    assert n._queue.get_nowait() == ("body", "+79991234567")
+
+
+def test_maybe_send_without_phone_enqueues_text():
+    n = make_notifier()
+    n.maybe_send("body", dedup_sig=None)
+    assert n._queue.get_nowait() == "body"
+
+
+def test_record_is_noop_without_loop():
+    n = make_notifier()        # start_worker=False -> _loop is None
+    assert n._loop is None
+    n._record(1, "+79991234567")   # must not raise
 
 
 def test_handler_format_is_html_with_bold_title(monkeypatch):
