@@ -70,6 +70,12 @@ async def run_migrations() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_message_parts_message ON message_parts(message_id);
 
+        CREATE TABLE IF NOT EXISTS notify_refs (
+            message_id  INTEGER PRIMARY KEY,
+            phone       TEXT NOT NULL,
+            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS phone_ranges (
             prefix6      TEXT PRIMARY KEY,
             allocated    INTEGER NOT NULL,
@@ -97,6 +103,13 @@ async def run_migrations() -> None:
         """
         INSERT OR IGNORE INTO apps (id, token, description, is_active)
         VALUES ('admin', 'admin-internal-' || hex(randomblob(8)), 'Admin UI replies', 0)
+        """
+    )
+
+    await db.execute(
+        """
+        INSERT OR IGNORE INTO apps (id, token, description, is_active)
+        VALUES ('telegram', 'telegram-internal-' || hex(randomblob(8)), 'Telegram replies', 0)
         """
     )
 
