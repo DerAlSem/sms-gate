@@ -6,9 +6,7 @@
 
 [![CI](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml)
 
-**Свой SMS-шлюз, который не сжигает бюджет.** Отправляйте одноразовые коды через
-дешёвый USB-модем LTE и обычную SIM-карту — вместо того чтобы платить агрегатору за
-каждое сообщение.
+**Свой собственный SMS-шлюз за 100 рублей в месяц.** Вам понадобится дешёвый USB-модем LTE и обычная SIM-карта с подходящим тарифом.
 
 Коммерческие SMS-провайдеры берут **~5–80 ₽ _за сообщение_** — терпимо на десятках,
 разорительно на объёме. Обычная SIM-карта с безлимитом на SMS стоит фиксированные
@@ -16,16 +14,17 @@
 цена за сообщение стремится к нулю _(а экономия → ∞ 😉)_. Ваши номера и история
 сообщений остаются на **вашем собственном сервере** — без посредников.
 
-Небольшой HTTP-шлюз для своего сервера: отправляет и принимает SMS через
+Небольшой HTTP-шлюз для сервера: отправляет и принимает SMS через
 LTE-модем (собран под **Quectel EP06E / EM06**, но должен работать с любым
 AT-модемом, у которого есть последовательные порты). Клиентские приложения шлют
 POST с номером и текстом; шлюз отправляет сообщение через AT-команды, отслеживает
 отчёты о доставке, хранит историю в SQLite и предоставляет небольшой веб-интерфейс
 администратора.
 
-Он создавался, чтобы рассылать одноразовые коды авторизации от нескольких ботов
-через одну SIM-карту, поэтому намеренно прост: один процесс, один файл SQLite,
-supervision через systemd. Без внешнего брокера и без обязательного контейнера.
+Изначально создавался, чтобы рассылать одноразовые коды авторизации от нескольких
+ботов, когда Telegram падал, — а сейчас через Telegram авторизоваться и вовсе нельзя.
+Очень простая архитектура: один процесс, один файл SQLite, supervision через systemd.
+Без внешнего брокера и без обязательного контейнера.
 
 ## Features
 
@@ -186,9 +185,8 @@ pytest
 
 [![CI](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/DerAlSem/sms-gate/actions/workflows/ci.yml)
 
-**Self-hosted SMS that doesn't burn your budget.** Send your one-time codes through a
-cheap USB LTE modem and a regular SIM instead of renting delivery from an aggregator per
-message.
+**Your own SMS gateway for ~100 ₽ a month.** All you need is a cheap USB LTE modem and a
+regular SIM on a plan with enough SMS.
 
 Commercial SMS providers charge **~5–80 ₽ _per message_** — fine for dozens, brutal at
 volume. A consumer SIM with an unlimited-SMS plan is a flat **~100 ₽/month**. Send 100
@@ -202,9 +200,10 @@ serial ports should work). Client apps POST a phone number and text; the gateway
 sends the message via AT commands, tracks delivery reports, stores history in
 SQLite, and exposes a small admin web UI.
 
-It was built to send one-time authorization codes from several bots through a
-single SIM, so it is deliberately simple: one process, one SQLite file, systemd
-for supervision. No external broker, no container required.
+It was originally built to send one-time authorization codes from several bots when
+Telegram kept going down — and now logging in via Telegram isn't possible at all. The
+architecture is deliberately simple: one process, one SQLite file, systemd for
+supervision. No external broker, no container required.
 
 ## Features
 
