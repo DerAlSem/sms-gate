@@ -65,7 +65,7 @@ class ModemManager:
                     )
                     notify("send_error",
                            f"{msg.phone} (id {msg.message_id}): {error}",
-                           dedup_extra="too_long")
+                           dedup_extra="too_long", phone=msg.phone)
                     continue
 
                 total = len(parts)
@@ -85,7 +85,7 @@ class ModemManager:
                 )
                 notify("send_error",
                        f"{msg.phone} (id {msg.message_id}): {e}",
-                       dedup_extra=str(e))
+                       dedup_extra=str(e), phone=msg.phone)
             finally:
                 self._queue.task_done()
 
@@ -156,7 +156,7 @@ class ModemManager:
                     phone, error, store.blacklist_threshold,
                 )
             notify("delivery_error", f"{phone} (id {message_id}): {desc}",
-                   dedup_extra=report.status_code)
+                   dedup_extra=report.status_code, phone=phone)
 
     async def inbound_loop(self) -> None:
         """Read SMS at indexes posted from reader_loop, persist, then delete from SIM."""
@@ -197,7 +197,7 @@ class ModemManager:
     def _spawn_dispatch(self, phone: str, text: str) -> None:
         """Fire-and-forget dispatch with a strong reference: the event loop holds
         tasks weakly, and a sleeping retry-ladder could be collected by the GC."""
-        notify("inbound", f"{phone}: {text}")
+        notify("inbound", f"{phone}: {text}", phone=phone)
         task = asyncio.create_task(dispatch_inbound(phone, text))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)

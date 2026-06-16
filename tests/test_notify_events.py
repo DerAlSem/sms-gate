@@ -108,6 +108,7 @@ def test_send_failure_notifies_send_error(monkeypatch):
     sent = [(a[0], a[1]) for a, k in calls if a[0] == "send_error"]
     assert sent, "expected a send_error notification"
     assert sent[0][1].startswith("+79991234567 (id ")
+    assert [k.get("phone") for a, k in calls if a[0] == "send_error"] == ["+79991234567"]
 
 
 def test_delivery_failure_notifies(monkeypatch):
@@ -128,6 +129,7 @@ def test_delivery_failure_notifies(monkeypatch):
     sent = [(a[0], a[1]) for a, k in calls if a[0] == "delivery_error"]
     assert sent, "expected a delivery_error notification"
     assert sent[0][1] == "+79991234567 (id 1): incompatible destination (permanent, st=65)"
+    assert [k.get("phone") for a, k in calls if a[0] == "delivery_error"] == ["+79991234567"]
 
 
 def test_inbound_notifies(monkeypatch):
@@ -144,6 +146,7 @@ def test_inbound_notifies(monkeypatch):
     sent = [(a[0], a[1]) for a, k in calls if a[0] == "inbound"]
     assert sent, "expected an inbound notification"
     assert sent[0][1] == "+79991234567: hello"
+    assert [k.get("phone") for a, k in calls if a[0] == "inbound"] == ["+79991234567"]
 
 
 def test_notify_inbound_html_format(monkeypatch):
