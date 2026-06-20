@@ -3,6 +3,22 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-06-20
+
+### Added
+- **Modem diagnostics** — `/admin/modem` (page, in the nav) and `/admin/modem.json`
+  show live registration, signal, operator and SMSC (`CEREG/CREG/CGREG/CSQ/COPS/CSCA`
+  plus Quectel `QNWINFO/QCSQ`), collected under the existing serial lock with an `AT`
+  liveness short-circuit.
+- **Modem registration watchdog** — a loop checks `AT+CEREG?` every 60 s and
+  auto-recovers a modem that lost the network: soft recovery (`CFUN=4→1` + `COPS=0`)
+  after 3 failures, escalating to a hard reset (`CFUN=1,1`) + service restart, gated to
+  at most one hard reset per 30 min. Toggle `modem_watchdog_enabled` (default on).
+
+### Changed
+- `describe_at_error` now names `+CMS ERROR 350` and gives a generic
+  "network/SMSC rejection" description for other unrecognised CMS 300-511 codes.
+
 ## [0.4.0] - 2026-06-16
 
 ### Added
