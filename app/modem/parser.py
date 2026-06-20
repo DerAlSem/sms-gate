@@ -60,6 +60,7 @@ _CMS_ERRORS = {
     330: "SMSC address unknown",
     331: "no network service",
     332: "network timeout",
+    350: "network/SMSC rejected the message",
     500: "unknown error",
 }
 _CME_ERRORS = {
@@ -88,6 +89,10 @@ def describe_at_error(response: str) -> str:
         kind, code = m.group(1), int(m.group(2))
         table = _CMS_ERRORS if kind == 'CMS' else _CME_ERRORS
         desc = table.get(code)
+        if desc is None and kind == 'CMS' and 300 <= code <= 511:
+            # 300-511 is the +CMS operator/SMSC error band; vendor-specific codes
+            # (e.g. 350) aren't all in the table — still classify rather than show bare.
+            desc = "network/SMSC rejection (operator-specific)"
         label = f"+{kind} ERROR {code}"
         return f"{label} ({desc})" if desc else label
     m = _AT_ERROR_TXT.search(response)
