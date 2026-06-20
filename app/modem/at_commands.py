@@ -3,6 +3,7 @@ import logging
 import serial_asyncio
 
 from app.modem.parser import describe_at_error
+from app.modem.diag import decode_reg
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,28 @@ class ATSerial:
     async def check_registration(self) -> str:
         """Query network registration status (AT+CREG?)."""
         return await self.command('AT+CREG?')
+
+    async def registration_ok(self) -> bool:
+        """True if the modem is EPS-registered (CEREG stat 1=home or 5=roaming)."""
+        try:
+            resp = await self.command("AT+CEREG?", timeout=4.0)
+        except ATCommandError:
+            return False
+        return decode_reg(resp).get("stat") in (1, 5)
+
+    async def soft_recover(self) -> None:
+        """RF off/on + auto operator reselect — re-attaches without a modem reboot."""
+        await self.command("AT+CFUN=4", timeout=5.0)
+        await self.command("AT+CFUN=1", timeout=10.0)
+        await self.command("AT+COPS=0", timeout=15.0)
+
+    async def hard_reset(self) -> None:
+        """Full modem reset (CFUN=1,1). The port drops as the modem reboots, so the
+        command may not return OK — swallow that."""
+        try:
+            await self.command("AT+CFUN=1,1", timeout=5.0)
+        except ATCommandError:
+            pass
 
     async def init(self) -> None:
         """Run modem initialization sequence.
