@@ -46,6 +46,8 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     Spec("max_sms_parts", "int", 6, "Sending", False,
          "Max parts for a multipart SMS; longer text fails before sending"),
+    Spec("modem_watchdog_enabled", "bool", True, "Sending", False,
+         "Auto-recover the modem when it loses network registration"),
     Spec("phone_region", "region", "RU", "Sending", False,
          "ISO country code for phone validation (e.g. RU, US, GB)"),
 ]

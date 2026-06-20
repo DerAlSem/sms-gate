@@ -13,8 +13,13 @@ def test_spec_has_all_soft_keys():
         "notify_delivery_errors", "notify_inbound", "telegram_replies_enabled",
         "inbound_dispatch", "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
-        "phone_region", "max_sms_parts",
+        "phone_region", "max_sms_parts", "modem_watchdog_enabled",
     }
+
+
+def test_modem_watchdog_default_is_true():
+    from app.settings_store import store
+    assert store.modem_watchdog_enabled is True
 
 
 def test_instance_name_default_is_blank():
