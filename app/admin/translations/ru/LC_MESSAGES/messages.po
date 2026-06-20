@@ -210,3 +210,21 @@ msgstr "не задано"
 
 msgid "error"
 msgstr "ошибка"
+
+msgid "Modem"
+msgstr "Модем"
+
+msgid "Modem diagnostics"
+msgstr "Диагностика модема"
+
+msgid "Refresh"
+msgstr "Обновить"
+
+msgid "Parameter"
+msgstr "Параметр"
+
+msgid "Value"
+msgstr "Значение"
+
+msgid "Raw"
+msgstr "Raw"
