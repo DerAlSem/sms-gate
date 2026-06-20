@@ -1,9 +1,13 @@
 import asyncio
 import logging
+import os
+import time
 from dataclasses import dataclass
+from pathlib import Path
 
 import serial_asyncio
 
+from app.config import settings
 from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.dispatch import dispatch_inbound
@@ -24,6 +28,33 @@ logger = logging.getLogger(__name__)
 def _is_permanent_status(code: int) -> bool:
     """GSM 03.40 TP-Status: 0x40–0x5F = permanent error (SC stops trying)."""
     return 0x40 <= code <= 0x5F
+
+
+_WD_INTERVAL = 60
+_WD_FAIL_THRESHOLD = 3
+_WD_HARD_RESET_COOLDOWN = 1800
+_WD_HARD_RESET_SETTLE = 40
+
+
+def _hard_reset_marker() -> Path:
+    return Path(settings.db_path).parent / "modem_hard_reset_at"
+
+
+def _hard_reset_on_cooldown() -> bool:
+    p = _hard_reset_marker()
+    if not p.exists():
+        return False
+    try:
+        return (time.time() - float(p.read_text().strip())) < _WD_HARD_RESET_COOLDOWN
+    except (ValueError, OSError):
+        return False
+
+
+def _mark_hard_reset() -> None:
+    try:
+        _hard_reset_marker().write_text(str(time.time()))
+    except OSError:
+        pass
 
 
 _DIAG_QUERIES = [
@@ -55,6 +86,8 @@ class ModemManager:
         self._queue: asyncio.Queue[OutgoingMessage] = asyncio.Queue()
         self._inbound_indices: asyncio.Queue[int] = asyncio.Queue()
         self._bg_tasks: set[asyncio.Task] = set()
+        self._wd_fails = 0
+        self._wd_soft_tried = False
 
     async def connect(self) -> None:
         await self._sender.connect()
@@ -260,6 +293,50 @@ class ModemManager:
                 logger.info("Keepalive AT+CREG? -> %s", response.strip())
             except ATCommandError as e:
                 logger.warning("Keepalive AT+CREG? failed: %s", e)
+
+    async def _watchdog_step(self) -> str:
+        if await self._sender.registration_ok():
+            if self._wd_fails or self._wd_soft_tried:
+                logger.info("Modem re-registered")
+            self._wd_fails = 0
+            self._wd_soft_tried = False
+            return "ok"
+        self._wd_fails += 1
+        if self._wd_fails < _WD_FAIL_THRESHOLD:
+            return "wait"
+        if not self._wd_soft_tried:
+            logger.warning("Modem not registered (%dx) — soft recovery", self._wd_fails)
+            await self._sender.soft_recover()
+            self._wd_soft_tried = True
+            self._wd_fails = 0
+            return "soft"
+        if _hard_reset_on_cooldown():
+            logger.error("Modem still not registered; hard reset on cooldown — check antenna/operator")
+            await self._sender.soft_recover()
+            self._wd_fails = 0
+            return "cooldown"
+        logger.error("Modem unrecoverable; hard reset + service restart")
+        _mark_hard_reset()
+        await self._sender.hard_reset()
+        return "hard"
+
+    async def watchdog_loop(self) -> None:
+        """Periodically ensure the modem is registered; soft/hard recover if not."""
+        logger.info("Modem watchdog started")
+        while True:
+            await asyncio.sleep(_WD_INTERVAL)
+            if not store.modem_watchdog_enabled:
+                self._wd_fails = 0
+                self._wd_soft_tried = False
+                continue
+            try:
+                action = await self._watchdog_step()
+            except Exception:
+                logger.exception("Watchdog step failed")
+                continue
+            if action == "hard":
+                await asyncio.sleep(_WD_HARD_RESET_SETTLE)
+                os._exit(1)
 
     async def collect_diagnostics(self) -> list[dict]:
         """Read-only modem health snapshot via the existing serial lock. An AT
