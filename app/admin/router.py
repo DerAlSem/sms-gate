@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 
 import aiosqlite
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app.admin.i18n import render, resolve_locale, SUPPORTED
@@ -317,6 +317,17 @@ async def admin_settings_save(request: Request, _: str = Depends(admin_auth)):
             "countries": country_choices(resolve_locale(request))})
     await store.set_many(changes)          # one transaction + section hooks (alerting reconfigure)
     return RedirectResponse(url="/admin/settings", status_code=303)
+
+
+@router.get("/modem")
+async def admin_modem(request: Request, _: str = Depends(admin_auth)):
+    diag = await request.app.state.modem.collect_diagnostics()
+    return render("modem.html", request, {"diag": diag, "active": "modem"})
+
+
+@router.get("/modem.json")
+async def admin_modem_json(request: Request, _: str = Depends(admin_auth)):
+    return JSONResponse(await request.app.state.modem.collect_diagnostics())
 
 
 @router.get("/lang/{code}")

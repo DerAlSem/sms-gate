@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>{% trans %}Modem diagnostics{% endtrans %}</h2>
+<p><a href="/admin/modem">{% trans %}Refresh{% endtrans %}</a></p>
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Parameter{% endtrans %}</th>
+      <th>{% trans %}Value{% endtrans %}</th>
+      <th>{% trans %}Raw{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for item in diag %}
+    <tr>
+      <td>{{ item.key }} <code>{{ item.cmd }}</code></td>
+      <td>
+        {% if item.error %}<span class="err">{{ item.error }}</span>
+        {% elif item.parsed %}
+          {% for k, v in item.parsed.items() %}{{ k }}={{ v }} {% endfor %}
+        {% else %}—{% endif %}
+      </td>
+      <td><code>{{ item.raw or "" }}</code></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
