@@ -11,6 +11,10 @@ from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_p
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
+from app.modem.diag import (
+    decode_cpin, decode_reg, decode_csq, decode_cops,
+    decode_csca, decode_qnwinfo, decode_qcsq,
+)
 from app.db import queries
 from app.alerting import notify
 
@@ -20,6 +24,19 @@ logger = logging.getLogger(__name__)
 def _is_permanent_status(code: int) -> bool:
     """GSM 03.40 TP-Status: 0x40–0x5F = permanent error (SC stops trying)."""
     return 0x40 <= code <= 0x5F
+
+
+_DIAG_QUERIES = [
+    ("sim",        "AT+CPIN?",   decode_cpin),
+    ("eps_reg",    "AT+CEREG?",  decode_reg),
+    ("cs_reg",     "AT+CREG?",   decode_reg),
+    ("ps_reg",     "AT+CGREG?",  decode_reg),
+    ("signal",     "AT+CSQ",     decode_csq),
+    ("operator",   "AT+COPS?",   decode_cops),
+    ("smsc",       "AT+CSCA?",   decode_csca),
+    ("net_info",   "AT+QNWINFO", decode_qnwinfo),
+    ("signal_lte", "AT+QCSQ",    decode_qcsq),
+]
 
 
 @dataclass
@@ -243,6 +260,30 @@ class ModemManager:
                 logger.info("Keepalive AT+CREG? -> %s", response.strip())
             except ATCommandError as e:
                 logger.warning("Keepalive AT+CREG? failed: %s", e)
+
+    async def collect_diagnostics(self) -> list[dict]:
+        """Read-only modem health snapshot via the existing serial lock. An AT
+        liveness pre-check short-circuits a wedged modem; one failing query never
+        breaks the sweep. Never raises."""
+        try:
+            await self._sender.command("AT", timeout=2.0)
+        except Exception as e:
+            return [{"key": "alive", "cmd": "AT",
+                     "error": f"modem not responding: {type(e).__name__}: {e}"}]
+
+        out: list[dict] = []
+        for key, cmd, decoder in _DIAG_QUERIES:
+            item = {"key": key, "cmd": cmd}
+            try:
+                raw = await self._sender.command(cmd, timeout=2.0)
+                item["raw"] = raw.strip()
+                item["parsed"] = decoder(raw)
+            except ATCommandError as e:
+                item["error"] = str(e)
+            except Exception as e:
+                item["error"] = f"{type(e).__name__}: {e}"
+            out.append(item)
+        return out
 
     async def expire_loop(self) -> None:
         """Periodically mark stale 'sent' messages as 'expired'.
