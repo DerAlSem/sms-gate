@@ -30,7 +30,7 @@
 </div>
 
 <form class="reply-form" method="post" action="/admin/dialogs/{{ phone }}/reply">
-  <input type="text" name="text" maxlength="160" required placeholder="{{ _('Reply (up to 160 chars)') }}">
+  <input type="text" name="text" required placeholder="{{ _('Reply') }}">
   <button type="submit">{% trans %}Send{% endtrans %}</button>
 </form>
 {% endblock %}
