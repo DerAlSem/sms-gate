@@ -17,6 +17,7 @@
     <tr>
       <th>ID</th><th>{% trans %}Phone{% endtrans %}</th><th>{% trans %}Operator{% endtrans %}</th><th>{% trans %}Text{% endtrans %}</th><th>{% trans %}Status{% endtrans %}</th>
       <th>{% trans %}Created{% endtrans %}</th><th>{% trans %}Sent{% endtrans %}</th><th>{% trans %}Delivered{% endtrans %}</th><th>{% trans %}Error{% endtrans %}</th>
+      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -33,9 +34,20 @@
       <td>{{ m.sent_at | msk }}</td>
       <td>{{ m.delivered_at | msk }}</td>
       <td class="text-truncate muted" title="{{ m.error or '' }}">{{ m.error or '' }}</td>
+      <td>
+        {% if m.status in ['failed', 'expired'] %}
+          <form method="post" action="/admin/messages/{{ m.id }}/resend"
+                onsubmit="return confirm('{{ _('Resend') }} #{{ m.id }} → {{ m.phone }}?');">
+            <input type="hidden" name="page" value="{{ page }}">
+            <input type="hidden" name="status" value="{{ status }}">
+            <input type="hidden" name="phone" value="{{ phone }}">
+            <button type="submit">{% trans %}Resend{% endtrans %}</button>
+          </form>
+        {% endif %}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="9" class="muted">{% trans %}No records{% endtrans %}</td></tr>
+    <tr><td colspan="10" class="muted">{% trans %}No records{% endtrans %}</td></tr>
   {% endfor %}
   </tbody>
 </table>

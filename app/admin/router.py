@@ -1,6 +1,6 @@
 import logging
 import secrets
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 import aiosqlite
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -68,6 +68,46 @@ async def admin_messages(
             "active": "messages",
         },
     )
+
+
+@router.post("/messages/{message_id}/resend")
+async def admin_message_resend(
+    request: Request,
+    message_id: int,
+    page: int = Form(1),
+    status: str = Form(""),
+    phone: str = Form(""),
+    _: str = Depends(admin_auth),
+) -> RedirectResponse:
+    """Queue a fresh copy of a failed/expired message.
+
+    A new row is created rather than the old one revived: the failed attempt stays
+    in the history (its error is the evidence of what went wrong), and delivery
+    reports key off `modem_ref`, which a re-send necessarily changes.
+    """
+    row = await queries.get_message_any(message_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if row["status"] not in ("failed", "expired"):
+        raise HTTPException(
+            status_code=422, detail="Only failed or expired messages can be resent"
+        )
+    if await queries.is_phone_blocked(row["phone"]):
+        raise HTTPException(status_code=422, detail="Number is blacklisted")
+
+    new_id = await queries.create_message(row["app_id"], row["phone"], row["text"])
+    await request.app.state.modem.enqueue(
+        new_id, row["phone"], row["text"], row["app_id"]
+    )
+    logger.info(
+        "admin resend: source=%d new=%d phone=%s", message_id, new_id, row["phone"]
+    )
+
+    params = {k: v for k, v in (("status", status), ("phone", phone)) if v}
+    if page > 1:
+        params["page"] = str(page)
+    query = ("?" + urlencode(params)) if params else ""
+    return RedirectResponse(url=f"/admin/messages{query}", status_code=303)
 
 
 @router.get("/blacklist")
@@ -146,7 +186,9 @@ async def admin_dialog_detail(
 async def admin_dialog_reply(
     request: Request,
     phone: str,
-    text: str = Form(..., min_length=1, max_length=160),
+    # No upper bound: long texts are split into parts by the sender (UCS2 for
+    # Cyrillic, 70 chars per part), so 160 was an artificial GSM-7 single-part cap.
+    text: str = Form(..., min_length=1),
     _: str = Depends(admin_auth),
 ) -> RedirectResponse:
     from app.lookup.operator import record_operator

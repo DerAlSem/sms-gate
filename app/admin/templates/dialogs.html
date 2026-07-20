@@ -16,7 +16,7 @@
       <td><code>{{ r.phone }}</code></td>
       <td>{{ r.in_n }}</td>
       <td>{{ r.out_n }}</td>
-      <td>{{ r.last_ts }}</td>
+      <td>{{ r.last_ts | msk }}</td>
       <td><a href="/admin/dialogs/{{ r.phone }}">{% trans %}open →{% endtrans %}</a></td>
     </tr>
   {% else %}

@@ -52,6 +52,17 @@ async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
+async def get_message_any(message_id: int) -> aiosqlite.Row | None:
+    """Message by id without the app_id scope — for the admin UI, which is not
+    bound to a single application (unlike the public API's get_message)."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, phone, text, status FROM messages WHERE id = ?",
+        (message_id,),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
 async def set_message_sent(message_id: int, modem_ref: int) -> None:
     db = await get_db()
     await db.execute(

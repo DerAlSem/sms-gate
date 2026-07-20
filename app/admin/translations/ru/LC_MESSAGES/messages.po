@@ -112,8 +112,11 @@ msgstr "Все диалоги"
 msgid "No messages"
 msgstr "Нет сообщений"
 
-msgid "Reply (up to 160 chars)"
-msgstr "Ответ (до 160 симв.)"
+msgid "Reply"
+msgstr "Ответ"
+
+msgid "Resend"
+msgstr "Повторить"
 
 msgid "Send"
 msgstr "Отправить"
