@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-07-23
+
+### Added
+- **Resend** button on failed/expired rows in the outbox. It queues a *new*
+  message rather than reviving the old one: the failed attempt keeps its error as
+  history, and delivery reports key off `modem_ref`, which a re-send changes anyway.
+
+### Fixed
+- **Inbound dispatch silently dropped messages when `webhook_url` held stray
+  whitespace.** A leading space made httpx raise `UnsupportedProtocol` before the
+  request left the box — three retry warnings in the log and nothing else. Routes
+  are now validated on save (each entry must be an object with a non-empty `prefix`
+  and an `http://`/`https://` `webhook_url`), stripped before storing, and stripped
+  again on read so rows written earlier start routing without a manual edit.
+- The dialogs list rendered last activity as raw UTC while every other page shows
+  Moscow time; it now goes through the same `msk` filter.
+
+### Changed
+- Dropped the 160-char cap on the dialog reply form — an artificial GSM-7
+  single-part limit. The sender already splits long texts into parts (UCS2 for
+  Cyrillic) and the manager rejects anything over `max_sms_parts` with a clear error.
+
 ## [0.5.0] - 2026-06-20
 
 ### Added

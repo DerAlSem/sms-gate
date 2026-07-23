@@ -6,3 +6,4 @@ data/sms.db*
 venv/
 *.mo
 docs/superpowers/
+AGENTS.md
