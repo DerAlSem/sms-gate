@@ -233,12 +233,14 @@ _EVENT_TOGGLE = {
     "send_error": "notify_send_errors",
     "delivery_error": "notify_delivery_errors",
     "inbound": "notify_inbound",
+    "dispatch_error": "notify_dispatch_errors",
 }
 
 _EVENT_TITLE = {
     "send_error": "🔴 Send failed",
     "delivery_error": "🚫 Delivery failed",
     "inbound": "📨 Inbound",
+    "dispatch_error": "📡 Webhook failed",
 }
 
 

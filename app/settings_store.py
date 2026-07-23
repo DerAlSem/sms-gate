@@ -34,6 +34,8 @@ SETTINGS_SPEC: list[Spec] = [
          "Notify on delivery failure or when a number is blacklisted"),
     Spec("notify_inbound", "bool", False, "Alerting", False,
          "Notify on every inbound SMS received"),
+    Spec("notify_dispatch_errors", "bool", True, "Alerting", False,
+         "Notify when an inbound webhook fails — otherwise the drop is silent"),
     Spec("telegram_replies_enabled", "bool", False, "Alerting", False,
          "Allow replying to a notification in Telegram to send an SMS back (takes effect after restart)"),
     Spec("instance_name", "str", "", "Alerting", False,
