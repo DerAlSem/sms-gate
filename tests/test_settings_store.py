@@ -1,7 +1,9 @@
 # tests/test_settings_store.py
+import json
+
 import pytest
 
-from app.settings_store import SETTINGS_SPEC, cast_value, validate_raw
+from app.settings_store import SETTINGS_SPEC, cast_value, normalize_raw, validate_raw
 
 
 def test_spec_has_all_soft_keys():
@@ -48,11 +50,51 @@ def test_validate_rejects_bad_int():
 
 def test_validate_inbound_dispatch_requires_json_list():
     validate_raw("json", "")
-    validate_raw("json", '[{"prefix":"X","webhook_url":"u"}]')
+    validate_raw("json", '[{"prefix":"X","webhook_url":"https://x.test/hook"}]')
     with pytest.raises(ValueError):
         validate_raw("json", "{not json")
     with pytest.raises(ValueError):
         validate_raw("json", '{"a":1}')
+
+
+def test_validate_inbound_dispatch_requires_absolute_url():
+    """A url without a scheme never leaves httpx — reject it at save time."""
+    with pytest.raises(ValueError):
+        validate_raw("json", '[{"prefix":"X","webhook_url":"x.test/hook"}]')
+    with pytest.raises(ValueError):
+        validate_raw("json", '[{"prefix":"X","webhook_url":""}]')
+    with pytest.raises(ValueError):
+        validate_raw("json", '[{"prefix":"","webhook_url":"https://x.test/hook"}]')
+    with pytest.raises(ValueError):
+        validate_raw("json", '["not-an-object"]')
+
+
+def test_validate_inbound_dispatch_tolerates_pasted_whitespace():
+    """Surrounding whitespace is normalized away, not an error."""
+    validate_raw("json", '[{"prefix":" X ","webhook_url":" https://x.test/hook "}]')
+
+
+def test_normalize_inbound_dispatch_strips_route_fields():
+    raw = '[{"prefix":" gmp ","webhook_url":" https://x.test/hook\\n","bearer":" tok "}]'
+    assert json.loads(normalize_raw("json", raw)) == [
+        {"prefix": "gmp", "webhook_url": "https://x.test/hook", "bearer": "tok"}
+    ]
+
+
+def test_normalize_leaves_other_types_alone():
+    assert normalize_raw("int", " 7 ") == " 7 "
+    assert normalize_raw("json", "") == ""
+
+
+def test_inbound_dispatch_parsed_strips_stored_whitespace():
+    """Rows written before validation existed must still route (leading-space url bug)."""
+    store = SettingsStore()
+    store._cache["inbound_dispatch"] = (
+        '[{"prefix":"GMP","webhook_url":" https://x.test/hook ","bearer":" tok "}]'
+    )
+    assert store.inbound_dispatch_parsed == [
+        {"prefix": "GMP", "webhook_url": "https://x.test/hook", "bearer": "tok"}
+    ]
 
 import asyncio
 

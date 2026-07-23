@@ -92,6 +92,22 @@ def validate_raw(type_: str, raw: str) -> None:
             raise ValueError(f"invalid JSON: {exc}") from exc
         if not isinstance(data, list):
             raise ValueError("inbound_dispatch must be a JSON list")
+        for i, item in enumerate(data):
+            if not isinstance(item, dict):
+                raise ValueError(f"route #{i + 1}: must be an object")
+            prefix = str(item.get("prefix", "")).strip()
+            url = str(item.get("webhook_url", "")).strip()
+            if not prefix:
+                raise ValueError(f"route #{i + 1}: prefix is required")
+            if not url:
+                raise ValueError(f"route #{i + 1} ({prefix}): webhook_url is required")
+            # A url without a scheme (or with stray whitespace that hides one) is rejected
+            # by httpx at POST time — i.e. silently, hours later. Catch it at save time.
+            if not url.startswith(("http://", "https://")):
+                raise ValueError(
+                    f"route #{i + 1} ({prefix}): webhook_url must start with "
+                    f"http:// or https:// — got {url!r}"
+                )
         return
     if type_ == "region":
         import phonenumbers
@@ -99,6 +115,33 @@ def validate_raw(type_: str, raw: str) -> None:
             raise ValueError(f"unknown region: {raw!r}")
         return
     return
+
+
+_ROUTE_FIELDS = ("prefix", "webhook_url", "bearer")
+
+
+def _clean_route(item: dict) -> dict:
+    """Strip surrounding whitespace off every route field (pasted values carry it)."""
+    cleaned = dict(item)
+    for field in _ROUTE_FIELDS:
+        if field in cleaned:
+            cleaned[field] = str(cleaned[field]).strip()
+    return cleaned
+
+
+def normalize_raw(type_: str, raw: str) -> str:
+    """Canonical stored form of `raw`. Only "json" (inbound_dispatch) is rewritten:
+    route fields are stripped, so a pasted " https://…" cannot reach httpx."""
+    if type_ != "json" or raw.strip() == "":
+        return raw
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw                              # validate_raw reports it
+    if not isinstance(data, list):
+        return raw
+    cleaned = [_clean_route(i) if isinstance(i, dict) else i for i in data]
+    return json.dumps(cleaned, ensure_ascii=False)
 
 
 def to_str(type_: str, value) -> str:
@@ -154,15 +197,17 @@ class SettingsStore:
             return []
         if not isinstance(data, list):
             return []
-        return [
-            item for item in data
-            if isinstance(item, dict) and item.get("prefix") and item.get("webhook_url")
-        ]
+        # Strip on read as well as on write: rows stored before normalization existed
+        # may still carry a stray space that would break the POST.
+        routes = [_clean_route(item) for item in data if isinstance(item, dict)]
+        return [r for r in routes if r.get("prefix") and r.get("webhook_url")]
 
     async def set_many(self, changes: dict[str, str]) -> None:
-        for key, raw in changes.items():
+        for key in changes:
             if key not in SPEC_BY_KEY:
                 raise ValueError(f"unknown setting: {key}")
+        changes = {k: normalize_raw(SPEC_BY_KEY[k].type, v) for k, v in changes.items()}
+        for key, raw in changes.items():
             validate_raw(SPEC_BY_KEY[key].type, raw)
         db = await get_db()
         try:
