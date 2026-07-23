@@ -3,6 +3,20 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.0] - 2026-07-23
+
+### Added
+- **Alert on a failed inbound webhook.** A dispatch that never reached the receiving
+  application was visible only as WARNING lines in `journalctl` — the SMS is stored and
+  the modem is fine, so nothing raised the alarm. A `dispatch_error` notification now
+  carries the prefix, url, phone, text and the reason for the last failure, deduplicated
+  on the url so a dead endpoint alerts once per window rather than once per message.
+  Toggle `notify_dispatch_errors`, default **on**. An SMS with no matching prefix stays
+  silent — that is not a gateway fault.
+- First `openspec/` change in the repo: `add-delivery-dispatch` specifies the outbound
+  counterpart of `inbound_dispatch` (push message status to the owning app's webhook,
+  routed by `messages.app_id`). Spec only — not implemented yet.
+
 ## [0.6.0] - 2026-07-23
 
 ### Added
