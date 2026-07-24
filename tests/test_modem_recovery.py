@@ -34,9 +34,15 @@ def test_registration_ok_false_not_registered_and_error():
 
 
 def test_soft_recover_sequence():
+    """RF off/on, reselect — and re-subscribe to URCs.
+
+    The CNMI re-issue is not decoration: if a firmware drops the subscription across a
+    CFUN cycle, the gateway stops receiving +CDS and +CMTI silently. Every message would
+    expire and every inbound SMS would be missed, with no health check the wiser."""
+    from app.modem.at_commands import CNMI_SUBSCRIBE
     rec = Rec()
     asyncio.run(_serial(rec).soft_recover())
-    assert rec.calls == ["AT+CFUN=4", "AT+CFUN=1", "AT+COPS=0"]
+    assert rec.calls == ["AT+CFUN=4", "AT+CFUN=1", "AT+COPS=0", CNMI_SUBSCRIBE]
 
 
 def test_hard_reset_issues_cfun_and_swallows_error():

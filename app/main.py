@@ -57,9 +57,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         asyncio.create_task(modem_manager.parts_flush_loop()),
     ]
 
-    if store.modem_watchdog_enabled:
-        tasks.append(asyncio.create_task(modem_manager.watchdog_loop()))
-        logger.info("Modem watchdog enabled")
+    # Always started: the loop checks the setting on every tick, so toggling it in the
+    # admin takes effect without a restart — and its disabled branch is what discards
+    # stall evidence nothing would otherwise act on.
+    tasks.append(asyncio.create_task(modem_manager.watchdog_loop()))
+    logger.info("Modem watchdog task started (enabled=%s)", store.modem_watchdog_enabled)
 
     if store.telegram_replies_enabled and store.alert_bot_token and store.alert_chat_id:
         from app.telegram_poll import telegram_poll_loop

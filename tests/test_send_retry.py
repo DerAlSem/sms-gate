@@ -323,3 +323,46 @@ def test_a_failing_scheduler_tick_does_not_stop_the_scheduler(monkeypatch):
     alive, calls = _run(body)
     assert alive
     assert calls > 1, "the loop must keep ticking after a failure"
+
+
+def test_the_whole_ladder_fits_inside_the_deadline(monkeypatch):
+    """The ladder and the deadline are derived from the same setting, so they must not
+    disagree — the first version's margin was too thin and the fourth attempt fell
+    outside it whenever attempts ran slowly, silently making a four-attempt budget a
+    three-attempt one."""
+    _Recorder(monkeypatch)
+
+    async def body():
+        m = _manager(_failing("no response from modem (timeout)"))
+        mid = await queries.create_message("app1", PHONE, "hi")
+        msg = OutgoingMessage(mid, PHONE, "hi", "app1")
+        db = await get_db()
+        deadline = m._retry_deadline()
+        backoff = store.send_retry_backoff_parsed
+        elapsed = 0
+        hops = []
+
+        for delay in backoff:
+            await m._send_one(msg)                     # this attempt runs and fails
+            # Wall clock between two attempts: the failing exchange, the scheduled
+            # delay, and one scheduler tick of granularity.
+            elapsed += 37 + delay + 15
+            await db.execute(
+                "UPDATE messages SET created_at = datetime('now', ? || ' seconds'), "
+                "next_attempt_at = datetime('now', '-1 seconds') WHERE id = ?",
+                (f"-{elapsed}", mid),
+            )
+            await db.commit()
+            due = [r["id"] for r in await queries.due_pending_messages(deadline)]
+            stale = [r["id"] for r in await queries.stale_pending_messages(deadline)]
+            hops.append((mid in due, mid in stale))
+
+        await m._send_one(msg)                         # the final attempt
+        return hops, await _state(mid), m._stall_exhausted
+
+    hops, state, exhausted = _run(body)
+    assert hops == [(True, False)] * 3, (
+        f"every retry must still be due and not yet swept, got {hops}")
+    assert state["attempts"] == 4, "the ladder must actually run four attempts"
+    assert state["status"] == "failed"
+    assert exhausted is True, "an exhausted ladder is evidence the modem cannot send"

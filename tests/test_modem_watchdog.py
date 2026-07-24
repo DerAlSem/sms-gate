@@ -1,7 +1,18 @@
 import asyncio
 
+import pytest
+
 import app.modem.manager as mgr
 from app.modem.manager import ModemManager
+
+
+@pytest.fixture(autouse=True)
+def _fast_recovery(monkeypatch):
+    """Recovery now waits for the modem to reattach before letting sends resume; these
+    tests are about the ladder, not that wait."""
+    monkeypatch.setattr(mgr, "_RECOVERY_SETTLE", 0.1)
+    monkeypatch.setattr(mgr, "_RECOVERY_POLL", 0.005)
+    monkeypatch.setattr(mgr, "_RECOVERY_TIMEOUT", 2.0)
 
 
 class FakeSender:

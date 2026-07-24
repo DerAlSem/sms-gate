@@ -7,6 +7,10 @@ from app.modem.diag import decode_reg
 
 logger = logging.getLogger(__name__)
 
+# The URC subscription that makes the modem report delivery reports (+CDS) and inbound
+# messages (+CMTI). Named because it has to survive every path that resets the modem.
+CNMI_SUBSCRIBE = 'AT+CNMI=2,1,2,1,0'
+
 CTRL_Z = b'\x1a'
 ESC = b'\x1b'
 PROMPT = b'> '
@@ -254,10 +258,18 @@ class ATSerial:
         return decode_reg(resp).get("stat") in (1, 5)
 
     async def soft_recover(self) -> None:
-        """RF off/on + auto operator reselect — re-attaches without a modem reboot."""
+        """RF off/on + auto operator reselect — re-attaches without a modem reboot.
+
+        `CNMI` is re-applied afterwards on purpose. Whether a firmware keeps the URC
+        subscription across a `CFUN` cycle is not something we can assume, and losing it
+        is silent and total: no `+CDS` means every message expires, no `+CMTI` means
+        every inbound SMS is missed, and no health check would notice. Re-issuing it is
+        idempotent and costs one command.
+        """
         await self.command("AT+CFUN=4", timeout=5.0)
         await self.command("AT+CFUN=1", timeout=10.0)
         await self.command("AT+COPS=0", timeout=15.0)
+        await self.command(CNMI_SUBSCRIBE, timeout=5.0)
 
     async def hard_reset(self) -> None:
         """Full modem reset (CFUN=1,1). The port drops as the modem reboots, so the
@@ -279,7 +291,7 @@ class ATSerial:
             'ATE0',
             'AT+CMGF=1',
             'AT+CSCS="GSM"',
-            'AT+CNMI=2,1,2,1,0',
+            CNMI_SUBSCRIBE,
             'AT+CSMP=49,167,0,0',
         ]
         for cmd in commands:

@@ -60,6 +60,9 @@ SETTINGS_SPEC: list[Spec] = [
          "delays sets the number of retries (blank = no retry, one attempt only)"),
     Spec("modem_watchdog_enabled", "bool", True, "Sending", False,
          "Auto-recover the modem when it loses network registration"),
+    Spec("send_stall_recovery_enabled", "bool", True, "Sending", False,
+         "Also treat repeated send failures as a reason to recover the modem "
+         "(off = only lost registration triggers recovery)"),
     Spec("phone_region", "region", "RU", "Sending", False,
          "ISO country code for phone validation (e.g. RU, US, GB)"),
 ]
