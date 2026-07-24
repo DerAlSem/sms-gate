@@ -3,6 +3,24 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.1] - 2026-07-24
+
+### Documentation
+- Delivery dispatch shipped in 0.8.0 but only `docs/api.md` and
+  `docs/delivery-webhook.md` described it — the rest of the docs still read as if the
+  gateway only ever *received* webhooks and never sent them. Now covered in:
+  - **README** (RU+EN) — a Features entry for outbound status webhooks (what the body
+    carries, that routing is by `app_id`, that `GET /sms/{id}` stays authoritative), and
+    Configuration names both `inbound_dispatch` and `delivery_dispatch`.
+  - **`docs/architecture.md`** — the system diagram never showed the gateway calling out
+    at all; adds that arrow plus a *Webhook Dispatch* component explaining why the two
+    directions route differently (an inbound SMS carries no application identity, so it
+    routes by prefix; an outbound message already knows its owner, so it routes by
+    `app_id`).
+  - **`docs/database.md`** — `messages.resent_from` was missing from the schema.
+  - **`docs/project-structure.md`** — `delivery_dispatch.py` and `webhook.py` were absent,
+    and the send/report flow did not mention the status push.
+
 ## [0.8.0] - 2026-07-24
 
 ### Added
