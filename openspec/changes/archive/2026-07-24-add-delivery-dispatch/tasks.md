@@ -1,10 +1,10 @@
 ## 1. Confirm the contract
 
-- [ ] 1.1 Tell GM+ that the body carries two fields beyond the agreed
+- [x] 1.1 Tell GM+ that the body carries two fields beyond the agreed
       `{id, status, error}`: `occurred_at` (always) and `resent_from` (re-sends only).
       Both are additive — confirm their receiver ignores unknown fields, and that
       `pending` is never pushed.
-- [ ] 1.2 Capture one real request/response pair against
+- [x] 1.2 Capture one real request/response pair against
       `https://example.com/webhooks/sms-gate/delivery` (a valid bearer, a throwaway id) so
       the body shape is verified against the live receiver, not assumed.
 
@@ -68,10 +68,10 @@
 
 - [x] 6.1 Full suite green; `README` gains a `delivery_dispatch` section next to
       `inbound_dispatch`, documenting the body including both extra fields.
-- [ ] 6.2 Configure the GM+ route in prod admin settings, send one real SMS to a test
+- [x] 6.2 Configure the GM+ route in prod admin settings, send one real SMS to a test
       number, and confirm GM+ receives `sent` then `delivered`.
-- [ ] 6.3 Verify the re-send path on prod: fail a message, re-send it from the admin,
+- [x] 6.3 Verify the re-send path on prod: fail a message, re-send it from the admin,
       confirm GM+ receives `resent_from` pointing at the original.
-- [ ] 6.4 CHANGELOG entry, minor version bump, tag, `git ship`.
+- [x] 6.4 CHANGELOG entry, minor version bump, tag, `git ship`.
 - [ ] 6.5 Archive this change (`openspec archive add-delivery-dispatch`) so
       `openspec/specs/delivery-dispatch/` becomes the living spec.
