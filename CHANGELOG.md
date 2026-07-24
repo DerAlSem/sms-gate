@@ -3,6 +3,55 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-07-24
+
+### Added
+- **Automatic retry of transient send failures.** A message that never reached the modem
+  — no response, a prompt timeout, `+CMS` 38/41/42/331/332/350/500, a bare `ERROR` — is
+  re-attempted with growing delays instead of being failed on the first try. The delays
+  live in the new `send_retry_backoff` setting (default `30,120,300`: four attempts
+  inside about eight minutes), and their count fixes the attempt count. An empty value
+  disables retrying and is the rollback switch.
+- `failed` now means "the gateway stopped trying". The status, its `delivery-dispatch`
+  webhook and the operator alert are emitted only once the budget is exhausted or the
+  failure is not retryable, so a brief network blip no longer reads as a delivery
+  failure to the consuming app. The message keeps its `id` throughout.
+- `messages.attempts`, `messages.next_attempt_at` and `messages.last_attempt_error`
+  (additive migration). `GET /sms/{id}` gains an additive `attempts` field, and the admin
+  message list shows the attempt count and last error on a message still being retried.
+- `pending` is swept for the first time: a message past the retry deadline is failed and
+  its app notified, instead of sitting in `pending` forever.
+- A message left `pending` by a restart is picked up and transmitted.
+
+### Fixed
+- **One AT timeout no longer desyncs every command after it.** A read that gave up left
+  its reply in flight, so the next command read the previous command's answer and every
+  reply after it was one out of phase; a timeout at the `> ` prompt additionally left the
+  modem treating our next writes as message text. Failed reads now drain the port, the
+  send path cancels a pending prompt with ESC, and the mode restore can no longer mask
+  the real send error. Observed in production on 2026-07-24: id 976 timed out during a
+  brief deregistration and id 977 then failed with `timeout waiting for '> ', got: 'OK'`
+  — a reply belonging to an earlier command.
+- The sender loop caught only `ATCommandError`, so an encoder or database error killed it
+  permanently and in silence. It now fails the message, logs a traceback and keeps going.
+
+### Safety
+- **A message is never transmitted twice.** Three independent vetoes: a failure carrying
+  `pdu_submitted` (the SMSC may hold a message whose confirmation never came back — six
+  historical failures have this shape), a multipart whose first part was already
+  accepted, and `next_attempt_at` cleared before transmission so an attempt cut short by
+  a crash or a hard reset is never rescheduled. The scheduler is additionally bounded by
+  message age and batch size, so no deploy can resurrect old traffic.
+
+### Notes
+- Coupling send failures to the modem watchdog was designed, reviewed and **deliberately
+  left out**: as specified it either never escalated or produced a loop in which recovery
+  switches the radio off, the interrupted sends feed the counter that triggered it, and
+  the service exits every 30 minutes. It needs sending quiesced across recovery and a
+  counter over distinct messages — its own change.
+- The outbound send path now has a normative spec (`openspec/specs/outbound-send`),
+  adopted from the existing code before it was changed.
+
 ## [0.8.1] - 2026-07-24
 
 ### Documentation

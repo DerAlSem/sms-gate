@@ -34,6 +34,14 @@ POST с номером и текстом; шлюз отправляет сооб
   `pending → sent → delivered/failed`, отмечает зависшие как просроченные
 - **Входящие SMS** — декодирует сообщения в режиме PDU (включая UCS2 и сборку многочастных),
   при необходимости передаёт их на webhook по префиксу первого слова
+- **Автоматические повторы отправки** — если сообщение не дошло до модема (нет ответа,
+  таймаут приглашения, временный отказ сети), шлюз повторяет отправку с нарастающими
+  паузами (`send_retry_backoff`, по умолчанию `30,120,300` — четыре попытки примерно за
+  8 минут). Статус `failed` и вебхук уходят приложению **только когда попытки
+  исчерпаны**, поэтому кратковременный сбой сети больше не выглядит как недоставка.
+  Сообщение сохраняет свой `id`. Повтор **никогда** не делается, если байты сообщения уже
+  ушли в модем или если одна из частей многочастного SMS уже принята — иначе получатель
+  получил бы дубль. Пустое значение настройки выключает повторы
 - **Вебхуки статусов исходящих** — при смене статуса (`sent`, `delivered`, `failed`,
   `expired`) шлёт приложению-владельцу `POST {id, status, error, occurred_at}`,
   маршрутизируя по `app_id` сообщения — чтобы приложение узнавало судьбу SMS за секунды,
@@ -155,7 +163,8 @@ curl -X POST http://localhost:8000/sms/send \
 
 **Runtime-настройки** — voxlink lookup, оповещения в Telegram, правила передачи входящих
 (`inbound_dispatch`) и вебхуков статусов исходящих (`delivery_dispatch`),
-порог чёрного списка, таймаут доставки и `phone_region` — хранятся в базе данных и
+порог чёрного списка, таймаут доставки, паузы повторов (`send_retry_backoff`) и
+`phone_region` — хранятся в базе данных и
 редактируются на **`/admin/settings`** (без перезапуска). При первом старте они один раз
 заполняются из совпадающих переменных окружения, далее управляются в БД. Токены клиентов управляются на
 **`/admin/apps`**.
@@ -219,6 +228,14 @@ supervision. No external broker, no container required.
   `pending → sent → delivered/failed`, expires stale ones
 - **Inbound SMS** — decodes PDU-mode messages (incl. UCS2 and multipart reassembly),
   optionally dispatches them to a webhook by first-word prefix
+- **Automatic send retries** — when a message never reached the modem (no response, a
+  prompt timeout, a temporary network refusal), the gateway tries again with growing
+  delays (`send_retry_backoff`, default `30,120,300` — four attempts inside about eight
+  minutes). `failed` and its webhook reach the application **only once the attempts are
+  exhausted**, so a brief network blip no longer looks like a delivery failure. The
+  message keeps its `id`. A retry is **never** made once the message's bytes have gone to
+  the modem, or once any part of a multipart SMS has been accepted — either would put a
+  duplicate on the recipient's handset. An empty setting disables retrying
 - **Outbound status webhooks** — on a status change (`sent`, `delivered`, `failed`,
   `expired`) POSTs `{id, status, error, occurred_at}` to the owning application, routed by
   the message's `app_id` — so an app learns an SMS's fate in seconds instead of on its next
@@ -338,7 +355,8 @@ curl -X POST http://localhost:8000/sms/send \
 
 **Runtime settings** — voxlink lookup, Telegram alerting, inbound-dispatch (`inbound_dispatch`)
 and outbound status-webhook (`delivery_dispatch`) rules,
-blacklist threshold, delivery timeout, and `phone_region` — live in the database and are
+blacklist threshold, delivery timeout, send-retry backoff (`send_retry_backoff`), and
+`phone_region` — live in the database and are
 edited at **`/admin/settings`** (no restart needed). On first start they are seeded once
 from any matching env vars, then managed in the DB. Client tokens are managed at
 **`/admin/apps`**.
