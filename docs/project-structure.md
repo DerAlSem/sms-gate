@@ -51,7 +51,9 @@ sms-gate/
 │       ├── parser.py           # Parse +CDS, +CMGS, +CMT responses
 │       ├── pdu.py              # PDU encode/decode (SMS-SUBMIT / SMS-DELIVER)
 │       ├── assembler.py        # Multipart SMS reassembly
-│       └── dispatch.py         # Inbound webhook dispatch
+│       ├── dispatch.py         # Inbound webhook dispatch (routes by first-word prefix)
+│       ├── delivery_dispatch.py # Outbound status webhook dispatch (routes by messages.app_id)
+│       └── webhook.py          # Shared POST + retry transport for both dispatch directions
 ├── tests/
 │   ├── conftest.py
 │   └── test_*.py               # ~30 test modules (pytest)
@@ -187,10 +189,15 @@ async def lifespan(app: FastAPI):
    a. Encode as PDU (pdu.py), send via AT+CMGS
    b. Parse +CMGS ref number
    c. UPDATE messages SET status=sent, modem_ref=ref
+   d. Push 'sent' to the owning app's webhook (delivery_dispatch.py)
 8. reader_loop gets +CDS delivery report:
    a. Parse message reference and status
    b. UPDATE messages SET status=delivered/failed
+   c. Push that status to the owning app's webhook (delivery_dispatch.py)
 9. inbound_loop gets +CMT (incoming SMS):
    a. PDU-decode, reassemble multipart (assembler.py)
    b. Dispatch to configured webhooks (dispatch.py)
 ```
+
+Every writer of `messages.status` — including the expire sweep — pushes a delivery
+webhook; a conformance test enumerates them so a new writer cannot silently skip it.

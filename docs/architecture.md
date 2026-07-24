@@ -12,6 +12,10 @@ An HTTP service running on an Ubuntu server with a Quectel EP06E LTE modem. It a
 │  another_app │   POST /sms/send │   SMS Gate   │  /dev/ttyUSB*   │  EP06E  │
 │  ...         │◄──────────────────│   (FastAPI)  │◄─────────────────│  Modem  │
 │              │   GET /sms/{id}   │              │  +CDS (delivery)│         │
+│              │                   │              │                 │         │
+│  /webhooks   │◄──────────────────│              │                 │         │
+│              │  inbound SMS &    │              │                 │         │
+│              │  delivery status  │              │                 │         │
 └──────────────┘                   └──────┬───────┘                 └─────────┘
                                           │
                                    ┌──────┴───────┐
@@ -48,7 +52,22 @@ SQLite via aiosqlite. WAL mode enabled for concurrent read/write. Simple migrati
 ### 4. Auth (`app/auth/`)
 Bearer token authentication. Each client app has a unique token. Middleware extracts token from `Authorization` header, resolves to app_id.
 
-### 5. Phone Validation (`app/phone.py`)
+### 5. Webhook Dispatch (`app/modem/dispatch.py`, `delivery_dispatch.py`, `webhook.py`)
+The only place the gateway calls *out*. Two directions, one shared transport
+(`webhook.py`: bearer auth, retry ladder, timeout, all governed by the same settings):
+
+- **Inbound** (`dispatch.py`) — an incoming SMS is routed to one application by the
+  **first word of its text**, because an inbound SMS carries no application identity. Without
+  a matching prefix it is stored and nothing is sent (fan-out to every app would be a
+  privacy failure).
+- **Delivery** (`delivery_dispatch.py`) — an outbound message's status change is routed by
+  **`messages.app_id`**, which the API already recorded at send time, so no prefix is needed.
+
+Both are best-effort and fire detached from the modem loops: a failing webhook never blocks
+sending or receiving, and a total failure raises an operator alert instead of failing
+silently. `GET /sms/{id}` remains the authoritative status source.
+
+### 6. Phone Validation (`app/phone.py`)
 Phone numbers are validated with the [`phonenumbers`](https://github.com/daviddrysdale/python-phonenumbers) library and normalized to E.164 on ingress.  The validation region is controlled by the `phone_region` soft setting (default `RU`, editable at `/admin/settings`).
 
 **Operator / region enrichment** is performed via [voxlink](https://num.voxlink.ru/) (`num.voxlink.ru`) and is **RF-only**: the lookup is gated to `+7` numbers.  Numbers from other countries are accepted and sent normally but will have empty `operator` and `region` fields.  Contributions adding enrichment for non-RF numbers (e.g. using `phonenumbers.carrier` / `phonenumbers.geocoder` as a best-effort fallback) are welcome.

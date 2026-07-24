@@ -34,6 +34,11 @@ POST с номером и текстом; шлюз отправляет сооб
   `pending → sent → delivered/failed`, отмечает зависшие как просроченные
 - **Входящие SMS** — декодирует сообщения в режиме PDU (включая UCS2 и сборку многочастных),
   при необходимости передаёт их на webhook по префиксу первого слова
+- **Вебхуки статусов исходящих** — при смене статуса (`sent`, `delivered`, `failed`,
+  `expired`) шлёт приложению-владельцу `POST {id, status, error, occurred_at}`,
+  маршрутизируя по `app_id` сообщения — чтобы приложение узнавало судьбу SMS за секунды,
+  а не на следующем опросе. Доставка вебхука best-effort, `GET /sms/{id}` остаётся
+  источником правды ([контракт для приёмной стороны](docs/delivery-webhook.md))
 - **Настраиваемая проверка номеров** — принимаемая страна задаётся в runtime-настройке
   (`phone_region`, по умолчанию `RU`) прямо в интерфейсе администратора; номера проверяются
   библиотекой [`phonenumbers`](https://github.com/daviddrysdale/python-phonenumbers)
@@ -148,7 +153,8 @@ curl -X POST http://localhost:8000/sms/send \
 | `HOST` / `PORT` | `0.0.0.0` / `80` | Привязка uvicorn |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | `admin` / `change-me` | **Поменяйте перед публикацией!** |
 
-**Runtime-настройки** — voxlink lookup, оповещения в Telegram, правила передачи входящих,
+**Runtime-настройки** — voxlink lookup, оповещения в Telegram, правила передачи входящих
+(`inbound_dispatch`) и вебхуков статусов исходящих (`delivery_dispatch`),
 порог чёрного списка, таймаут доставки и `phone_region` — хранятся в базе данных и
 редактируются на **`/admin/settings`** (без перезапуска). При первом старте они один раз
 заполняются из совпадающих переменных окружения, далее управляются в БД. Токены клиентов управляются на
@@ -213,6 +219,11 @@ supervision. No external broker, no container required.
   `pending → sent → delivered/failed`, expires stale ones
 - **Inbound SMS** — decodes PDU-mode messages (incl. UCS2 and multipart reassembly),
   optionally dispatches them to a webhook by first-word prefix
+- **Outbound status webhooks** — on a status change (`sent`, `delivered`, `failed`,
+  `expired`) POSTs `{id, status, error, occurred_at}` to the owning application, routed by
+  the message's `app_id` — so an app learns an SMS's fate in seconds instead of on its next
+  poll. Webhook delivery is best-effort; `GET /sms/{id}` stays authoritative
+  ([receiving-side contract](docs/delivery-webhook.md))
 - **Configurable phone validation** — the accepted country is a runtime setting
   (`phone_region`, default `RU`) edited in the admin UI; numbers are validated with
   the [`phonenumbers`](https://github.com/daviddrysdale/python-phonenumbers) library
@@ -325,7 +336,8 @@ curl -X POST http://localhost:8000/sms/send \
 | `HOST` / `PORT` | `0.0.0.0` / `80` | uvicorn bind |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | `admin` / `change-me` | **Change before exposing!** |
 
-**Runtime settings** — voxlink lookup, Telegram alerting, inbound-dispatch rules,
+**Runtime settings** — voxlink lookup, Telegram alerting, inbound-dispatch (`inbound_dispatch`)
+and outbound status-webhook (`delivery_dispatch`) rules,
 blacklist threshold, delivery timeout, and `phone_region` — live in the database and are
 edited at **`/admin/settings`** (no restart needed). On first start they are seeded once
 from any matching env vars, then managed in the DB. Client tokens are managed at

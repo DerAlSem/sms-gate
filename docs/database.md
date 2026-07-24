@@ -54,6 +54,11 @@ CREATE TABLE messages (
     sent_at      TIMESTAMP,              -- when modem accepted the message
     delivered_at TIMESTAMP,              -- when +CDS delivery report received
     error        TEXT,                    -- error description if failed
+    resent_from  INTEGER REFERENCES messages(id),
+                                          -- set when this row is an admin re-send of a
+                                          -- failed/expired message; carries the original's
+                                          -- id so the owning app can attribute the outcome
+                                          -- (surfaces as `resent_from` in delivery webhooks)
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
