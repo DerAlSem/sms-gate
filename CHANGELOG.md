@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] - 2026-07-24
+
+### Changed
+- **No behaviour change.** `ModemHealth` is extracted from `ModemManager`: the gateway's
+  belief about the modem and the escalation ladder were one invariant spread across four
+  methods written at different times, which is where this feature's sharpest bug came
+  from — a single "have we tried the gentle thing" bit answering for two different
+  problems, so a soft recovery performed for a lost registration let the next send stall
+  open with a hard reset.
+- Deciding is now free of I/O: `decide()` is a pure state transition over *is it
+  registered*, *is it stalled* and *may we hard-reset*, returning the rung to act on.
+  Performing the recovery, reading the cooldown marker and driving the serial port stay
+  with the caller — so the ladder is asserted as a table of histories rather than only
+  through a live modem.
+- 17 tests added for rungs the previous shape could reach only indirectly, including the
+  symmetric case that had no coverage at all: a registration outage must not inherit the
+  ladder a send stall climbed.
+
+Evidence this preserves behaviour: the existing suite passes with a single line changed,
+and that line is a moved attribute's path — not a scenario and not an assertion.
+384 → 401 tests.
+
 ## [0.10.0] - 2026-07-24
 
 ### Added
