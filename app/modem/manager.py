@@ -12,7 +12,7 @@ from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
-from app.modem.errors import is_retryable
+from app.modem.errors import is_permanent_failure, is_retryable
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
@@ -36,6 +36,12 @@ _WD_INTERVAL = 60
 _WD_FAIL_THRESHOLD = 3
 _WD_HARD_RESET_COOLDOWN = 1800
 _WD_HARD_RESET_SETTLE = 40
+
+# Backstop for a recovery gate that never reopens. Deliberately longer than
+# _WD_HARD_RESET_SETTLE: the hard path keeps sending suspended until the process exits,
+# and releasing the sender into a rebooting modem would manufacture exactly the failures
+# the gate exists to prevent. Not a scheduling knob — a stuck-gate escape hatch.
+_SEND_GATE_TIMEOUT = 60.0
 
 
 def _hard_reset_marker() -> Path:
@@ -93,6 +99,76 @@ class ModemManager:
         self._held: set[int] = set()
         self._wd_fails = 0
         self._wd_soft_tried = False
+        # Evidence that the modem accepts commands but cannot get messages out. Ids
+        # rather than a count, so one message's four attempts are one piece of evidence
+        # about one destination — not three about the hardware.
+        self._stalled_ids: set[int] = set()
+        self._stall_exhausted = False
+        # Set means sending is allowed. The watchdog closes it around recovery so a send
+        # is never issued into a radio that is off or has just come back.
+        self._send_gate = asyncio.Event()
+        self._send_gate.set()
+
+    def _note_send_failure(self, message_id: int, error: str, *, exhausted: bool) -> None:
+        """Record a failed send as possible evidence about the modem.
+
+        A permanent failure is neutral: it neither counts nor clears, because it says
+        something about the destination. Letting it clear would let a stream of bad
+        numbers mask a genuinely dead radio.
+        """
+        if is_permanent_failure(error):
+            return
+        self._stalled_ids.add(message_id)
+        if exhausted:
+            self._stall_exhausted = True
+
+    def _note_send_success(self) -> None:
+        """A modem that just sent something is not stalled."""
+        self._clear_stall()
+
+    def _clear_stall(self) -> None:
+        self._stalled_ids.clear()
+        self._stall_exhausted = False
+
+    @property
+    def _stalled(self) -> bool:
+        """Whether the send path believes the modem needs recovering.
+
+        Either several different messages have failed, or one has used up its whole
+        ladder — roughly eight minutes in which nothing got out. The second clause
+        carries this gateway: at around a dozen messages a day, waiting for three
+        distinct ones would take hours.
+        """
+        return self._stall_exhausted or len(self._stalled_ids) >= _WD_FAIL_THRESHOLD
+
+    async def _await_send_gate(self) -> None:
+        if self._send_gate.is_set():
+            return
+        logger.info("Sending suspended while the modem is recovered")
+        try:
+            await asyncio.wait_for(self._send_gate.wait(), timeout=_SEND_GATE_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Recovery gate still closed after %.0fs — sending anyway",
+                _SEND_GATE_TIMEOUT,
+            )
+
+    async def _recover(self, action, *, reopen: bool = True) -> None:
+        """Run a recovery operation with sending suspended.
+
+        Clearing the evidence is part of recovering, not tidiness: a stall only lifts on
+        a successful send, and on a quiet gateway there may be nothing to send for an
+        hour — the stall would survive untouched and drive the ladder to a service
+        restart on evidence already acted upon. Escalating further has to be earned by
+        messages failing again.
+        """
+        self._send_gate.clear()
+        try:
+            await action()
+        finally:
+            self._clear_stall()
+            if reopen:
+                self._send_gate.set()
 
     async def connect(self) -> None:
         await self._sender.connect()
@@ -148,6 +224,10 @@ class ModemManager:
             await self._finally_fail(msg, error, attempt=0, dedup="too_long")
             return
 
+        # Before claiming, so a message held back by recovery consumes no attempt: a
+        # recovery window costs a message time, never chances.
+        await self._await_send_gate()
+
         total = len(parts)
         # Counted before any byte goes out, so an attempt cut short by a crash leaves
         # the message unscheduled rather than looking untouched.
@@ -167,6 +247,7 @@ class ModemManager:
         except ATCommandError as e:
             await self._handle_send_failure(msg, e, attempt, reached_sent)
             return
+        self._note_send_success()
         logger.info(
             "Sent message %d in %d part(s) on attempt %d", msg.message_id, total, attempt
         )
@@ -176,6 +257,8 @@ class ModemManager:
     ) -> None:
         text = str(error)
         backoff = store.send_retry_backoff_parsed
+        exhausted = attempt > len(backoff)
+        self._note_send_failure(msg.message_id, text, exhausted=exhausted)
         retryable = is_retryable(
             text,
             pdu_submitted=getattr(error, "pdu_submitted", False),
@@ -413,29 +496,42 @@ class ModemManager:
                 logger.warning("Keepalive AT+CREG? failed: %s", e)
 
     async def _watchdog_step(self) -> str:
-        if await self._sender.registration_ok():
+        registered = await self._sender.registration_ok()
+        # A modem that answers every command and still cannot send is unhealthy. Feeding
+        # that into the same check keeps one recovery ladder rather than two racing over
+        # one serial port.
+        stalled = self._stalled
+        if registered and not stalled:
             if self._wd_fails or self._wd_soft_tried:
                 logger.info("Modem re-registered")
             self._wd_fails = 0
             self._wd_soft_tried = False
             return "ok"
+        if registered and stalled:
+            logger.warning(
+                "Modem is registered but cannot send (%d message(s) failed, "
+                "budget exhausted: %s) — treating as unhealthy",
+                len(self._stalled_ids), self._stall_exhausted,
+            )
         self._wd_fails += 1
         if self._wd_fails < _WD_FAIL_THRESHOLD:
             return "wait"
         if not self._wd_soft_tried:
-            logger.warning("Modem not registered (%dx) — soft recovery", self._wd_fails)
-            await self._sender.soft_recover()
+            logger.warning("Modem unhealthy (%dx) — soft recovery", self._wd_fails)
+            await self._recover(self._sender.soft_recover)
             self._wd_soft_tried = True
             self._wd_fails = 0
             return "soft"
         if _hard_reset_on_cooldown():
-            logger.error("Modem still not registered; hard reset on cooldown — check antenna/operator")
-            await self._sender.soft_recover()
+            logger.error("Modem still unhealthy; hard reset on cooldown — check antenna/operator")
+            await self._recover(self._sender.soft_recover)
             self._wd_fails = 0
             return "cooldown"
         logger.error("Modem unrecoverable; hard reset + service restart")
         _mark_hard_reset()
-        await self._sender.hard_reset()
+        # Not reopened: watchdog_loop sleeps for the settle period and then exits, and
+        # the sender must not fire into a rebooting modem in the meantime.
+        await self._recover(self._sender.hard_reset, reopen=False)
         return "hard"
 
     async def watchdog_loop(self) -> None:
@@ -446,6 +542,9 @@ class ModemManager:
             if not store.modem_watchdog_enabled:
                 self._wd_fails = 0
                 self._wd_soft_tried = False
+                # Recovery is the operator's job now, so stop accumulating a suspicion
+                # nothing will act on.
+                self._clear_stall()
                 continue
             try:
                 action = await self._watchdog_step()
