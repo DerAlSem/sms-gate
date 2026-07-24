@@ -8,7 +8,14 @@ from app.modem.diag import decode_reg
 logger = logging.getLogger(__name__)
 
 CTRL_Z = b'\x1a'
+ESC = b'\x1b'
 PROMPT = b'> '
+
+# After a failed read the modem may still be emitting its (late) reply. Discard
+# bytes until the port has been quiet for `_DRAIN_QUIET`, giving up after
+# `_DRAIN_BUDGET` so a chatty modem cannot hold the serial lock open.
+_DRAIN_QUIET = 0.3
+_DRAIN_BUDGET = 2.0
 
 
 class ATCommandError(Exception):
@@ -50,24 +57,60 @@ class ATSerial:
         self._writer.write(data)
         await self._writer.drain()
 
+    async def _drain(self) -> bytes:
+        """Discard whatever the modem is still emitting, until the port goes quiet.
+
+        A read that gave up leaves its reply in flight; without this the *next*
+        command reads the previous command's answer and every subsequent one is a
+        reply out of phase."""
+        assert self._reader
+        discarded = b''
+        deadline = asyncio.get_event_loop().time() + _DRAIN_BUDGET
+        while True:
+            remaining = min(_DRAIN_QUIET, deadline - asyncio.get_event_loop().time())
+            if remaining <= 0:
+                break
+            try:
+                chunk = await asyncio.wait_for(self._reader.read(256), timeout=remaining)
+            except asyncio.TimeoutError:
+                break
+            if not chunk:
+                break
+            discarded += chunk
+        if discarded:
+            logger.warning(
+                "Discarded %d stale byte(s) after a failed read: %r",
+                len(discarded), discarded[:200],
+            )
+        return discarded
+
+    async def _failed(self, buf: bytes, expected: bytes) -> ATCommandError:
+        """Build the error for an unsuccessful read and leave the port usable."""
+        error = ATCommandError(_clean_error(buf, expected))
+        await self._drain()
+        return error
+
     async def _read_until(self, expected: bytes, timeout: float) -> str:
         """Read until `expected` is seen. Returns early (without raising) when the
         modem emits a final error result code so callers can surface a clean
-        message instead of blocking until `timeout` and dumping raw bytes."""
+        message instead of blocking until `timeout` and dumping raw bytes.
+
+        On failure the stream is drained before raising, so one timeout does not
+        desync every command that follows."""
         assert self._reader
         buf = b''
         deadline = asyncio.get_event_loop().time() + timeout
         while True:
             remaining = deadline - asyncio.get_event_loop().time()
             if remaining <= 0:
-                raise ATCommandError(_clean_error(buf, expected))
+                raise await self._failed(buf, expected)
             try:
                 chunk = await asyncio.wait_for(self._reader.read(256), timeout=remaining)
                 buf += chunk
                 if expected in buf or b'ERROR' in buf:
                     return buf.decode(errors='replace')
             except asyncio.TimeoutError:
-                raise ATCommandError(_clean_error(buf, expected))
+                raise await self._failed(buf, expected) from None
 
     async def command(self, cmd: str, timeout: float = 5.0) -> str:
         """Send AT command, return full response."""
@@ -78,12 +121,34 @@ class ATSerial:
                 raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
             return response
 
-    async def send_sms_pdu(self, parts, on_part_sent, timeout: float = 30.0):
+    async def _abort_prompt_unlocked(self) -> None:
+        """Cancel a pending `> ` prompt with ESC.
+
+        A modem left at the prompt treats everything we write next as message
+        text, so the mode restore below — and any later command — would be
+        silently eaten rather than executed. Best-effort: the send has already
+        failed, and its error is the one worth reporting."""
+        try:
+            await self._send(ESC)
+            await self._drain()
+        except Exception:
+            logger.warning("Could not abort the CMGS prompt", exc_info=True)
+
+    async def _restore_cmgf_unlocked(self) -> None:
+        """Return the modem to the text-mode default without masking a failure
+        that is already on its way to the caller."""
+        try:
+            await self._set_cmgf_unlocked(1)
+        except ATCommandError as e:
+            logger.warning("Could not restore CMGF=1: %s", e)
+
+    async def send_sms_pdu(self, parts, on_part_sent, timeout: float = 30.0,
+                           prompt_timeout: float = 5.0):
         """Send one or more SMS-SUBMIT PDUs in PDU mode. Calls
         `await on_part_sent(seq, ref)` right after each part's +CMGS so the
         caller persists the part before the next is sent. Returns the list of
         modem refs. Raises ATCommandError on the first failing part (remaining
-        parts are not sent)."""
+        parts are not sent); the port is left clean for the next send."""
         from app.modem.pdu_encode import tpdu_length
         from app.modem.parser import parse_cmgs_ref
 
@@ -93,7 +158,7 @@ class ATSerial:
             try:
                 for seq, pdu in enumerate(parts, start=1):
                     await self._send(f"AT+CMGS={tpdu_length(pdu)}\r".encode())
-                    prompt = await self._read_until(b'> ', timeout=5.0)
+                    prompt = await self._read_until(b'> ', timeout=prompt_timeout)
                     if 'ERROR' in prompt:
                         raise ATCommandError(describe_at_error(prompt))
                     await self._send(pdu.encode() + CTRL_Z)
@@ -107,8 +172,11 @@ class ATSerial:
                         )
                     refs.append(ref)
                     await on_part_sent(seq, ref)
+            except BaseException:
+                await self._abort_prompt_unlocked()
+                raise
             finally:
-                await self._set_cmgf_unlocked(1)
+                await self._restore_cmgf_unlocked()
         return refs
 
     async def _cmgr_unlocked(self, index: int, timeout: float) -> str:
