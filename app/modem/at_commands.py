@@ -249,13 +249,30 @@ class ATSerial:
         """Query network registration status (AT+CREG?)."""
         return await self.command('AT+CREG?')
 
-    async def registration_ok(self) -> bool:
-        """True if the modem is EPS-registered (CEREG stat 1=home or 5=roaming)."""
+    async def registration_state(self) -> bool | None:
+        """True registered, False definitively not, None when we could not tell.
+
+        The third case is the point. `registration_ok` below folds "the query failed"
+        into False, which is right for the watchdog — a modem that cannot answer is
+        unhealthy. It is wrong for deciding whether to send: not knowing is not a
+        refusal, and a gateway that stops sending whenever it cannot ask a question is
+        worse than one that tries and reports a real failure.
+        """
         try:
             resp = await self.command("AT+CEREG?", timeout=4.0)
         except ATCommandError:
-            return False
-        return decode_reg(resp).get("stat") in (1, 5)
+            return None
+        stat = decode_reg(resp).get("stat")
+        if stat is None:
+            return None
+        return stat in (1, 5)
+
+    async def registration_ok(self) -> bool:
+        """True if the modem is EPS-registered (CEREG stat 1=home or 5=roaming).
+
+        An unanswerable modem counts as not registered: the watchdog acts on doubt.
+        """
+        return await self.registration_state() is True
 
     async def soft_recover(self) -> None:
         """RF off/on + auto operator reselect — re-attaches without a modem reboot.

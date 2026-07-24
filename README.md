@@ -34,6 +34,13 @@ POST с номером и текстом; шлюз отправляет сооб
   `pending → sent → delivered/failed`, отмечает зависшие как просроченные
 - **Входящие SMS** — декодирует сообщения в режиме PDU (включая UCS2 и сборку многочастных),
   при необходимости передаёт их на webhook по префиксу первого слова
+- **Не отправляет в отсутствующую сеть** — перед отправкой шлюз спрашивает модем,
+  зарегистрирован ли он, и при явном «нет» откладывает сообщение, не тратя попытку.
+  Проверка делается прямо перед отправкой, а не берётся из периодического опроса.
+  Смысл узкий: ретраи и так спасают отправку, которая не дошла до модема, — а вот
+  многочастное сообщение, у которого первая часть уже принята, повторить нельзя никогда.
+  Не начав отправку, шлюз просто не создаёт этот случай. Если проверка не удалась,
+  сообщение всё равно отправляется: незнание — не отказ
 - **Восстановление модема по провалам отправки** — модем, который исправно отвечает на
   команды, но не отправляет, раньше не считался больным: восстановление запускалось
   только при потере регистрации. Теперь застой отправки (три разных сообщения подряд
@@ -236,6 +243,13 @@ supervision. No external broker, no container required.
   `pending → sent → delivered/failed`, expires stale ones
 - **Inbound SMS** — decodes PDU-mode messages (incl. UCS2 and multipart reassembly),
   optionally dispatches them to a webhook by first-word prefix
+- **Never sends into a missing network** — before transmitting, the gateway asks the modem
+  whether it is registered and holds the message back on a definite no, without spending
+  an attempt. The check is made fresh at send time rather than taken from a periodic
+  poll. The value is narrow on purpose: retries already recover a send that never reached
+  the modem, but a multipart whose first part was accepted can never be retried — not
+  starting is the only fix. A check that cannot be completed does not hold the message:
+  not knowing is not a refusal
 - **Modem recovery driven by send failures** — a modem that answers every command and
   still refuses to send used to look healthy, because only lost registration triggered
   recovery. A send stall (three different messages, or one that used up its whole retry

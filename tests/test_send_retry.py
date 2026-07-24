@@ -41,9 +41,16 @@ class _Recorder:
         return [d for d in self.dispatched if d[1] == "failed"]
 
 
+async def _registered():
+    return True
+
+
 def _manager(send_impl):
     m = ModemManager("/dev/null", "/dev/null")
     m._sender.send_sms_pdu = send_impl
+    # The send path now asks the modem whether it is on the network before transmitting;
+    # these tests are about what happens once it does.
+    m._sender.registration_state = _registered
     return m
 
 

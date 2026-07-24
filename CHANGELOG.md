@@ -3,6 +3,35 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-07-24
+
+### Added
+- **The gateway no longer transmits into a network it knows is missing.** Before sending,
+  it asks the modem whether it is registered and holds the message back on a definite
+  no — rescheduling it shortly, without counting an attempt, because a message never
+  offered to the network should lose time rather than chances.
+- The check is made **fresh, at send time**, inside the serial session the send needs
+  anyway. An earlier sketch of this leaned on the watchdog's once-a-minute sample and was
+  rejected: declining to send must not rest on minute-old information.
+- A check that cannot be completed does not hold the message. `registration_state()`
+  distinguishes "not registered" from "could not tell", where `registration_ok()` folds
+  both into False — right for the watchdog, which acts on doubt, wrong here, since a
+  gateway that stops sending whenever it cannot ask a question is worse than one that
+  tries and reports a real failure.
+
+### Notes
+- **The measured value is small, and the change is scoped accordingly.** Registration was
+  lost four times in thirty days, never long enough to reach even a soft recovery — about
+  ten minutes of outage a month, most of which contain no message at all. This is worth
+  single-digit messages a year.
+- What makes it worth doing is *which* messages. Retries already recover a send that
+  never reached the modem. The one class they cannot recover is a multipart whose first
+  part was accepted before the network went away — and that failure is created by
+  starting a send into a network about to refuse it. Prod message 976 was exactly this.
+- Holding stays bounded by the existing pending deadline, so a message held through a
+  long outage still reaches a terminal status and its application is still told. No new
+  setting: the deadline and the backoff already bound it.
+
 ## [0.10.1] - 2026-07-24
 
 ### Changed

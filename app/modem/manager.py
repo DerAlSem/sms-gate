@@ -47,6 +47,10 @@ _RECOVERY_TIMEOUT = 300.0
 # the reattach produces precisely the failures recovery exists to stop.
 _RECOVERY_SETTLE = 30.0
 _RECOVERY_POLL = 2.0
+# How long to wait before re-checking a message held back because the modem is off the
+# network. The outages seen in production last a minute or two, so re-checking on the
+# shortest configured backoff step is the natural granularity.
+_HOLD_RETRY_FALLBACK = 30
 # Backstop for a gate that never reopens. Derived from the ceiling above rather than
 # guessed, and necessarily longer than _WD_HARD_RESET_SETTLE, since the hard path keeps
 # sending suspended until the process exits. Not a scheduling knob — an escape hatch.
@@ -279,6 +283,9 @@ class ModemManager:
         # recovery window costs a message time, never chances.
         await self._await_modem_gate()
 
+        if await self._hold_while_unregistered(msg):
+            return
+
         total = len(parts)
         # Counted before any byte goes out, so an attempt cut short by a crash leaves
         # the message unscheduled rather than looking untouched.
@@ -302,6 +309,27 @@ class ModemManager:
         logger.info(
             "Sent message %d in %d part(s) on attempt %d", msg.message_id, total, attempt
         )
+
+    async def _hold_while_unregistered(self, msg: OutgoingMessage) -> bool:
+        """Decline to transmit while the modem is definitively off the network.
+
+        Asked fresh rather than taken from the watchdog's once-a-minute sample: refusing
+        to send must not rest on minute-old information. The message keeps its whole
+        budget, because it was never offered to the network — and the pending deadline
+        still terminates it, so declining cannot become indefinite retention.
+        """
+        if await self._sender.registration_state() is not False:
+            return False        # registered, or we could not tell — try it
+        backoff = store.send_retry_backoff_parsed
+        delay = backoff[0] if backoff else _HOLD_RETRY_FALLBACK
+        await queries.schedule_message_retry(
+            msg.message_id, delay, "held: modem not registered"
+        )
+        logger.info(
+            "Holding message %d (app=%s to=%s): modem not registered — retrying in %ds",
+            msg.message_id, msg.app_id or "?", msg.phone, delay,
+        )
+        return True
 
     async def _handle_send_failure(
         self, msg: OutgoingMessage, error: ATCommandError, attempt: int, reached_sent: bool
