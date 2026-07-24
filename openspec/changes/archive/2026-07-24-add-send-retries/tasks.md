@@ -61,14 +61,21 @@
 ## 7. Verify and ship
 
 - [x] 7.1 Full suite green.
-- [ ] 7.2 Mini conformance sweep of the `outbound-send` normative SHALLs touched here,
-      plus the `delivery-dispatch` SHALLs about which statuses are pushed.
-- [ ] 7.3 Docs: README behaviour note, `CHANGELOG.md` entry, settings table.
-- [ ] 7.4 Deploy with the owner's confirmation (a restart drops active sends), then a
-      prod smoke. Rollback is `send_retry_backoff` = empty.
-- [ ] 7.5 Tell GM+ that `failed` now means "the gateway stopped trying", so its
-      operator-notification path fires less often — and let them re-decide whether it
-      should fire at all.
+- [x] 7.2 Mini conformance sweep: all `outbound-send` normative SHALLs backed, including
+      the message-identity one that was `unbacked` at adoption. `delivery-dispatch` is
+      unaffected — no new `messages.status` writer, so its status-writer census test still
+      guards every path; only the moment `failed` is written changed, which its spec does
+      not constrain.
+- [x] 7.3 Docs: README (RU+EN), `CHANGELOG.md`, settings paragraph; version 0.9.0.
+- [x] 7.4 Deployed 2026-07-24 with the owner's confirmation; DB backed up first, and the
+      migration was rehearsed against a copy of the prod database (979 rows, zero
+      `pending`). Prod smoke: message 982 accepted → `Sent … on attempt 1` → `+CDS
+      delivered` in 3s, `GET /sms/982` reporting the additive `attempts: 1`. The retry
+      path itself is untested on live hardware — it needs a real transient failure.
+      Rollback is `send_retry_backoff` = empty.
+- [x] 7.5 GM+ told (2026-07-24). Their operator-notification channel is being
+      reconsidered separately: an in-panel notification centre rather than an SMS to the
+      admin, since the admin works in the panel and an SMS carries no read/resolve state.
 
 ## 8. Carved out — not in this change
 
@@ -76,3 +83,5 @@
   recovery and a counter over distinct messages; own change.
 - Linking permanent send failures to the blacklist, as delivery reports already do.
 - Operator control over a message mid-ladder (cancel / try now).
+- A `pending, attempts > 0` figure on the stats page, to measure what retries actually
+  save. Without it the justification for this change cannot be re-measured.
