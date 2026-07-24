@@ -36,3 +36,7 @@ class SmsStatusResponse(BaseModel):
     sent_at: datetime | None
     delivered_at: datetime | None
     error: str | None
+    # Additive: how many transmission attempts this message has taken. A consumer that
+    # ignores unknown fields is unaffected; one that wants retry visibility has it
+    # without the webhook vocabulary growing a status.
+    attempts: int = 0

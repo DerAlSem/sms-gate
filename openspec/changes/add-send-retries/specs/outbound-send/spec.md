@@ -7,8 +7,8 @@ The gateway SHALL classify every send failure before deciding its fate.
 A failure SHALL be permanent when retrying it cannot change the outcome: a message over
 the `max_sms_parts` budget; `+CMS` 1, 21, 28, 50, 69 or 96 (the network refuses this
 message or this destination); `+CMS` 301–305, 321 or 330 (a malformed or misconfigured
-request that will fail identically); `+CMS`/`+CME` 310, 311 or 313 (the SIM is absent,
-locked or failed).
+request that will fail identically); `+CMS` 310, 311 or 313, and the `+CME` codes for the
+same conditions, 10, 11 and 13 (the SIM is absent, locked or failed).
 
 Every other failure — no response, a prompt timeout, `+CMS` 38, 41, 42, 331, 332, 350 or
 500, a bare `ERROR`, an unrecognised or unparseable reply — SHALL be treated as

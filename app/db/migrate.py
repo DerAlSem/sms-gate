@@ -114,6 +114,12 @@ async def run_migrations() -> None:
     # long gone — the link has to be persisted to survive to that point.
     await _add_column_if_missing(db, "messages", "resent_from", "INTEGER REFERENCES messages(id)")
 
+    # Retry state. Persisted rather than kept on the in-memory queue entry so a pending
+    # retry survives a restart — which is also what lets the scheduler pick up messages
+    # a restart stranded in `pending`.
+    await _add_column_if_missing(db, "messages", "attempts", "INTEGER NOT NULL DEFAULT 0")
+    await _add_column_if_missing(db, "messages", "next_attempt_at", "TIMESTAMP")
+
     await db.execute(
         """
         INSERT OR IGNORE INTO apps (id, token, description, is_active)

@@ -18,6 +18,7 @@ def test_spec_has_all_soft_keys():
         "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
         "phone_region", "max_sms_parts", "modem_watchdog_enabled",
+        "send_retry_backoff",
     }
 
 

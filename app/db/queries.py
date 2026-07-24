@@ -45,7 +45,8 @@ async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
     db = await get_db()
     async with db.execute(
         """
-        SELECT id, phone, text, status, created_at, sent_at, delivered_at, error
+        SELECT id, phone, text, status, created_at, sent_at, delivered_at, error,
+               attempts
         FROM messages
         WHERE id = ? AND app_id = ?
         """,
@@ -96,6 +97,54 @@ async def set_message_failed(message_id: int, error: str) -> None:
         (error, message_id),
     )
     await db.commit()
+
+
+async def schedule_message_retry(
+    message_id: int, delay_seconds: int, error: str
+) -> None:
+    """Defer another attempt instead of failing the message.
+
+    Status stays `pending` — the message is still on its way, so no status change is
+    owed to the app and no `failed` webhook fires. `error` is kept so the last reason is
+    visible in the admin while the message is still being retried.
+    """
+    db = await get_db()
+    await db.execute(
+        """
+        UPDATE messages
+        SET attempts = attempts + 1,
+            error = ?,
+            next_attempt_at = datetime('now', ? || ' seconds')
+        WHERE id = ?
+        """,
+        (error, f"{int(delay_seconds):+d}", message_id),
+    )
+    await db.commit()
+
+
+async def due_pending_messages(grace_seconds: int = 60) -> list[aiosqlite.Row]:
+    """`pending` messages the sender should pick up now.
+
+    Two kinds, and the second is why `grace_seconds` exists: a scheduled retry whose
+    time has come, and a message left `pending` by a restart that lost the in-memory
+    queue. A never-attempted message only counts once it is older than `grace_seconds`,
+    so one still being handed to the queue is not claimed — and sent — twice.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        SELECT id, app_id, phone, text, attempts
+        FROM messages
+        WHERE status = 'pending'
+          AND (
+                (next_attempt_at IS NOT NULL AND next_attempt_at <= datetime('now'))
+             OR (next_attempt_at IS NULL AND created_at <= datetime('now', ? || ' seconds'))
+              )
+        ORDER BY id
+        """,
+        (f"-{int(grace_seconds)}",),
+    ) as cursor:
+        return await cursor.fetchall()
 
 
 async def add_message_part(message_id: int, modem_ref: int, seq: int, total: int) -> None:

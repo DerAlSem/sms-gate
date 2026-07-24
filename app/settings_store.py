@@ -11,7 +11,7 @@ from app.db.connection import get_db
 @dataclass(frozen=True)
 class Spec:
     key: str
-    type: str          # "bool" | "int" | "float" | "str" | "routes" | "region"
+    type: str          # "bool" | "int" | "float" | "str" | "routes" | "region" | "delays"
     default: object
     section: str
     is_secret: bool
@@ -55,6 +55,9 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     Spec("max_sms_parts", "int", 6, "Sending", False,
          "Max parts for a multipart SMS; longer text fails before sending"),
+    Spec("send_retry_backoff", "delays", "30,120,300", "Sending", False,
+         "Seconds to wait before each retry of a transient send failure; the number of "
+         "delays sets the number of retries (blank = no retry, one attempt only)"),
     Spec("modem_watchdog_enabled", "bool", True, "Sending", False,
          "Auto-recover the modem when it loses network registration"),
     Spec("phone_region", "region", "RU", "Sending", False,
@@ -123,6 +126,20 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
                     f"route #{i + 1} ({key}): webhook_url must start with "
                     f"http:// or https:// — got {url!r}"
                 )
+        return
+    if type_ == "delays":
+        for part in raw.split(","):
+            text = part.strip()
+            if not text:            # a trailing or doubled comma is a typo, not an error
+                continue
+            try:
+                seconds = int(text)
+            except ValueError as exc:
+                raise ValueError(
+                    f"not a whole number of seconds: {text!r}"
+                ) from exc
+            if seconds <= 0:
+                raise ValueError(f"delay must be positive: {seconds}")
         return
     if type_ == "region":
         import phonenumbers
@@ -225,6 +242,12 @@ class SettingsStore:
     @property
     def delivery_dispatch_parsed(self) -> list[dict]:
         return self._routes("delivery_dispatch")
+
+    @property
+    def send_retry_backoff_parsed(self) -> list[int]:
+        """Delays before each retry. Empty means a message gets a single attempt."""
+        raw = self.get("send_retry_backoff") or ""
+        return [int(t) for t in (p.strip() for p in raw.split(",")) if t]
 
     async def set_many(self, changes: dict[str, str]) -> None:
         for key in changes:
