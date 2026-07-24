@@ -358,7 +358,7 @@ def test_the_whole_ladder_fits_inside_the_deadline(monkeypatch):
             hops.append((mid in due, mid in stale))
 
         await m._send_one(msg)                         # the final attempt
-        return hops, await _state(mid), m._stall_exhausted
+        return hops, await _state(mid), m._health.budget_exhausted
 
     hops, state, exhausted = _run(body)
     assert hops == [(True, False)] * 3, (

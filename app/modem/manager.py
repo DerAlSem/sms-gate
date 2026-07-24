@@ -12,7 +12,8 @@ from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
-from app.modem.errors import is_permanent_failure, is_retryable
+from app.modem.errors import is_retryable
+from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, WAIT
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
@@ -112,56 +113,49 @@ class ModemManager:
         # Ids the sender holds queued or in flight. The scheduler skips them, so a
         # message cannot be enqueued twice and sent twice.
         self._held: set[int] = set()
-        self._wd_fails = 0
-        self._wd_soft_tried = False
-        # Which problem the current unhealthy streak is about. The ladder's progress
-        # belongs to one problem: without this, a soft recovery for a registration
-        # outage would let the next stall skip straight to a hard reset.
-        self._wd_cause: str | None = None
-        # Evidence that the modem accepts commands but cannot get messages out. Ids
-        # rather than a count, so one message's four attempts are one piece of evidence
-        # about one destination — not three about the hardware.
-        self._stalled_ids: set[int] = set()
-        self._stall_exhausted = False
-        # Set means the modem is usable. The watchdog closes it around recovery so
-        # neither a send nor an inbound read is issued into a radio that is off or has
-        # just come back.
-        self._modem_gate = asyncio.Event()
-        self._modem_gate.set()
+        # Modem belief and the recovery ladder live together in one object: they are one
+        # invariant, and spreading them across this class is what let a stall inherit a
+        # recovery performed for a different problem.
+        self._health = ModemHealth(_WD_FAIL_THRESHOLD, _WD_FAIL_THRESHOLD)
+
+    # Thin views onto the health object, kept because this class reads them in several
+    # places and because they are what the tests observe.
+    @property
+    def _modem_gate(self) -> asyncio.Event:
+        return self._health.gate
+
+    @property
+    def _wd_fails(self) -> int:
+        return self._health.fails
+
+    @_wd_fails.setter
+    def _wd_fails(self, value: int) -> None:
+        self._health.fails = value
+
+    @property
+    def _wd_soft_tried(self) -> bool:
+        return self._health.soft_tried
+
+    @_wd_soft_tried.setter
+    def _wd_soft_tried(self, value: bool) -> None:
+        self._health.soft_tried = value
+
+    @property
+    def _stalled_ids(self) -> set[int]:
+        return self._health.failed_ids
 
     def _note_send_failure(self, message_id: int, error: str, *, exhausted: bool) -> None:
-        """Record a failed send as possible evidence about the modem.
-
-        A permanent failure is neutral: it neither counts nor clears, because it says
-        something about the destination. Letting it clear would let a stream of bad
-        numbers mask a genuinely dead radio.
-        """
-        if is_permanent_failure(error):
-            return
-        self._stalled_ids.add(message_id)
-        if exhausted:
-            self._stall_exhausted = True
+        self._health.note_send_failure(message_id, error, exhausted=exhausted)
 
     def _note_send_success(self) -> None:
-        """A modem that just sent something is not stalled."""
-        self._clear_stall()
+        self._health.note_send_success()
 
     def _clear_stall(self) -> None:
-        self._stalled_ids.clear()
-        self._stall_exhausted = False
+        self._health.clear_stall()
 
     @property
     def _stalled(self) -> bool:
-        """Whether the send path believes the modem needs recovering.
-
-        Either several different messages have failed, or one has used up its whole
-        ladder — roughly eight minutes in which nothing got out. The second clause
-        carries this gateway: at around a dozen messages a day, waiting for three
-        distinct ones would take hours.
-        """
-        if not store.send_stall_recovery_enabled:
-            return False
-        return self._stall_exhausted or len(self._stalled_ids) >= _WD_FAIL_THRESHOLD
+        return self._health.stalled(enabled=store.send_stall_recovery_enabled)
 
     async def _await_modem_gate(self, what: str = "sending") -> None:
         if self._modem_gate.is_set():
@@ -562,56 +556,45 @@ class ModemManager:
         # One check, one ladder — two independent recovery paths would race each other
         # over a single serial port.
         stalled = self._stalled
-        cause = None if registered and not stalled else (
-            "registration" if not registered else "stall"
+        previous = self._health.cause
+        action = self._health.decide(
+            registered=registered,
+            stalled=stalled,
+            hard_reset_allowed=not _hard_reset_on_cooldown(),
         )
-        if cause is None:
-            if self._wd_fails or self._wd_soft_tried:
-                logger.info("Modem healthy again")
-            self._wd_fails = 0
-            self._wd_soft_tried = False
-            self._wd_cause = None
-            return "ok"
+        cause = self._health.cause
 
-        if self._wd_cause is not None and cause != self._wd_cause:
-            # The problem changed. Progress up the ladder belongs to the problem that
-            # earned it: without this reset, a soft recovery for a registration outage
-            # would let the next stall skip straight to a hard reset and a restart —
-            # the stall's very first action.
+        if action == OK:
+            if previous is not None:
+                logger.info("Modem healthy again")
+            return OK
+        if previous is not None and cause != previous:
             logger.info(
                 "Modem problem changed from %s to %s — restarting the ladder",
-                self._wd_cause, cause,
+                previous, cause,
             )
-            self._wd_fails = 0
-            self._wd_soft_tried = False
-        self._wd_cause = cause
-
-        if cause == "stall":
+        if cause == STALL:
             logger.warning(
                 "Modem is registered but cannot send (%d message(s) failed, "
                 "budget exhausted: %s)",
-                len(self._stalled_ids), self._stall_exhausted,
+                len(self._health.failed_ids), self._health.budget_exhausted,
             )
-        self._wd_fails += 1
-        if self._wd_fails < _WD_FAIL_THRESHOLD:
-            return "wait"
-        if not self._wd_soft_tried:
-            logger.warning("Modem unhealthy: %s (%dx) — soft recovery", cause, self._wd_fails)
+        if action == WAIT:
+            return WAIT
+        if action == SOFT:
+            logger.warning("Modem unhealthy: %s — soft recovery", cause)
             await self._recover(self._sender.soft_recover)
-            self._wd_soft_tried = True
-            self._wd_fails = 0
-            return "soft"
-        if _hard_reset_on_cooldown():
+            return SOFT
+        if action == COOLDOWN:
             logger.error(
                 "Modem still unhealthy; hard reset on cooldown — check antenna/operator"
             )
             await self._recover(self._sender.soft_recover)
-            self._wd_fails = 0
-            return "cooldown"
+            return COOLDOWN
         # Two distinct ERROR templates, not one with a parameter: the Telegram handler
         # deduplicates on the template, so a shared one would hide whichever cause came
         # second behind the first.
-        if cause == "stall":
+        if cause == STALL:
             logger.error(
                 "Modem cannot send and does not recover; hard reset + service restart"
             )
@@ -621,7 +604,7 @@ class ModemManager:
         # Not reopened: watchdog_loop sleeps for the settle period and then exits, and
         # nothing must touch a rebooting modem in the meantime.
         await self._recover(self._sender.hard_reset, reopen=False)
-        return "hard"
+        return HARD
 
     async def watchdog_loop(self) -> None:
         """Periodically ensure the modem is registered; soft/hard recover if not."""
@@ -629,12 +612,9 @@ class ModemManager:
         while True:
             await asyncio.sleep(_WD_INTERVAL)
             if not store.modem_watchdog_enabled:
-                self._wd_fails = 0
-                self._wd_soft_tried = False
-                self._wd_cause = None
                 # Recovery is the operator's job now, so stop accumulating a suspicion
                 # nothing will act on.
-                self._clear_stall()
+                self._health.forget()
                 continue
             try:
                 action = await self._watchdog_step()
@@ -646,18 +626,8 @@ class ModemManager:
                 os._exit(1)
 
     def health_snapshot(self) -> dict:
-        """What the gateway itself believes about the modem, for the admin page.
-
-        Without this a diagnostics run taken mid-recovery shows an unregistered modem
-        with no signal — a true reading of a radio we switched off ourselves, and an
-        easy one to misread as dead hardware."""
-        return {
-            "recovering": not self._modem_gate.is_set(),
-            "send_stall": self._stalled,
-            "failed_messages_since_last_success": len(self._stalled_ids),
-            "unhealthy_because": self._wd_cause or "—",
-            "queued_or_in_flight": len(self._held),
-        }
+        """What the gateway itself believes about the modem, for the admin page."""
+        return self._health.snapshot(held=len(self._held), stalled=self._stalled)
 
     async def collect_diagnostics(self) -> list[dict]:
         """Read-only modem health snapshot via the existing serial lock. An AT
