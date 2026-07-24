@@ -61,6 +61,19 @@ successful `AT+CEREG?` erases; it is cleared by a successful *send*, which is th
 is actually about. During a real stall the health check keeps failing, so the counter
 climbs to the threshold and the ladder runs.
 
+**Performing a recovery consumes the evidence.** This is not tidiness, it is the fix for a
+loop that would otherwise be identical to the one that got the first attempt rejected. A
+stall clears on a successful send — but at 112-minute gaps there may be nothing to send
+for an hour after recovery runs. The stall would persist with no new evidence, the next
+three checks would fail on it, and the ladder would reach `os._exit(1)` and restart the
+service for a modem that was probably fine.
+
+So recovery — soft or hard — empties the stall set. Escalation across the ladder then
+requires *renewed* evidence: soft recovery clears it, new messages have to fail again to
+re-arm it, and only then does the still-set `_wd_soft_tried` carry the next stall through
+to a hard reset. Two independent stalls to reach a restart, each backed by real failures,
+is the intended severity.
+
 ## R3 — Breaking the feedback loop: the quiesce gate
 
 **Decided: the watchdog closes a gate around recovery; the sender waits on it before
@@ -82,6 +95,17 @@ recovers and set again afterwards. Two properties matter:
 - **The wait is bounded.** If the gate somehow stays closed, the sender proceeds anyway
   after `_SEND_GATE_TIMEOUT`. A gateway that tries and fails is recoverable; one that
   silently never tries is not, and `retry_loop`'s deadline would quietly fail everything.
+
+The timeout has to be sized against the longest legitimate closure, which is the hard
+path: `hard_reset`, then `_WD_HARD_RESET_SETTLE` (40s), then `os._exit(1)`. A timeout
+below that would release the sender into a rebooting modem — turning the gate from a
+protection into a way of manufacturing exactly the failures it exists to prevent. So it
+sits above 40 seconds, and comfortably above `soft_recover`'s ~30 seconds of command
+timeouts. It is a stuck-gate backstop, not a scheduling knob.
+
+The gate also has to be reopened on the error path: if `soft_recover` raises, the `finally`
+reopens it. A gate left closed by an exception would stop the gateway sending at all until
+the next restart, which is the worst failure mode in this whole change.
 
 The gate is closed only around recovery operations, not for the whole time the modem is
 unregistered — see the deliberate exclusion in the proposal.

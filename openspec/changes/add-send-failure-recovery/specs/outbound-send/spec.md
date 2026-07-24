@@ -21,6 +21,11 @@ failed registration poll does, so that recovery escalates on the existing ladder
 recovery, then a hard reset gated to once per thirty minutes, then the service exit. No
 separate recovery path SHALL be introduced.
 
+Performing a recovery SHALL discard the tracked evidence, so escalating further requires
+messages to fail again. Without this a stall declared on a quiet gateway would survive
+untouched — there being nothing to send that could clear it — and drive the ladder to a
+service restart on evidence already acted upon.
+
 When the watchdog is disabled this SHALL have no effect, and the tracked evidence SHALL be
 discarded.
 
@@ -44,6 +49,10 @@ discarded.
 - **WHEN** three different messages fail with `+CMS ERROR: 1 (unassigned number)`
 - **THEN** the modem is not treated as unhealthy
 
+#### Scenario: Nothing is sent after a recovery
+- **WHEN** a stall triggers a soft recovery and no message is sent for the next hour
+- **THEN** no further recovery is triggered, because the evidence was consumed
+
 #### Scenario: The watchdog is disabled
 - **WHEN** `modem_watchdog_enabled` is false and three different messages fail transiently
 - **THEN** no recovery is attempted and the evidence is discarded
@@ -58,11 +67,20 @@ never offered to the modem — a recovery window SHALL cost a message time, neve
 
 The wait SHALL be bounded: if recovery does not complete within a fixed timeout, the
 sender SHALL proceed anyway. A gateway that tries and fails can be diagnosed; one that
-silently stops trying cannot.
+silently stops trying cannot. That timeout SHALL exceed the longest legitimate closure —
+a hard reset and its settling period — so the bound never releases a send into a modem
+that is still rebooting.
+
+Sending SHALL be resumed even if recovery fails, so a raised exception cannot leave the
+gateway permanently unable to send.
 
 #### Scenario: Recovery runs while messages are queued
 - **WHEN** soft recovery is cycling the radio and a message is due
 - **THEN** the message is not transmitted until recovery finishes, and its attempt count is unchanged
+
+#### Scenario: Recovery raises
+- **WHEN** a recovery operation raises an exception
+- **THEN** sending is resumed rather than left suspended
 
 #### Scenario: Recovery never finishes
 - **WHEN** the recovery gate stays closed beyond the sender's timeout
