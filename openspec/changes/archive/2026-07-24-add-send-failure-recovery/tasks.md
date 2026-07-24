@@ -41,9 +41,13 @@
 - [x] 3.1 Full suite green (384).
 - [x] 3.2 Conformance: the requirements this change adds are backed, and the
       `descriptive` "Send outcomes do not influence modem recovery" is removed.
-- [ ] 3.3 Docs: README, `CHANGELOG.md`, version bump.
-- [ ] 3.4 Deploy with the owner's confirmation, then confirm the loops start clean and a
-      real send still works.
+- [x] 3.3 Docs: README (RU+EN), `CHANGELOG.md`, version 0.10.0.
+- [x] 3.4 Deployed 2026-07-24 with the owner's confirmation; no migration in this
+      release, DB backed up anyway (983 rows). All loops started clean, watchdog task up
+      with `enabled=True`, zero errors, `send_stall_recovery_enabled` seeded true. Smoke:
+      message 984 sent on attempt 1 and reported delivered in 3s. The stall path itself
+      is untested on live hardware — it needs a real modem that answers but will not
+      send. Rollback is `send_stall_recovery_enabled` = false, no code rollout.
 
 ## 4. Deliberately out of scope
 
