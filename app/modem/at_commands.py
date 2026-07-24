@@ -19,7 +19,18 @@ _DRAIN_BUDGET = 2.0
 
 
 class ATCommandError(Exception):
-    pass
+    """A failed AT exchange.
+
+    `pdu_submitted` says whether message bytes had already been written to the modem
+    when this failed. It is the difference between a failure that can be retried and
+    one that must not be: once the PDU and its Ctrl-Z are out, the SMSC may have
+    accepted the message even though we never saw the confirmation, and sending it
+    again would put a second copy on someone's handset.
+    """
+
+    def __init__(self, message: str, *, pdu_submitted: bool = False) -> None:
+        super().__init__(message)
+        self.pdu_submitted = pdu_submitted
 
 
 def _clean_error(buf: bytes, expected: bytes) -> str:
@@ -153,6 +164,7 @@ class ATSerial:
         from app.modem.parser import parse_cmgs_ref
 
         refs = []
+        submitted = False
         async with self._lock:
             await self._set_cmgf_unlocked(0)
             try:
@@ -161,6 +173,9 @@ class ATSerial:
                     prompt = await self._read_until(b'> ', timeout=prompt_timeout)
                     if 'ERROR' in prompt:
                         raise ATCommandError(describe_at_error(prompt))
+                    # Past this point the SMSC may hold the message whatever we see
+                    # next, so every failure from here is un-retryable.
+                    submitted = True
                     await self._send(pdu.encode() + CTRL_Z)
                     response = await self._read_until(b'OK', timeout=timeout)
                     if 'ERROR' in response:
@@ -172,7 +187,10 @@ class ATSerial:
                         )
                     refs.append(ref)
                     await on_part_sent(seq, ref)
-            except BaseException:
+                    submitted = False       # this part is accounted for
+            except BaseException as exc:
+                if isinstance(exc, ATCommandError) and submitted:
+                    exc.pdu_submitted = True
                 await self._abort_prompt_unlocked()
                 raise
             finally:

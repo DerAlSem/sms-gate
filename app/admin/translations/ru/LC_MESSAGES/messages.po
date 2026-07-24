@@ -1,233 +1,332 @@
+
 msgid ""
 msgstr ""
-"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-24 18:47+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+"Language-Team: ru <LL@li.org>\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
+"n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
 
-msgid "Outbound"
-msgstr "Исходящие"
-
-msgid "Inbound"
-msgstr "Входящие"
-
-msgid "Dialogs"
-msgstr "Диалоги"
-
-msgid "Blacklist"
-msgstr "Чёрный список"
-
-msgid "Prefixes"
-msgstr "Префиксы"
-
-msgid "Statistics"
-msgstr "Статистика"
-
-msgid "Phone"
-msgstr "Телефон"
-
-msgid "— any status —"
-msgstr "— любой статус —"
-
-msgid "Filter"
-msgstr "Фильтр"
-
-msgid "%(count)s records"
-msgstr "%(count)s записей"
-
-msgid "Operator"
-msgstr "Оператор"
-
-msgid "Text"
-msgstr "Текст"
-
-msgid "Status"
-msgstr "Статус"
-
-msgid "Created"
-msgstr "Создано"
-
-msgid "Sent"
-msgstr "Отправлено"
-
-msgid "Delivered"
-msgstr "Доставлено"
-
-msgid "Error"
-msgstr "Ошибка"
-
-msgid "No records"
-msgstr "Нет записей"
-
-msgid "‹ Back"
-msgstr "‹ Назад"
-
-msgid "Page %(page)s of %(pages)s"
-msgstr "Стр. %(page)s из %(pages)s"
-
-msgid "Forward ›"
-msgstr "Вперёд ›"
-
-msgid "Failures"
-msgstr "Фейлов"
-
-msgid "Blocked"
-msgstr "Заблокирован"
-
-msgid "Last error"
-msgstr "Последняя ошибка"
-
-msgid "Last failure"
-msgstr "Последний фейл"
-
-msgid "not blocked"
-msgstr "не заблокирован"
-
-msgid "Unblock"
-msgstr "Разблокировать"
-
-msgid "List is empty"
-msgstr "Список пуст"
-
-msgid "Received"
-msgstr "Получено"
-
-msgid "Delete"
-msgstr "Удалить"
-
-msgid "dialog →"
-msgstr "диалог →"
-
-msgid "Last activity"
-msgstr "Последняя активность"
-
-msgid "open →"
-msgstr "открыть →"
-
-msgid "No dialogs"
-msgstr "Нет диалогов"
-
-msgid "All dialogs"
-msgstr "Все диалоги"
-
-msgid "No messages"
-msgstr "Нет сообщений"
-
-msgid "Reply"
-msgstr "Ответ"
-
-msgid "Resend"
-msgstr "Повторить"
-
-msgid "Send"
-msgstr "Отправить"
-
-msgid "Fill gaps (voxlink)"
-msgstr "Заполнить пропуски (voxlink)"
-
-msgid "Number"
-msgstr "Номер"
-
-msgid "Region"
-msgstr "Регион"
-
-msgid "Checked"
-msgstr "Проверено"
-
-msgid "Cache is empty"
-msgstr "Кэш пуст"
-
-msgid "Last 14 days"
-msgstr "За 14 дней"
-
-msgid "Day"
-msgstr "День"
-
-msgid "Total"
-msgstr "Всего"
-
-msgid "No data"
-msgstr "Нет данных"
-
-msgid "Apps"
-msgstr "Приложения"
-
+#: app/admin/templates/apps.html:3
 msgid "Client apps"
 msgstr "Приложения-клиенты"
 
-msgid "Token for %(app_id)s — copy it now, shown only once"
-msgstr "Токен для %(app_id)s — скопируйте сейчас, показывается один раз"
-
-msgid "app id (e.g. my_bot)"
-msgstr "id приложения (напр. my_bot)"
-
-msgid "Description"
-msgstr "Описание"
-
-msgid "Create"
-msgstr "Создать"
-
-msgid "Token"
-msgstr "Токен"
-
-msgid "Messages"
-msgstr "Сообщения"
-
-msgid "Active"
-msgstr "Активно"
-
-msgid "yes"
-msgstr "да"
-
-msgid "no"
-msgstr "нет"
-
-msgid "Deactivate"
-msgstr "Деактивировать"
-
-msgid "Activate"
-msgstr "Активировать"
-
-msgid "Delete app"
-msgstr "Удалить приложение"
-
-msgid "internal"
-msgstr "внутреннее"
-
+#: app/admin/templates/apps.html:6
 msgid "An app with that id already exists"
 msgstr "Приложение с таким id уже существует"
 
+#: app/admin/templates/apps.html:8
 msgid "App id cannot be empty"
 msgstr "id приложения не может быть пустым"
 
+#: app/admin/templates/apps.html:13
+#, python-format
+msgid "Token for %(app_id)s — copy it now, shown only once"
+msgstr "Токен для %(app_id)s — скопируйте сейчас, показывается один раз"
+
+#: app/admin/templates/apps.html:19
+msgid "app id (e.g. my_bot)"
+msgstr "id приложения (напр. my_bot)"
+
+#: app/admin/templates/apps.html:20 app/admin/templates/apps.html:25
+msgid "Description"
+msgstr "Описание"
+
+#: app/admin/templates/apps.html:21
+msgid "Create"
+msgstr "Создать"
+
+#: app/admin/templates/apps.html:25
+msgid "Token"
+msgstr "Токен"
+
+#: app/admin/templates/apps.html:25
+msgid "Messages"
+msgstr "Сообщения"
+
+#: app/admin/templates/apps.html:25
+msgid "Active"
+msgstr "Активно"
+
+#: app/admin/templates/apps.html:32
+msgid "yes"
+msgstr "да"
+
+#: app/admin/templates/apps.html:32
+msgid "no"
+msgstr "нет"
+
+#: app/admin/templates/apps.html:38
+msgid "Deactivate"
+msgstr "Деактивировать"
+
+#: app/admin/templates/apps.html:38
+msgid "Activate"
+msgstr "Активировать"
+
+#: app/admin/templates/apps.html:42
+msgid "Delete app"
+msgstr "Удалить приложение"
+
+#: app/admin/templates/apps.html:44 app/admin/templates/inbound.html:26
+#: app/admin/templates/inbound.html:28
+msgid "Delete"
+msgstr "Удалить"
+
+#: app/admin/templates/apps.html:47
+msgid "internal"
+msgstr "внутреннее"
+
+#: app/admin/templates/base.html:64 app/admin/templates/dialogs.html:8
+msgid "Outbound"
+msgstr "Исходящие"
+
+#: app/admin/templates/base.html:65 app/admin/templates/dialogs.html:7
+msgid "Inbound"
+msgstr "Входящие"
+
+#: app/admin/templates/base.html:66
+msgid "Dialogs"
+msgstr "Диалоги"
+
+#: app/admin/templates/base.html:67
+msgid "Blacklist"
+msgstr "Чёрный список"
+
+#: app/admin/templates/base.html:68
+msgid "Prefixes"
+msgstr "Префиксы"
+
+#: app/admin/templates/base.html:69
+msgid "Statistics"
+msgstr "Статистика"
+
+#: app/admin/templates/base.html:70
+msgid "Apps"
+msgstr "Приложения"
+
+#: app/admin/templates/base.html:71 app/admin/templates/settings.html:3
 msgid "Settings"
 msgstr "Настройки"
 
-msgid "Save"
-msgstr "Сохранить"
-
-msgid "configured (blank = keep)"
-msgstr "задано (пусто = не менять)"
-
-msgid "not set"
-msgstr "не задано"
-
-msgid "error"
-msgstr "ошибка"
-
+#: app/admin/templates/base.html:72
 msgid "Modem"
 msgstr "Модем"
 
+#: app/admin/templates/blacklist.html:6 app/admin/templates/dialogs.html:6
+#: app/admin/templates/inbound.html:4 app/admin/templates/inbound.html:12
+#: app/admin/templates/messages.html:4 app/admin/templates/messages.html:18
+msgid "Phone"
+msgstr "Телефон"
+
+#: app/admin/templates/blacklist.html:6
+msgid "Failures"
+msgstr "Фейлов"
+
+#: app/admin/templates/blacklist.html:6
+msgid "Blocked"
+msgstr "Заблокирован"
+
+#: app/admin/templates/blacklist.html:7
+msgid "Last error"
+msgstr "Последняя ошибка"
+
+#: app/admin/templates/blacklist.html:7
+msgid "Last failure"
+msgstr "Последний фейл"
+
+#: app/admin/templates/blacklist.html:19
+msgid "not blocked"
+msgstr "не заблокирован"
+
+#: app/admin/templates/blacklist.html:25 app/admin/templates/blacklist.html:27
+msgid "Unblock"
+msgstr "Разблокировать"
+
+#: app/admin/templates/blacklist.html:32
+msgid "List is empty"
+msgstr "Список пуст"
+
+#: app/admin/templates/dialog.html:4
+msgid "All dialogs"
+msgstr "Все диалоги"
+
+#: app/admin/templates/dialog.html:28
+msgid "No messages"
+msgstr "Нет сообщений"
+
+#: app/admin/templates/dialog.html:33
+msgid "Reply"
+msgstr "Ответ"
+
+#: app/admin/templates/dialog.html:34
+msgid "Send"
+msgstr "Отправить"
+
+#: app/admin/templates/dialogs.html:9
+msgid "Last activity"
+msgstr "Последняя активность"
+
+#: app/admin/templates/dialogs.html:20
+msgid "open →"
+msgstr "открыть →"
+
+#: app/admin/templates/dialogs.html:23
+msgid "No dialogs"
+msgstr "Нет диалогов"
+
+#: app/admin/templates/inbound.html:5 app/admin/templates/messages.html:11
+msgid "Filter"
+msgstr "Фильтр"
+
+#: app/admin/templates/inbound.html:6 app/admin/templates/messages.html:12
+#, python-format
+msgid "%(count)s records"
+msgstr "%(count)s записей"
+
+#: app/admin/templates/inbound.html:12 app/admin/templates/messages.html:18
+msgid "Text"
+msgstr "Текст"
+
+#: app/admin/templates/inbound.html:12
+msgid "Received"
+msgstr "Получено"
+
+#: app/admin/templates/inbound.html:21
+msgid "dialog →"
+msgstr "диалог →"
+
+#: app/admin/templates/inbound.html:33 app/admin/templates/messages.html:54
+msgid "No records"
+msgstr "Нет записей"
+
+#: app/admin/templates/inbound.html:40 app/admin/templates/messages.html:61
+msgid "‹ Back"
+msgstr "‹ Назад"
+
+#: app/admin/templates/inbound.html:42 app/admin/templates/messages.html:63
+#, python-format
+msgid "Page %(page)s of %(pages)s"
+msgstr "Стр. %(page)s из %(pages)s"
+
+#: app/admin/templates/inbound.html:44 app/admin/templates/messages.html:65
+msgid "Forward ›"
+msgstr "Вперёд ›"
+
+#: app/admin/templates/messages.html:6
+msgid "— any status —"
+msgstr "— любой статус —"
+
+#: app/admin/templates/messages.html:18 app/admin/templates/ranges.html:9
+msgid "Operator"
+msgstr "Оператор"
+
+#: app/admin/templates/messages.html:18
+msgid "Status"
+msgstr "Статус"
+
+#: app/admin/templates/messages.html:19
+msgid "Created"
+msgstr "Создано"
+
+#: app/admin/templates/messages.html:19
+msgid "Sent"
+msgstr "Отправлено"
+
+#: app/admin/templates/messages.html:19
+msgid "Delivered"
+msgstr "Доставлено"
+
+#: app/admin/templates/messages.html:19
+msgid "Error"
+msgstr "Ошибка"
+
+#: app/admin/templates/messages.html:35
+#, python-format
+msgid "retry %(n)s"
+msgstr "попытка %(n)s"
+
+#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:48
+msgid "Resend"
+msgstr "Повторить"
+
+#: app/admin/templates/modem.html:3
 msgid "Modem diagnostics"
 msgstr "Диагностика модема"
 
+#: app/admin/templates/modem.html:4
 msgid "Refresh"
 msgstr "Обновить"
 
+#: app/admin/templates/modem.html:8
 msgid "Parameter"
 msgstr "Параметр"
 
+#: app/admin/templates/modem.html:9
 msgid "Value"
 msgstr "Значение"
 
+#: app/admin/templates/modem.html:10
 msgid "Raw"
 msgstr "Raw"
+
+#: app/admin/templates/ranges.html:4
+msgid "Fill gaps (voxlink)"
+msgstr "Заполнить пропуски (voxlink)"
+
+#: app/admin/templates/ranges.html:9
+msgid "Number"
+msgstr "Номер"
+
+#: app/admin/templates/ranges.html:9
+msgid "Region"
+msgstr "Регион"
+
+#: app/admin/templates/ranges.html:9
+msgid "Checked"
+msgstr "Проверено"
+
+#: app/admin/templates/ranges.html:21
+msgid "Cache is empty"
+msgstr "Кэш пуст"
+
+#: app/admin/templates/settings.html:15
+msgid "configured (blank = keep)"
+msgstr "задано (пусто = не менять)"
+
+#: app/admin/templates/settings.html:15
+msgid "not set"
+msgstr "не задано"
+
+#: app/admin/templates/settings.html:32
+msgid "error"
+msgstr "ошибка"
+
+#: app/admin/templates/settings.html:39
+msgid "Save"
+msgstr "Сохранить"
+
+#: app/admin/templates/stats.html:12
+msgid "Last 14 days"
+msgstr "За 14 дней"
+
+#: app/admin/templates/stats.html:16
+msgid "Day"
+msgstr "День"
+
+#: app/admin/templates/stats.html:20
+msgid "Total"
+msgstr "Всего"
+
+#: app/admin/templates/stats.html:34
+msgid "No data"
+msgstr "Нет данных"
+

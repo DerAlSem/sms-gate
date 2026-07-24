@@ -45,9 +45,22 @@ rollback switch if the change misbehaves in production.
 Stored as a setting, re-read per use like `delivery_timeout_seconds`, so it can be tuned
 without a restart.
 
-## D4 — Classifying a failure
+## D4 — Classifying a failure, by phase as well as by text
 
-**Decided: an explicit permanent list; everything else is transient.**
+**Decided: an explicit permanent list; everything else that happened *before* the PDU
+was written is transient.**
+
+The phase half was missed in the first draft and is the more important one. The text
+`no response from modem (timeout)` is produced at two points in `send_sms_pdu`: waiting
+for the `> ` prompt, where nothing has been transmitted, and waiting for `OK` after the
+PDU and its Ctrl-Z, where the SMSC may already hold the message. The bytes on the wire
+are identical; only the caller knows which. So `ATCommandError` carries `pdu_submitted`,
+set at the moment of the write, and a failure carrying it is never retried.
+
+Six of the 30 never-`sent` prod failures are `Timeout waiting for b'OK', got: b''` —
+exactly this shape. A text-only classifier would have sent all six twice.
+
+The code tables below still decide the *pre-transmission* cases.
 
 Permanent — retrying cannot help:
 
@@ -71,22 +84,29 @@ Deliberately separate from `_is_permanent_status`, which classifies a TP-status 
 
 ## D5 — Multipart is all-or-nothing
 
-**Decided: auto-retry only while no part has been transmitted.**
+**Decided: auto-retry only while no part has been transmitted, tracked in-process.**
 
 Parts go out sequentially and the message becomes `sent` on the first `+CMGS`. If part 2
 fails, part 1 is already on its way to the handset. Re-sending the whole message would
 deliver part 1 twice, and the recipient would see a duplicate or a mangled
 concatenation — a worse outcome than the failure.
 
-So the eligibility rule is the message's own status: only a `pending` message is
-re-attempted. One that reached `sent` and then failed keeps today's behaviour, including
-the immediate `failed` webhook and operator alert. Retrying just the missing parts was
-rejected: the SMSC may already have timed out the concatenation, so it trades a visible
-failure for an invisible corruption.
+The first draft made the eligibility rule "the message's status is still `pending`".
+That is wrong: the status is written *after* the modem acknowledges, so a message can be
+`pending` with part 1 already on its way — a DB error in the part callback, or the
+watchdog's `os._exit(1)` landing during the 30-second response window, both leave exactly
+that. The rule is therefore a flag set by the part callback in-process, which is
+authoritative and needs no DB read, backed by `pdu_submitted` from D4 for the window
+before any status exists at all.
 
-## D6 — Scheduling without blocking the queue
+Retrying just the missing parts was rejected: the SMSC may already have timed out the
+concatenation, so it trades a visible failure for an invisible corruption. The
+concatenation reference is `message_id % 256`, so a resend would also reuse it.
 
-**Decided: a due-message scheduler, not a sleep inside the sender loop.**
+## D6 — Scheduling without blocking the queue, and `next_attempt_at` as the claim marker
+
+**Decided: a due-message scheduler, not a sleep inside the sender loop; and the schedule
+column doubles as the record of who owns the message.**
 
 Sleeping in the sender loop would hold up every other message for the length of the
 backoff — five minutes of head-of-line blocking on a shared gateway.
@@ -99,21 +119,49 @@ This makes retry state durable, which is what lets the same loop close the resta
 after a restart the in-memory queue is empty, so any `pending` message is stranded. The
 loop picks those up too.
 
-**Avoiding a double-enqueue.** A message accepted by `POST /sms/send` is `pending` and in
-the in-memory queue at once, so the scheduler must not also claim it. Two guards, because
-one alone leaves a window:
+**The claim marker.** `next_attempt_at` is stamped at `INSERT` (a minute out, so a
+restart can still recover the message) and **cleared the moment the sender claims it**,
+before any byte reaches the modem. That single rule buys three things:
 
-1. The manager tracks the ids it currently holds in the queue or in flight, and the
-   scheduler skips them.
-2. A never-attempted message is only considered stranded once it is older than 60
-   seconds, which covers the microseconds between the `INSERT` and the enqueue.
+- a message being transmitted is not selectable, however long a six-part send takes;
+- a message whose attempt died mid-flight has no schedule, so nothing ever resends it —
+  the crash case that D5's status check could not see;
+- "due" is one predicate, `next_attempt_at <= now`, instead of an inference over two
+  columns.
 
-Both are needed: the id set is empty after a restart (so the age rule does the work), and
-the age rule alone would race with a slow first attempt (so the id set does).
+The in-memory set of held ids remains as a second guard for the live path, and is added
+to *before* the queue put so no gap exists.
 
-## D7 — Feeding the watchdog
+**Bounds.** The due query is capped by age and by batch size. Without the age cap the
+first tick after a deploy would resurrect every message ever stranded in `pending` —
+ordered oldest-first, ahead of live traffic. Prod happens to have none today, which was
+checked rather than assumed, but the bound is what makes that safe rather than lucky.
 
-**Decided: consecutive transient send failures make the next watchdog step take its
+**Sweeping.** Nothing looked at `pending` before — `expire_stale_messages` covers only
+`sent`. A message past `sum(backoff) + 120` seconds is failed and its app told, so every
+failure mode above ends in a terminal status rather than an eternal `pending`.
+
+## D7 — Feeding the watchdog — withdrawn from this change
+
+**Decided: not here.** Review found the proposed coupling is either inert or harmful, so
+it is carved out rather than shipped.
+
+- **One-shot**: `_watchdog_step` needs three consecutive failure branches to soft-recover
+  and resets its counter on any success. One forced step per burst never escalates, so
+  the coupling would change the spec and do nothing.
+- **Sticky**: it escalates into a loop. `soft_recover` cycles the radio off and on for
+  tens of seconds; every send interrupted by that feeds the counter that triggered it,
+  and the ladder ends at `os._exit(1)`. The 30-minute hard-reset gate bounds it to a
+  cycle rather than a spiral, which is not much comfort.
+
+Two structural fixes it needs, and neither belongs in a change to the send path itself:
+sending must be quiesced while recovery runs, and the counter must track *distinct
+messages*, not attempts of one message — otherwise a single bad destination timing out
+three times triggers modem recovery.
+
+The original reasoning is kept below, because it is still the right shape for that change.
+
+**Original: consecutive transient send failures make the next watchdog step take its
 failure branch.**
 
 The watchdog owns escalation — three strikes, soft recovery, then a hard reset gated to

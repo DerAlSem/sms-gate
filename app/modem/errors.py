@@ -62,3 +62,20 @@ def is_permanent_failure(error: str) -> bool:
     kind, code = match.group(1), int(match.group(2))
     table = _PERMANENT_CMS if kind == 'CMS' else _PERMANENT_CME
     return code in table
+
+
+def is_retryable(error: str, *, pdu_submitted: bool, already_sent: bool) -> bool:
+    """True when the gateway may transmit this message again.
+
+    Three independent vetoes, because the cost of getting this wrong is a duplicate SMS
+    on a real handset:
+
+    - `pdu_submitted` — the message bytes reached the modem, so the SMSC may hold it
+      even though the confirmation never came back. The wire cannot tell us which.
+    - `already_sent` — an earlier part of a multipart message was accepted, so a resend
+      would deliver that part twice (and reuse its concatenation reference).
+    - a permanent failure, which a retry cannot change anyway.
+    """
+    if pdu_submitted or already_sent:
+        return False
+    return not is_permanent_failure(error)

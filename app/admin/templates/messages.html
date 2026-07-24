@@ -29,11 +29,15 @@
         {% if m.operator %}{{ m.operator }}<br>{{ m.region }}{% else %}—{% endif %}
       </td>
       <td class="text-truncate" title="{{ m.text }}">{{ m.text }}</td>
-      <td><span class="status status-{{ m.status }}">{{ m.status }}</span></td>
+      <td><span class="status status-{{ m.status }}">{{ m.status }}</span>
+          {% if m.status == 'pending' and m.attempts %}
+            <br><span class="muted" style="font-size:11px;"
+                     title="{{ m.last_attempt_error or '' }}">{% trans n=m.attempts %}retry {{ n }}{% endtrans %}</span>
+          {% endif %}</td>
       <td>{{ m.created_at | msk }}</td>
       <td>{{ m.sent_at | msk }}</td>
       <td>{{ m.delivered_at | msk }}</td>
-      <td class="text-truncate muted" title="{{ m.error or '' }}">{{ m.error or '' }}</td>
+      <td class="text-truncate muted" title="{{ m.error or m.last_attempt_error or '' }}">{{ m.error or m.last_attempt_error or '' }}</td>
       <td>
         {% if m.status in ['failed', 'expired'] %}
           <form method="post" action="/admin/messages/{{ m.id }}/resend"

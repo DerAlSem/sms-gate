@@ -12,6 +12,7 @@ from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
+from app.modem.errors import is_retryable
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
@@ -87,6 +88,9 @@ class ModemManager:
         self._queue: asyncio.Queue[OutgoingMessage] = asyncio.Queue()
         self._inbound_indices: asyncio.Queue[int] = asyncio.Queue()
         self._bg_tasks: set[asyncio.Task] = set()
+        # Ids the sender holds queued or in flight. The scheduler skips them, so a
+        # message cannot be enqueued twice and sent twice.
+        self._held: set[int] = set()
         self._wd_fails = 0
         self._wd_soft_tried = False
 
@@ -98,7 +102,18 @@ class ModemManager:
         await self._sender.close()
 
     async def enqueue(self, message_id: int, phone: str, text: str, app_id: str = "") -> None:
+        # Held before the message is queued, never after: the scheduler skips held ids,
+        # and a gap here would let it claim a message the sender is about to send.
+        self._held.add(message_id)
         await self._queue.put(OutgoingMessage(message_id, phone, text, app_id))
+
+    def _retry_deadline(self) -> int:
+        """How long a message may stay `pending` before the gateway gives up on it.
+
+        Derived from the one knob rather than configured separately, so the budget and
+        the deadline cannot disagree. The margin covers a slow final attempt.
+        """
+        return sum(store.send_retry_backoff_parsed) + 120
 
     async def sender_loop(self) -> None:
         """Pick messages from queue and send via modem."""
@@ -106,42 +121,139 @@ class ModemManager:
         while True:
             msg = await self._queue.get()
             try:
-                parts = encode_submit(msg.phone, msg.text, ref=msg.message_id % 256)
-                if len(parts) > store.max_sms_parts:
-                    error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
-                    await queries.set_message_failed(msg.message_id, error)
-                    spawn_delivery_dispatch(msg.message_id, "failed", error)
-                    logger.warning(
-                        "Rejected message %d (app=%s to=%s): %s",
-                        msg.message_id, msg.app_id or "?", msg.phone, error,
-                    )
-                    notify("send_error",
-                           f"{msg.phone} (id {msg.message_id}): {error}",
-                           dedup_extra="too_long", phone=msg.phone)
-                    continue
-
-                total = len(parts)
-
-                async def on_part_sent(seq: int, ref: int) -> None:
-                    await queries.add_message_part(msg.message_id, ref, seq, total)
-                    if seq == 1:
-                        await queries.set_message_sent(msg.message_id, ref)
-                        spawn_delivery_dispatch(msg.message_id, "sent")
-
-                await self._sender.send_sms_pdu(parts, on_part_sent)
-                logger.info("Sent message %d in %d part(s)", msg.message_id, total)
-            except ATCommandError as e:
-                await queries.set_message_failed(msg.message_id, str(e))
-                spawn_delivery_dispatch(msg.message_id, "failed", str(e))
-                logger.warning(
-                    "Failed to send message %d (app=%s to=%s text=%r): %s",
-                    msg.message_id, msg.app_id or "?", msg.phone, msg.text, e,
+                await self._send_one(msg)
+            except Exception:
+                # Anything that is not an AT failure — an encoder bug, a SQLite error,
+                # a raise inside the part callback. Before this the exception escaped
+                # `while True` and killed the sender permanently, in silence.
+                logger.exception(
+                    "Unhandled error sending message %d (app=%s to=%s)",
+                    msg.message_id, msg.app_id or "?", msg.phone,
                 )
-                notify("send_error",
-                       f"{msg.phone} (id {msg.message_id}): {e}",
-                       dedup_extra=str(e), phone=msg.phone)
+                await self._finally_fail(msg, "internal error while sending", attempt=0)
             finally:
+                # In `finally` so a held id is released down every path; a leaked one
+                # would make the message invisible to the scheduler forever.
+                self._held.discard(msg.message_id)
                 self._queue.task_done()
+
+    async def _send_one(self, msg: OutgoingMessage) -> None:
+        parts = encode_submit(msg.phone, msg.text, ref=msg.message_id % 256)
+        if len(parts) > store.max_sms_parts:
+            error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
+            logger.warning(
+                "Rejected message %d (app=%s to=%s): %s",
+                msg.message_id, msg.app_id or "?", msg.phone, error,
+            )
+            await self._finally_fail(msg, error, attempt=0, dedup="too_long")
+            return
+
+        total = len(parts)
+        # Counted before any byte goes out, so an attempt cut short by a crash leaves
+        # the message unscheduled rather than looking untouched.
+        attempt = await queries.begin_message_attempt(msg.message_id)
+        reached_sent = False
+
+        async def on_part_sent(seq: int, ref: int) -> None:
+            nonlocal reached_sent
+            await queries.add_message_part(msg.message_id, ref, seq, total)
+            if seq == 1:
+                reached_sent = True
+                await queries.set_message_sent(msg.message_id, ref)
+                spawn_delivery_dispatch(msg.message_id, "sent")
+
+        try:
+            await self._sender.send_sms_pdu(parts, on_part_sent)
+        except ATCommandError as e:
+            await self._handle_send_failure(msg, e, attempt, reached_sent)
+            return
+        logger.info(
+            "Sent message %d in %d part(s) on attempt %d", msg.message_id, total, attempt
+        )
+
+    async def _handle_send_failure(
+        self, msg: OutgoingMessage, error: ATCommandError, attempt: int, reached_sent: bool
+    ) -> None:
+        text = str(error)
+        backoff = store.send_retry_backoff_parsed
+        retryable = is_retryable(
+            text,
+            pdu_submitted=getattr(error, "pdu_submitted", False),
+            already_sent=reached_sent,
+        )
+        if retryable and attempt <= len(backoff):
+            delay = backoff[attempt - 1]
+            await queries.schedule_message_retry(msg.message_id, delay, text)
+            logger.warning(
+                "Attempt %d for message %d (app=%s to=%s) failed: %s — retrying in %ds",
+                attempt, msg.message_id, msg.app_id or "?", msg.phone, text, delay,
+            )
+            # One alert per window regardless of message: the operator wants to know the
+            # gateway is struggling, not to receive one message per deferral.
+            notify("send_error",
+                   f"{msg.phone} (id {msg.message_id}): attempt {attempt} failed, "
+                   f"retrying in {delay}s — {text}",
+                   dedup_extra="retrying", phone=msg.phone)
+            return
+
+        logger.warning(
+            "Failed to send message %d (app=%s to=%s text=%r) after %d attempt(s): %s",
+            msg.message_id, msg.app_id or "?", msg.phone, msg.text, attempt, text,
+        )
+        await self._finally_fail(msg, text, attempt)
+
+    async def _finally_fail(
+        self, msg: OutgoingMessage, error: str, attempt: int, dedup: str | None = None
+    ) -> None:
+        """The one place a send path writes `failed` — and therefore the one place the
+        owning app is told the gateway has stopped trying."""
+        await queries.set_message_failed(msg.message_id, error)
+        spawn_delivery_dispatch(msg.message_id, "failed", error)
+        suffix = f" (after {attempt} attempts)" if attempt > 1 else ""
+        notify("send_error",
+               f"{msg.phone} (id {msg.message_id}): {error}{suffix}",
+               dedup_extra=dedup or error, phone=msg.phone)
+
+    async def retry_loop(self, interval_seconds: int = 15) -> None:
+        """Re-queue messages whose next attempt is due, and give up on the too-old."""
+        logger.info("Retry loop started")
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                await self._retry_step()
+            except Exception:
+                # A failing tick must not stop the scheduler: it is the only thing that
+                # moves a retrying message, and its death would be silent.
+                logger.exception("Retry step failed")
+
+    async def _retry_step(self) -> None:
+        deadline = self._retry_deadline()
+
+        for row in await queries.stale_pending_messages(deadline):
+            if row["id"] in self._held:
+                continue                      # still being transmitted
+            error = row["last_attempt_error"] or "never transmitted"
+            await queries.set_message_failed(row["id"], error)
+            spawn_delivery_dispatch(row["id"], "failed", error)
+            logger.warning(
+                "Gave up on message %d after %ds pending: %s", row["id"], deadline, error
+            )
+
+        for row in await queries.due_pending_messages(deadline):
+            if row["id"] in self._held:
+                continue
+            # The number may have been blacklisted since acceptance — by a delivery
+            # report on a different message, for instance. Both other enqueue paths
+            # check; a retry must not be the way around it.
+            if await queries.is_phone_blocked(row["phone"]):
+                error = "number blacklisted while pending"
+                await queries.set_message_failed(row["id"], error)
+                spawn_delivery_dispatch(row["id"], "failed", error)
+                continue
+            logger.info(
+                "Re-queueing message %d for attempt %d", row["id"], row["attempts"] + 1
+            )
+            await self.enqueue(row["id"], row["phone"], row["text"], row["app_id"])
 
     async def reader_loop(self) -> None:
         """Listen on read port for +CDS delivery reports."""

@@ -117,8 +117,18 @@ async def run_migrations() -> None:
     # Retry state. Persisted rather than kept on the in-memory queue entry so a pending
     # retry survives a restart — which is also what lets the scheduler pick up messages
     # a restart stranded in `pending`.
+    #
+    # `next_attempt_at` doubles as the claim marker: it is cleared the moment a message
+    # is handed to the modem and only set again by a clean decision to try later. A
+    # message whose process died mid-send therefore has no schedule and is never
+    # resent — a duplicate on someone's handset is worse than a message an operator
+    # has to push manually.
     await _add_column_if_missing(db, "messages", "attempts", "INTEGER NOT NULL DEFAULT 0")
     await _add_column_if_missing(db, "messages", "next_attempt_at", "TIMESTAMP")
+    # Kept apart from `error`, which still means "why this message finally failed".
+    # Overloading `error` on a message that is still `pending` would make a consumer
+    # reading `error != null` see failures that never happened.
+    await _add_column_if_missing(db, "messages", "last_attempt_error", "TEXT")
 
     await db.execute(
         """

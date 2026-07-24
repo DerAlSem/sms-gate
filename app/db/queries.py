@@ -34,7 +34,13 @@ async def create_message(
 ) -> int:
     db = await get_db()
     async with db.execute(
-        "INSERT INTO messages (app_id, phone, text, resent_from) VALUES (?, ?, ?, ?)",
+        # `next_attempt_at` is set here, a minute out, so a message the in-memory queue
+        # loses to a restart is still recoverable. In the normal path the sender claims
+        # it long before then and clears the time.
+        """
+        INSERT INTO messages (app_id, phone, text, resent_from, next_attempt_at)
+        VALUES (?, ?, ?, ?, datetime('now', '+60 seconds'))
+        """,
         (app_id, phone, text, resent_from),
     ) as cursor:
         await db.commit()
@@ -99,21 +105,45 @@ async def set_message_failed(message_id: int, error: str) -> None:
     await db.commit()
 
 
-async def schedule_message_retry(
-    message_id: int, delay_seconds: int, error: str
-) -> None:
-    """Defer another attempt instead of failing the message.
+async def begin_message_attempt(message_id: int) -> int:
+    """Claim a message for transmission and return its attempt number.
 
-    Status stays `pending` — the message is still on its way, so no status change is
-    owed to the app and no `failed` webhook fires. `error` is kept so the last reason is
-    visible in the admin while the message is still being retried.
+    Runs before a single byte reaches the modem. Clearing `next_attempt_at` is what
+    makes a half-finished attempt safe: a process killed between here and the modem's
+    acknowledgement leaves the message with no schedule, so nothing ever re-sends it.
+    Only a clean decision to try later puts a time back.
     """
     db = await get_db()
     await db.execute(
         """
         UPDATE messages
-        SET attempts = attempts + 1,
-            error = ?,
+        SET attempts = attempts + 1, next_attempt_at = NULL
+        WHERE id = ?
+        """,
+        (message_id,),
+    )
+    await db.commit()
+    async with db.execute(
+        "SELECT attempts FROM messages WHERE id = ?", (message_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row["attempts"] if row else 0
+
+
+async def schedule_message_retry(
+    message_id: int, delay_seconds: int, error: str
+) -> None:
+    """Put a message back on the clock instead of failing it.
+
+    Status stays `pending`, and the reason goes to `last_attempt_error` rather than
+    `error` — the message is still on its way, so a consumer reading `error` must not
+    be told it failed.
+    """
+    db = await get_db()
+    await db.execute(
+        """
+        UPDATE messages
+        SET last_attempt_error = ?,
             next_attempt_at = datetime('now', ? || ' seconds')
         WHERE id = ?
         """,
@@ -122,13 +152,17 @@ async def schedule_message_retry(
     await db.commit()
 
 
-async def due_pending_messages(grace_seconds: int = 60) -> list[aiosqlite.Row]:
-    """`pending` messages the sender should pick up now.
+async def due_pending_messages(
+    max_age_seconds: int, limit: int = 20
+) -> list[aiosqlite.Row]:
+    """Scheduled `pending` messages whose time has come.
 
-    Two kinds, and the second is why `grace_seconds` exists: a scheduled retry whose
-    time has come, and a message left `pending` by a restart that lost the in-memory
-    queue. A never-attempted message only counts once it is older than `grace_seconds`,
-    so one still being handed to the queue is not claimed — and sent — twice.
+    Bounded twice on purpose. `max_age_seconds` stops the gateway ever resurrecting an
+    old message — a payment link sent out days late is worse than one never sent — and
+    `limit` stops a single tick stuffing the queue ahead of live traffic.
+
+    A message currently being transmitted has no `next_attempt_at`, so it cannot be
+    selected here however long the modem takes.
     """
     db = await get_db()
     async with db.execute(
@@ -136,13 +170,35 @@ async def due_pending_messages(grace_seconds: int = 60) -> list[aiosqlite.Row]:
         SELECT id, app_id, phone, text, attempts
         FROM messages
         WHERE status = 'pending'
-          AND (
-                (next_attempt_at IS NOT NULL AND next_attempt_at <= datetime('now'))
-             OR (next_attempt_at IS NULL AND created_at <= datetime('now', ? || ' seconds'))
-              )
+          AND next_attempt_at IS NOT NULL
+          AND next_attempt_at <= datetime('now')
+          AND created_at > datetime('now', ? || ' seconds')
+        ORDER BY next_attempt_at
+        LIMIT ?
+        """,
+        (f"-{int(max_age_seconds)}", int(limit)),
+    ) as cursor:
+        return await cursor.fetchall()
+
+
+async def stale_pending_messages(max_age_seconds: int) -> list[aiosqlite.Row]:
+    """`pending` messages too old to still be on their way.
+
+    Nothing else sweeps `pending`: `expire_stale_messages` only covers `sent`. Without
+    this a message whose attempt died mid-flight — or one the scheduler declines to
+    resurrect — would sit `pending` forever, and the app polling it would never see a
+    terminal status.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        SELECT id, phone, last_attempt_error
+        FROM messages
+        WHERE status = 'pending'
+          AND created_at <= datetime('now', ? || ' seconds')
         ORDER BY id
         """,
-        (f"-{int(grace_seconds)}",),
+        (f"-{int(max_age_seconds)}",),
     ) as cursor:
         return await cursor.fetchall()
 
@@ -303,6 +359,7 @@ async def list_messages(
         f"""
         SELECT m.id, m.app_id, m.phone, m.text, m.status, m.modem_ref,
                m.created_at, m.sent_at, m.delivered_at, m.error,
+               m.attempts, m.last_attempt_error, m.next_attempt_at,
                o.operator, o.region
         FROM messages m
         LEFT JOIN number_operators o ON o.phone = m.phone

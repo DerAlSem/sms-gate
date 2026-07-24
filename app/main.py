@@ -52,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         asyncio.create_task(modem_manager.reader_loop()),
         asyncio.create_task(modem_manager.inbound_loop()),
         asyncio.create_task(modem_manager.expire_loop()),
+        asyncio.create_task(modem_manager.retry_loop()),
         asyncio.create_task(modem_manager.keepalive_loop()),
         asyncio.create_task(modem_manager.parts_flush_loop()),
     ]

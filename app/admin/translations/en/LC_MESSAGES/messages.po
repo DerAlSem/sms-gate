@@ -1,5 +1,331 @@
 # English is the msgid language; real translations live in ru/.
 msgid ""
 msgstr ""
-"Content-Type: text/plain; charset=UTF-8\n"
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-07-24 18:47+0300\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#: app/admin/templates/apps.html:3
+msgid "Client apps"
+msgstr ""
+
+#: app/admin/templates/apps.html:6
+msgid "An app with that id already exists"
+msgstr ""
+
+#: app/admin/templates/apps.html:8
+msgid "App id cannot be empty"
+msgstr ""
+
+#: app/admin/templates/apps.html:13
+#, python-format
+msgid "Token for %(app_id)s — copy it now, shown only once"
+msgstr ""
+
+#: app/admin/templates/apps.html:19
+msgid "app id (e.g. my_bot)"
+msgstr ""
+
+#: app/admin/templates/apps.html:20 app/admin/templates/apps.html:25
+msgid "Description"
+msgstr ""
+
+#: app/admin/templates/apps.html:21
+msgid "Create"
+msgstr ""
+
+#: app/admin/templates/apps.html:25
+msgid "Token"
+msgstr ""
+
+#: app/admin/templates/apps.html:25
+msgid "Messages"
+msgstr ""
+
+#: app/admin/templates/apps.html:25
+msgid "Active"
+msgstr ""
+
+#: app/admin/templates/apps.html:32
+msgid "yes"
+msgstr ""
+
+#: app/admin/templates/apps.html:32
+msgid "no"
+msgstr ""
+
+#: app/admin/templates/apps.html:38
+msgid "Deactivate"
+msgstr ""
+
+#: app/admin/templates/apps.html:38
+msgid "Activate"
+msgstr ""
+
+#: app/admin/templates/apps.html:42
+msgid "Delete app"
+msgstr ""
+
+#: app/admin/templates/apps.html:44 app/admin/templates/inbound.html:26
+#: app/admin/templates/inbound.html:28
+msgid "Delete"
+msgstr ""
+
+#: app/admin/templates/apps.html:47
+msgid "internal"
+msgstr ""
+
+#: app/admin/templates/base.html:64 app/admin/templates/dialogs.html:8
+msgid "Outbound"
+msgstr ""
+
+#: app/admin/templates/base.html:65 app/admin/templates/dialogs.html:7
+msgid "Inbound"
+msgstr ""
+
+#: app/admin/templates/base.html:66
+msgid "Dialogs"
+msgstr ""
+
+#: app/admin/templates/base.html:67
+msgid "Blacklist"
+msgstr ""
+
+#: app/admin/templates/base.html:68
+msgid "Prefixes"
+msgstr ""
+
+#: app/admin/templates/base.html:69
+msgid "Statistics"
+msgstr ""
+
+#: app/admin/templates/base.html:70
+msgid "Apps"
+msgstr ""
+
+#: app/admin/templates/base.html:71 app/admin/templates/settings.html:3
+msgid "Settings"
+msgstr ""
+
+#: app/admin/templates/base.html:72
+msgid "Modem"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:6 app/admin/templates/dialogs.html:6
+#: app/admin/templates/inbound.html:4 app/admin/templates/inbound.html:12
+#: app/admin/templates/messages.html:4 app/admin/templates/messages.html:18
+msgid "Phone"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:6
+msgid "Failures"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:6
+msgid "Blocked"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:7
+msgid "Last error"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:7
+msgid "Last failure"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:19
+msgid "not blocked"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:25 app/admin/templates/blacklist.html:27
+msgid "Unblock"
+msgstr ""
+
+#: app/admin/templates/blacklist.html:32
+msgid "List is empty"
+msgstr ""
+
+#: app/admin/templates/dialog.html:4
+msgid "All dialogs"
+msgstr ""
+
+#: app/admin/templates/dialog.html:28
+msgid "No messages"
+msgstr ""
+
+#: app/admin/templates/dialog.html:33
+msgid "Reply"
+msgstr ""
+
+#: app/admin/templates/dialog.html:34
+msgid "Send"
+msgstr ""
+
+#: app/admin/templates/dialogs.html:9
+msgid "Last activity"
+msgstr ""
+
+#: app/admin/templates/dialogs.html:20
+msgid "open →"
+msgstr ""
+
+#: app/admin/templates/dialogs.html:23
+msgid "No dialogs"
+msgstr ""
+
+#: app/admin/templates/inbound.html:5 app/admin/templates/messages.html:11
+msgid "Filter"
+msgstr ""
+
+#: app/admin/templates/inbound.html:6 app/admin/templates/messages.html:12
+#, python-format
+msgid "%(count)s records"
+msgstr ""
+
+#: app/admin/templates/inbound.html:12 app/admin/templates/messages.html:18
+msgid "Text"
+msgstr ""
+
+#: app/admin/templates/inbound.html:12
+msgid "Received"
+msgstr ""
+
+#: app/admin/templates/inbound.html:21
+msgid "dialog →"
+msgstr ""
+
+#: app/admin/templates/inbound.html:33 app/admin/templates/messages.html:54
+msgid "No records"
+msgstr ""
+
+#: app/admin/templates/inbound.html:40 app/admin/templates/messages.html:61
+msgid "‹ Back"
+msgstr ""
+
+#: app/admin/templates/inbound.html:42 app/admin/templates/messages.html:63
+#, python-format
+msgid "Page %(page)s of %(pages)s"
+msgstr ""
+
+#: app/admin/templates/inbound.html:44 app/admin/templates/messages.html:65
+msgid "Forward ›"
+msgstr ""
+
+#: app/admin/templates/messages.html:6
+msgid "— any status —"
+msgstr ""
+
+#: app/admin/templates/messages.html:18 app/admin/templates/ranges.html:9
+msgid "Operator"
+msgstr ""
+
+#: app/admin/templates/messages.html:18
+msgid "Status"
+msgstr ""
+
+#: app/admin/templates/messages.html:19
+msgid "Created"
+msgstr ""
+
+#: app/admin/templates/messages.html:19
+msgid "Sent"
+msgstr ""
+
+#: app/admin/templates/messages.html:19
+msgid "Delivered"
+msgstr ""
+
+#: app/admin/templates/messages.html:19
+msgid "Error"
+msgstr ""
+
+#: app/admin/templates/messages.html:35
+#, python-format
+msgid "retry %(n)s"
+msgstr "retry %(n)s"
+
+#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:48
+msgid "Resend"
+msgstr ""
+
+#: app/admin/templates/modem.html:3
+msgid "Modem diagnostics"
+msgstr ""
+
+#: app/admin/templates/modem.html:4
+msgid "Refresh"
+msgstr ""
+
+#: app/admin/templates/modem.html:8
+msgid "Parameter"
+msgstr ""
+
+#: app/admin/templates/modem.html:9
+msgid "Value"
+msgstr ""
+
+#: app/admin/templates/modem.html:10
+msgid "Raw"
+msgstr ""
+
+#: app/admin/templates/ranges.html:4
+msgid "Fill gaps (voxlink)"
+msgstr ""
+
+#: app/admin/templates/ranges.html:9
+msgid "Number"
+msgstr ""
+
+#: app/admin/templates/ranges.html:9
+msgid "Region"
+msgstr ""
+
+#: app/admin/templates/ranges.html:9
+msgid "Checked"
+msgstr ""
+
+#: app/admin/templates/ranges.html:21
+msgid "Cache is empty"
+msgstr ""
+
+#: app/admin/templates/settings.html:15
+msgid "configured (blank = keep)"
+msgstr ""
+
+#: app/admin/templates/settings.html:15
+msgid "not set"
+msgstr ""
+
+#: app/admin/templates/settings.html:32
+msgid "error"
+msgstr ""
+
+#: app/admin/templates/settings.html:39
+msgid "Save"
+msgstr ""
+
+#: app/admin/templates/stats.html:12
+msgid "Last 14 days"
+msgstr ""
+
+#: app/admin/templates/stats.html:16
+msgid "Day"
+msgstr ""
+
+#: app/admin/templates/stats.html:20
+msgid "Total"
+msgstr ""
+
+#: app/admin/templates/stats.html:34
+msgid "No data"
+msgstr ""
+
