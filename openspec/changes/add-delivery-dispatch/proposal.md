@@ -14,13 +14,24 @@ status is the missing symmetric half.
 - A new `delivery_dispatch` setting: routes keyed by `app_id`, each with a
   `webhook_url` and a `bearer`. Same shape, validation and normalization as
   `inbound_dispatch`.
-- Whenever a message changes status (`sent`, `delivered`, `failed`, `expired`), the
-  gateway POSTs `{"id", "status", "error"}` to the route of the app that owns the
-  message, with `Authorization: Bearer <bearer>`.
+- Whenever a message changes status to `sent`, `delivered`, `failed` or `expired`, the
+  gateway POSTs to the route of the app that owns the message, with
+  `Authorization: Bearer <bearer>` and body:
+
+  ```json
+  {"id": 57, "status": "delivered", "error": null,
+   "occurred_at": "2026-07-24T09:14:05Z", "resent_from": 42}
+  ```
+
+  `occurred_at` is always present; `resent_from` only when the message was created by
+  the admin Resend button. Both are additive to the contract GM+ specified — a receiver
+  that ignores unknown fields keeps working unchanged.
+- `pending` is never pushed: `POST /sms/send` already returns it synchronously.
 - Failures reuse the existing `dispatch_error` operator alert and the
   `inbound_dispatch_retries` / `inbound_dispatch_timeout` retry ladder.
 - `GET /sms/{id}` is unchanged and remains the source of truth. The webhook is an
-  accelerator, not a replacement — polling stays a valid integration.
+  accelerator, not a replacement — polling stays a valid integration and is the
+  recovery path for a notification the gateway drops.
 
 ## Capabilities
 
@@ -40,15 +51,24 @@ status is the missing symmetric half.
   callers in `app/modem/manager.py` (send loop, `_handle_cds`, expire loop).
 - `app/admin/templates/settings.html` — the settings row needs the same JSON editor
   branch `inbound_dispatch` already has.
-- No schema migration: routing keys off the existing `messages.app_id`.
+- **One migration:** a nullable `messages.resent_from` column. Routing itself needs no
+  schema change — it keys off the existing `messages.app_id`.
 - No change to `POST /sms/send` or `GET /sms/{id}`.
 
-## Open questions (need GM+ to confirm before implementation)
+## Resolved decisions
 
-1. **`pending`** — the gateway never pushes it: `POST /sms/send` already returns
-   `{"id", "status": "pending"}` synchronously, so a webhook would be redundant. GM+'s
-   stated enum includes it. Confirm that "no pending webhook" is fine.
-2. **`occurred_at`** — the gateway makes no ordering guarantee (see design D6). GM+ says
-   it handles out-of-order (`delivered` before `sent`). If they would rather tie-break
-   explicitly, an ISO-8601 `occurred_at` can be added to the body; it is left out for now
-   to match the agreed contract exactly.
+Settled with the owner before implementation; rationale in `design.md`.
+
+1. **Routes live in the `delivery_dispatch` setting, keyed by `app_id`** — not as
+   columns on `apps` (D1).
+2. **`pending` is never pushed** (D2).
+3. **`resent_from` links an admin re-send to the original message** (D8) — without it
+   the app sees `sent` for an id it never created, and the original stays `failed`
+   forever on its screen although the person did get the SMS.
+4. **`occurred_at` makes ordering recoverable** (D6) — the gateway still gives no
+   ordering guarantee, but a receiver can drop an update older than what it holds.
+5. **Best-effort delivery, no durable outbox** (D4) — polling is the floor, so a lost
+   notification self-heals within one poll interval.
+
+GM+ does not need to change anything to accept this, but should be told the two extra
+fields exist (task 1.1) so they can start using them.
