@@ -44,8 +44,20 @@ def test_collect_parses_and_captures_errors():
 
 
 def test_collect_short_circuits_on_dead_modem():
+    """A wedged modem still gets the gateway's own view first — that is precisely when
+    the operator needs to know whether a recovery is running and the radio is off on
+    purpose."""
     sender = FakeSender({}, raise_for={"AT"})
     out = asyncio.run(_mgr(sender).collect_diagnostics())
-    assert len(out) == 1
-    assert out[0]["key"] == "alive" and "error" in out[0]
+    assert [item["key"] for item in out] == ["gateway", "alive"]
+    assert "error" in out[1]
     assert sender.calls == ["AT"]
+
+
+def test_collect_reports_what_the_gateway_believes():
+    sender = FakeSender({})
+    m = _mgr(sender)
+    m._modem_gate.clear()
+    out = asyncio.run(m.collect_diagnostics())
+    assert out[0]["key"] == "gateway"
+    assert out[0]["parsed"]["recovering"] is True

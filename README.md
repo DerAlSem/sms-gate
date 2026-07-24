@@ -34,6 +34,14 @@ POST с номером и текстом; шлюз отправляет сооб
   `pending → sent → delivered/failed`, отмечает зависшие как просроченные
 - **Входящие SMS** — декодирует сообщения в режиме PDU (включая UCS2 и сборку многочастных),
   при необходимости передаёт их на webhook по префиксу первого слова
+- **Восстановление модема по провалам отправки** — модем, который исправно отвечает на
+  команды, но не отправляет, раньше не считался больным: восстановление запускалось
+  только при потере регистрации. Теперь застой отправки (три разных сообщения подряд
+  либо одно, исчерпавшее весь бюджет попыток, и с тех пор ни одной удачной отправки)
+  тоже запускает штатную лестницу восстановления. На время восстановления отправка и
+  чтение входящих приостанавливаются и возобновляются, только когда модем снова
+  зарегистрировался, — иначе восстановление само порождало бы те сбои, на которые
+  реагирует. Выключается отдельно (`send_stall_recovery_enabled`)
 - **Автоматические повторы отправки** — если сообщение не дошло до модема (нет ответа,
   таймаут приглашения, временный отказ сети), шлюз повторяет отправку с нарастающими
   паузами (`send_retry_backoff`, по умолчанию `30,120,300` — четыре попытки примерно за
@@ -228,6 +236,14 @@ supervision. No external broker, no container required.
   `pending → sent → delivered/failed`, expires stale ones
 - **Inbound SMS** — decodes PDU-mode messages (incl. UCS2 and multipart reassembly),
   optionally dispatches them to a webhook by first-word prefix
+- **Modem recovery driven by send failures** — a modem that answers every command and
+  still refuses to send used to look healthy, because only lost registration triggered
+  recovery. A send stall (three different messages, or one that used up its whole retry
+  budget, with no successful send since) now fails the health check and escalates on the
+  existing ladder. Sending and inbound reading are suspended while recovery runs and
+  resume only once the modem reports registration again — otherwise recovery would
+  manufacture the very failures it reacts to. Switchable on its own
+  (`send_stall_recovery_enabled`)
 - **Automatic send retries** — when a message never reached the modem (no response, a
   prompt timeout, a temporary network refusal), the gateway tries again with growing
   delays (`send_retry_backoff`, default `30,120,300` — four attempts inside about eight

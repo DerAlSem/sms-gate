@@ -645,17 +645,35 @@ class ModemManager:
                 await asyncio.sleep(_WD_HARD_RESET_SETTLE)
                 os._exit(1)
 
+    def health_snapshot(self) -> dict:
+        """What the gateway itself believes about the modem, for the admin page.
+
+        Without this a diagnostics run taken mid-recovery shows an unregistered modem
+        with no signal — a true reading of a radio we switched off ourselves, and an
+        easy one to misread as dead hardware."""
+        return {
+            "recovering": not self._modem_gate.is_set(),
+            "send_stall": self._stalled,
+            "failed_messages_since_last_success": len(self._stalled_ids),
+            "unhealthy_because": self._wd_cause or "—",
+            "queued_or_in_flight": len(self._held),
+        }
+
     async def collect_diagnostics(self) -> list[dict]:
         """Read-only modem health snapshot via the existing serial lock. An AT
         liveness pre-check short-circuits a wedged modem; one failing query never
         breaks the sweep. Never raises."""
+        # First, so the operator sees it before the readings: during a recovery the radio
+        # is deliberately off, and an unannotated snapshot reads as a dead modem.
+        state = [{"key": "gateway", "cmd": "—", "parsed": self.health_snapshot()}]
+
         try:
             await self._sender.command("AT", timeout=2.0)
         except Exception as e:
-            return [{"key": "alive", "cmd": "AT",
-                     "error": f"modem not responding: {type(e).__name__}: {e}"}]
+            return state + [{"key": "alive", "cmd": "AT",
+                             "error": f"modem not responding: {type(e).__name__}: {e}"}]
 
-        out: list[dict] = []
+        out: list[dict] = list(state)
         for key, cmd, decoder in _DIAG_QUERIES:
             item = {"key": key, "cmd": cmd}
             try:

@@ -3,6 +3,60 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-07-24
+
+### Added
+- **Repeated send failures now drive modem recovery.** Until now the watchdog judged the
+  modem on one thing: whether `AT+CEREG?` reported registration. A modem that answers
+  every command politely and refuses to send looked healthy while message after message
+  failed. A *stall* — three different messages failing, or one exhausting its whole retry
+  budget, with no successful send in between — now fails the health check and escalates
+  on the existing ladder. Permanent failures are neutral: they describe the destination.
+- `send_stall_recovery_enabled` switches the coupling off on its own. A mechanism that
+  can restart the service needs a switch that does not also give up registration-driven
+  recovery.
+- The admin modem page reports what the gateway itself believes — whether a recovery is
+  running, how many messages have failed since the last success, and why the modem is
+  considered unhealthy. Taken mid-recovery, a diagnostics run otherwise shows an
+  unregistered modem with no signal: a true reading of a radio the gateway switched off
+  itself, and an easy one to misread as dead hardware.
+
+### Fixed
+- **The fourth retry could never run.** The pending deadline was `sum(backoff) + 120`,
+  but between two scheduled attempts the clock also absorbs the failing attempt, one
+  scheduler tick, and possibly a wait for the serial port behind a six-part send. With
+  slow attempts the last one fell outside the deadline and the message was swept as
+  `never transmitted` having used three of its four — a four-attempt budget that
+  delivered three. Shipped in 0.9.0; the margin is now derived per attempt.
+- **A soft recovery no longer risks silencing the modem.** `CFUN=4 → CFUN=1` is followed
+  by re-issuing the `CNMI` subscription. If a firmware drops it, the gateway stops
+  receiving `+CDS` and `+CMTI` — every message expires, every inbound SMS is missed, and
+  no health check notices. This mattered more once recovery became frequent.
+- The watchdog task is always started and consults its setting each tick, so toggling
+  `modem_watchdog_enabled` takes effect without a restart.
+
+### Safety
+- **Recovery can no longer manufacture the failures it reacts to.** Sending and inbound
+  reading are suspended while recovery runs, and resume only once the modem reports
+  registration again — `AT+COPS=0` acknowledges a request to reselect, not a completed
+  attach. A message held back this way consumes no attempt, so recovery costs it time
+  rather than chances. Recovery is bounded, and the sender's backstop is derived from
+  that bound.
+- **The escalation ladder is per problem.** A soft recovery performed for a registration
+  outage no longer lets the next stall skip straight to a hard reset and a service
+  restart. Recovery also consumes the stall evidence, so reaching a hard reset requires
+  messages to fail again — on a gateway with two hours between messages, an unconsumed
+  stall would otherwise have driven a restart with nothing able to clear it.
+- Escalation is logged with the cause under distinct templates, so Telegram's
+  deduplication cannot hide a stall behind an earlier registration failure.
+
+### Notes
+- Two independent reviews rejected the first design of this coupling as either inert or
+  self-amplifying; the findings and what was done about them are recorded in
+  `openspec/changes/archive/2026-07-24-add-send-failure-recovery/`.
+- Still deliberately out of scope: holding sends back while the modem is merely known to
+  be unregistered, and a dedicated operator alert when a stall is declared.
+
 ## [0.9.0] - 2026-07-24
 
 ### Added
