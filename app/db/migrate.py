@@ -1,6 +1,15 @@
 from app.db.connection import get_db
 
 
+async def _add_column_if_missing(db, table: str, column: str, decl: str) -> None:
+    """ALTER TABLE ADD COLUMN, skipped when the column is already there — SQLite has no
+    `ADD COLUMN IF NOT EXISTS`, and run_migrations() runs on every start."""
+    async with db.execute(f"PRAGMA table_info({table})") as cursor:
+        existing = {row[1] async for row in cursor}
+    if column not in existing:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 async def run_migrations() -> None:
     db = await get_db()
 
@@ -98,6 +107,12 @@ async def run_migrations() -> None:
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    # Added after `messages` shipped, so it comes as an ALTER rather than a column in
+    # the CREATE above. Links an admin re-send to the message it replaces: the delivery
+    # webhook fires later, from the modem loops, where the resend handler's context is
+    # long gone — the link has to be persisted to survive to that point.
+    await _add_column_if_missing(db, "messages", "resent_from", "INTEGER REFERENCES messages(id)")
 
     await db.execute(
         """

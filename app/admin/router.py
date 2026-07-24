@@ -95,7 +95,9 @@ async def admin_message_resend(
     if await queries.is_phone_blocked(row["phone"]):
         raise HTTPException(status_code=422, detail="Number is blacklisted")
 
-    new_id = await queries.create_message(row["app_id"], row["phone"], row["text"])
+    new_id = await queries.create_message(
+        row["app_id"], row["phone"], row["text"], resent_from=message_id
+    )
     await request.app.state.modem.enqueue(
         new_id, row["phone"], row["text"], row["app_id"]
     )
@@ -350,7 +352,8 @@ async def admin_settings_save(request: Request, _: str = Depends(admin_auth)):
     errors: dict[str, str] = {}
     for key, raw in changes.items():
         try:
-            validate_raw(SPEC_BY_KEY[key].type, raw)
+            spec = SPEC_BY_KEY[key]
+            validate_raw(spec.type, raw, spec.route_key)
         except ValueError as exc:
             errors[key] = str(exc)
     if errors:

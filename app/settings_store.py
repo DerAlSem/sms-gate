@@ -11,11 +11,12 @@ from app.db.connection import get_db
 @dataclass(frozen=True)
 class Spec:
     key: str
-    type: str          # "bool" | "int" | "float" | "str" | "json" | "region"
+    type: str          # "bool" | "int" | "float" | "str" | "routes" | "region"
     default: object
     section: str
     is_secret: bool
     description: str
+    route_key: str = ""   # "routes" only: the field identifying a route
 
 
 SETTINGS_SPEC: list[Spec] = [
@@ -40,10 +41,16 @@ SETTINGS_SPEC: list[Spec] = [
          "Allow replying to a notification in Telegram to send an SMS back (takes effect after restart)"),
     Spec("instance_name", "str", "", "Alerting", False,
          "Label shown in notifications (blank = server hostname)"),
-    Spec("inbound_dispatch", "json", "", "Inbound dispatch", False,
-         'JSON list, e.g. [{"prefix":"X","webhook_url":"https://...","bearer":"..."}]'),
-    Spec("inbound_dispatch_retries", "int", 3, "Inbound dispatch", False, "POST retries"),
-    Spec("inbound_dispatch_timeout", "float", 10.0, "Inbound dispatch", False, "POST timeout (s)"),
+    Spec("inbound_dispatch", "routes", "", "Dispatch", False,
+         'Inbound routes: JSON list, e.g. '
+         '[{"prefix":"X","webhook_url":"https://...","bearer":"..."}]',
+         route_key="prefix"),
+    Spec("delivery_dispatch", "routes", "", "Dispatch", False,
+         'Outbound status routes: JSON list, e.g. '
+         '[{"app_id":"X","webhook_url":"https://...","bearer":"..."}]',
+         route_key="app_id"),
+    Spec("inbound_dispatch_retries", "int", 3, "Dispatch", False, "POST retries"),
+    Spec("inbound_dispatch_timeout", "float", 10.0, "Dispatch", False, "POST timeout (s)"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     Spec("max_sms_parts", "int", 6, "Sending", False,
@@ -73,8 +80,12 @@ def cast_value(type_: str, raw: str):
     return raw
 
 
-def validate_raw(type_: str, raw: str) -> None:
-    """Raise ValueError if `raw` is not a valid value for `type_`."""
+def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
+    """Raise ValueError if `raw` is not a valid value for `type_`.
+
+    `route_key` names the field that identifies a route ("prefix" for inbound,
+    "app_id" for delivery); it is required for the "routes" type.
+    """
     if type_ == "bool":
         if raw.strip().lower() not in (_TRUE | _FALSE):
             raise ValueError(f"not a boolean: {raw!r}")
@@ -85,7 +96,9 @@ def validate_raw(type_: str, raw: str) -> None:
     if type_ == "float":
         float(raw)
         return
-    if type_ == "json":
+    if type_ == "routes":
+        if not route_key:
+            raise ValueError("internal: route_key is required to validate routes")
         if raw.strip() == "":
             return
         try:
@@ -93,21 +106,21 @@ def validate_raw(type_: str, raw: str) -> None:
         except json.JSONDecodeError as exc:
             raise ValueError(f"invalid JSON: {exc}") from exc
         if not isinstance(data, list):
-            raise ValueError("inbound_dispatch must be a JSON list")
+            raise ValueError("must be a JSON list of routes")
         for i, item in enumerate(data):
             if not isinstance(item, dict):
                 raise ValueError(f"route #{i + 1}: must be an object")
-            prefix = str(item.get("prefix", "")).strip()
+            key = str(item.get(route_key, "")).strip()
             url = str(item.get("webhook_url", "")).strip()
-            if not prefix:
-                raise ValueError(f"route #{i + 1}: prefix is required")
+            if not key:
+                raise ValueError(f"route #{i + 1}: {route_key} is required")
             if not url:
-                raise ValueError(f"route #{i + 1} ({prefix}): webhook_url is required")
+                raise ValueError(f"route #{i + 1} ({key}): webhook_url is required")
             # A url without a scheme (or with stray whitespace that hides one) is rejected
             # by httpx at POST time — i.e. silently, hours later. Catch it at save time.
             if not url.startswith(("http://", "https://")):
                 raise ValueError(
-                    f"route #{i + 1} ({prefix}): webhook_url must start with "
+                    f"route #{i + 1} ({key}): webhook_url must start with "
                     f"http:// or https:// — got {url!r}"
                 )
         return
@@ -119,7 +132,7 @@ def validate_raw(type_: str, raw: str) -> None:
     return
 
 
-_ROUTE_FIELDS = ("prefix", "webhook_url", "bearer")
+_ROUTE_FIELDS = ("prefix", "app_id", "webhook_url", "bearer")
 
 
 def _clean_route(item: dict) -> dict:
@@ -132,9 +145,9 @@ def _clean_route(item: dict) -> dict:
 
 
 def normalize_raw(type_: str, raw: str) -> str:
-    """Canonical stored form of `raw`. Only "json" (inbound_dispatch) is rewritten:
-    route fields are stripped, so a pasted " https://…" cannot reach httpx."""
-    if type_ != "json" or raw.strip() == "":
+    """Canonical stored form of `raw`. Only "routes" is rewritten: route fields are
+    stripped, so a pasted " https://…" cannot reach httpx."""
+    if type_ != "routes" or raw.strip() == "":
         return raw
     try:
         data = json.loads(raw)
@@ -188,9 +201,12 @@ class SettingsStore:
             return self.get(name)
         raise AttributeError(name)
 
-    @property
-    def inbound_dispatch_parsed(self) -> list[dict]:
-        raw = self.get("inbound_dispatch")
+    def _routes(self, key: str) -> list[dict]:
+        """Usable routes for a "routes" setting: stripped, and missing the identifying
+        field or the url means dropped. Stripping happens on read as well as on write,
+        so rows stored before normalization existed still route."""
+        spec = SPEC_BY_KEY[key]
+        raw = self.get(key)
         if not raw or not raw.strip():
             return []
         try:
@@ -199,10 +215,16 @@ class SettingsStore:
             return []
         if not isinstance(data, list):
             return []
-        # Strip on read as well as on write: rows stored before normalization existed
-        # may still carry a stray space that would break the POST.
         routes = [_clean_route(item) for item in data if isinstance(item, dict)]
-        return [r for r in routes if r.get("prefix") and r.get("webhook_url")]
+        return [r for r in routes if r.get(spec.route_key) and r.get("webhook_url")]
+
+    @property
+    def inbound_dispatch_parsed(self) -> list[dict]:
+        return self._routes("inbound_dispatch")
+
+    @property
+    def delivery_dispatch_parsed(self) -> list[dict]:
+        return self._routes("delivery_dispatch")
 
     async def set_many(self, changes: dict[str, str]) -> None:
         for key in changes:
@@ -210,7 +232,8 @@ class SettingsStore:
                 raise ValueError(f"unknown setting: {key}")
         changes = {k: normalize_raw(SPEC_BY_KEY[k].type, v) for k, v in changes.items()}
         for key, raw in changes.items():
-            validate_raw(SPEC_BY_KEY[key].type, raw)
+            spec = SPEC_BY_KEY[key]
+            validate_raw(spec.type, raw, spec.route_key)
         db = await get_db()
         try:
             for key, raw in changes.items():

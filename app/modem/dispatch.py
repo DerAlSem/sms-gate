@@ -11,12 +11,10 @@ no-op (only records in `inbound_messages`).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 
-import httpx
-
 from app.alerting import notify
+from app.modem.webhook import post_with_retry
 from app.settings_store import store
 
 logger = logging.getLogger(__name__)
@@ -44,40 +42,8 @@ def find_route(prefix: str) -> dict | None:
 
 
 async def deliver(route: dict, payload: dict) -> tuple[bool, str | None]:
-    """POST with retry (1 + 4 + 16 sec). (True, None) on 2xx; otherwise
-    (False, reason) where reason describes the LAST attempt — it is what the
-    operator alert shows, so it must survive past the log."""
-    url = route["webhook_url"]
-    bearer = route.get("bearer", "")
-    headers = {"Content-Type": "application/json"}
-    if bearer:
-        headers["Authorization"] = f"Bearer {bearer}"
-
-    attempts = max(1, store.inbound_dispatch_retries)
-    timeout = store.inbound_dispatch_timeout
-    backoff = 1.0
-    reason = "no attempt made"
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(1, attempts + 1):
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-                if 200 <= resp.status_code < 300:
-                    return True, None
-                reason = f"HTTP {resp.status_code}: {resp.text[:200]!r}"
-                logger.warning(
-                    "inbound dispatch non-2xx: url=%s status=%d attempt=%d/%d body=%r",
-                    url, resp.status_code, attempt, attempts, resp.text[:200],
-                )
-            except httpx.HTTPError as exc:
-                reason = f"{type(exc).__name__}: {exc}"
-                logger.warning(
-                    "inbound dispatch error: url=%s attempt=%d/%d err=%r",
-                    url, attempt, attempts, exc,
-                )
-            if attempt < attempts:
-                await asyncio.sleep(backoff)
-                backoff *= 4
-    return False, reason
+    """POST with retry. See `app.modem.webhook.post_with_retry`."""
+    return await post_with_retry(route, payload, what="inbound")
 
 
 async def dispatch_inbound(phone: str, text: str, received_at: str | None = None) -> bool:

@@ -53,8 +53,9 @@ handled by D8 instead.
 this layer; the hook sits on `messages.status`, not `message_parts.status`.
 
 **D4 — Best-effort delivery, no durable outbox.**
-Same in-process retry ladder as inbound (1 + 4 + 16 s, `inbound_dispatch_retries` /
-`inbound_dispatch_timeout`), fire-and-forget task with a strong reference (the same GC
+Same in-process retry ladder as inbound (`inbound_dispatch_retries` attempts, default 3,
+with 1 s then 4 s backoff and `inbound_dispatch_timeout` per attempt), fire-and-forget
+task with a strong reference (the same GC
 hazard `_spawn_dispatch` documents). A gateway restart mid-ladder loses the
 notification.
 *Rationale:* unlike the inbound bug this change grew out of, a dropped notification here
@@ -74,8 +75,9 @@ message.
 
 **D6 — No ordering guarantee on the wire; `occurred_at` makes it recoverable.**
 Notifications are independent fire-and-forget tasks, so `delivered` can reach the
-receiver before `sent` — and this is likely, not theoretical: the retry ladder can hold
-`sent` for 21 s while a delivery report that lands a second later goes out immediately.
+receiver before `sent` — and this is likely, not theoretical: the retry ladder can keep
+`sent` in flight for tens of seconds against a slow or unreachable endpoint (three 10 s
+timeouts plus backoff) while a delivery report that lands a second later goes out at once.
 Every body therefore carries `occurred_at` (ISO-8601 UTC, from the status change), and a
 receiver can discard an update older than the one it already applied.
 *Alternative considered:* serialize per message with a queue, guaranteeing order on the

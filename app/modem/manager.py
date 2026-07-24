@@ -10,6 +10,7 @@ import serial_asyncio
 from app.config import settings
 from app.settings_store import store
 from app.modem.at_commands import ATSerial, ATCommandError
+from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
@@ -109,6 +110,7 @@ class ModemManager:
                 if len(parts) > store.max_sms_parts:
                     error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
                     await queries.set_message_failed(msg.message_id, error)
+                    spawn_delivery_dispatch(msg.message_id, "failed", error)
                     logger.warning(
                         "Rejected message %d (app=%s to=%s): %s",
                         msg.message_id, msg.app_id or "?", msg.phone, error,
@@ -124,11 +126,13 @@ class ModemManager:
                     await queries.add_message_part(msg.message_id, ref, seq, total)
                     if seq == 1:
                         await queries.set_message_sent(msg.message_id, ref)
+                        spawn_delivery_dispatch(msg.message_id, "sent")
 
                 await self._sender.send_sms_pdu(parts, on_part_sent)
                 logger.info("Sent message %d in %d part(s)", msg.message_id, total)
             except ATCommandError as e:
                 await queries.set_message_failed(msg.message_id, str(e))
+                spawn_delivery_dispatch(msg.message_id, "failed", str(e))
                 logger.warning(
                     "Failed to send message %d (app=%s to=%s text=%r): %s",
                     msg.message_id, msg.app_id or "?", msg.phone, msg.text, e,
@@ -186,6 +190,7 @@ class ModemManager:
             await queries.set_part_delivered(report.modem_ref)
             if await queries.message_parts_all_delivered(message_id):
                 await queries.set_message_delivered(message_id)
+                spawn_delivery_dispatch(message_id, "delivered")
                 logger.info("+CDS delivered: id=%d phone=%s", message_id, phone)
             else:
                 logger.info(
@@ -197,6 +202,7 @@ class ModemManager:
             desc = describe_tp_status(report.status_code)
             error = f"Delivery failed: {desc}"
             await queries.set_message_delivery_failed(message_id, error)
+            spawn_delivery_dispatch(message_id, "failed", error)
             logger.warning(
                 "+CDS failed: id=%d phone=%s %s",
                 message_id, phone, desc,
@@ -368,6 +374,11 @@ class ModemManager:
         logger.info("Expire loop started")
         while True:
             await asyncio.sleep(60)
-            await queries.expire_stale_messages(store.delivery_timeout_seconds)
+            # Bulk writer: one sweep can expire many messages, and each owes its app a
+            # notification — hence the returned ids rather than a bare UPDATE.
+            for message_id in await queries.expire_stale_messages(
+                store.delivery_timeout_seconds
+            ):
+                spawn_delivery_dispatch(message_id, "expired")
 
 

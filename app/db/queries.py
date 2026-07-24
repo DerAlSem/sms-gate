@@ -29,11 +29,13 @@ async def get_app_by_token(token: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
-async def create_message(app_id: str, phone: str, text: str) -> int:
+async def create_message(
+    app_id: str, phone: str, text: str, resent_from: int | None = None
+) -> int:
     db = await get_db()
     async with db.execute(
-        "INSERT INTO messages (app_id, phone, text) VALUES (?, ?, ?)",
-        (app_id, phone, text),
+        "INSERT INTO messages (app_id, phone, text, resent_from) VALUES (?, ?, ?, ?)",
+        (app_id, phone, text, resent_from),
     ) as cursor:
         await db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
@@ -58,6 +60,17 @@ async def get_message_any(message_id: int) -> aiosqlite.Row | None:
     db = await get_db()
     async with db.execute(
         "SELECT id, app_id, phone, text, status FROM messages WHERE id = ?",
+        (message_id,),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def get_message_delivery_context(message_id: int) -> aiosqlite.Row | None:
+    """What the delivery webhook needs about a message: who owns it, and whether it
+    replaces an earlier one."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, resent_from FROM messages WHERE id = ?",
         (message_id,),
     ) as cursor:
         return await cursor.fetchone()
@@ -294,18 +307,27 @@ async def daily_counts(days: int) -> list[aiosqlite.Row]:
         return list(await cursor.fetchall())
 
 
-async def expire_stale_messages(timeout_seconds: int) -> None:
+async def expire_stale_messages(timeout_seconds: int) -> list[int]:
+    """Sweep timed-out messages to 'expired'; return the ids affected.
+
+    RETURNING rather than a bare UPDATE: this is the one bulk status writer, and the
+    delivery webhook needs a row per message. Without the ids the whole batch would
+    change status silently.
+    """
     db = await get_db()
-    await db.execute(
+    async with db.execute(
         """
         UPDATE messages
         SET status = 'expired'
         WHERE status = 'sent'
           AND sent_at < datetime('now', ? || ' seconds')
+        RETURNING id
         """,
         (f"-{timeout_seconds}",),
-    )
+    ) as cursor:
+        ids = [row[0] for row in await cursor.fetchall()]
     await db.commit()
+    return ids
 
 
 async def save_inbound(phone: str, text: str) -> int:

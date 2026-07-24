@@ -14,10 +14,7 @@ import app.modem.dispatch as dispatch
 from app.settings_store import store
 
 
-class FakeResponse:
-    def __init__(self, status_code: int, text: str = ""):
-        self.status_code = status_code
-        self.text = text
+from conftest import FakeResponse, fake_webhook_client
 
 
 class FakeNotifier:
@@ -45,26 +42,7 @@ def env(monkeypatch):
     return fake
 
 
-def _fake_client(monkeypatch, handler):
-    """Patch httpx.AsyncClient so `handler(url, json, headers)` decides the outcome."""
-    posted = []
-
-    class FakeClient:
-        def __init__(self, *a, **kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, url, json=None, headers=None):
-            posted.append((url, json, headers))
-            return handler(url, json, headers)
-
-    monkeypatch.setattr(dispatch.httpx, "AsyncClient", FakeClient)
-    return posted
+_fake_client = fake_webhook_client
 
 
 def test_deliver_reports_success_with_no_error(monkeypatch, env):

@@ -14,7 +14,8 @@ def test_spec_has_all_soft_keys():
         "notify_system_errors", "notify_send_errors",
         "notify_delivery_errors", "notify_inbound", "notify_dispatch_errors",
         "telegram_replies_enabled",
-        "inbound_dispatch", "inbound_dispatch_retries", "inbound_dispatch_timeout",
+        "inbound_dispatch", "delivery_dispatch",
+        "inbound_dispatch_retries", "inbound_dispatch_timeout",
         "blacklist_threshold", "delivery_timeout_seconds",
         "phone_region", "max_sms_parts", "modem_watchdog_enabled",
     }
@@ -49,42 +50,58 @@ def test_validate_rejects_bad_int():
         validate_raw("int", "not-a-number")
 
 
-def test_validate_inbound_dispatch_requires_json_list():
-    validate_raw("json", "")
-    validate_raw("json", '[{"prefix":"X","webhook_url":"https://x.test/hook"}]')
+def test_validate_routes_requires_json_list():
+    validate_raw("routes", "", "prefix")
+    validate_raw("routes", '[{"prefix":"X","webhook_url":"https://x.test/hook"}]', "prefix")
     with pytest.raises(ValueError):
-        validate_raw("json", "{not json")
+        validate_raw("routes", "{not json", "prefix")
     with pytest.raises(ValueError):
-        validate_raw("json", '{"a":1}')
+        validate_raw("routes", '{"a":1}', "prefix")
 
 
-def test_validate_inbound_dispatch_requires_absolute_url():
+def test_validate_routes_requires_absolute_url():
     """A url without a scheme never leaves httpx — reject it at save time."""
     with pytest.raises(ValueError):
-        validate_raw("json", '[{"prefix":"X","webhook_url":"x.test/hook"}]')
+        validate_raw("routes", '[{"prefix":"X","webhook_url":"x.test/hook"}]', "prefix")
     with pytest.raises(ValueError):
-        validate_raw("json", '[{"prefix":"X","webhook_url":""}]')
+        validate_raw("routes", '[{"prefix":"X","webhook_url":""}]', "prefix")
     with pytest.raises(ValueError):
-        validate_raw("json", '[{"prefix":"","webhook_url":"https://x.test/hook"}]')
+        validate_raw("routes", '[{"prefix":"","webhook_url":"https://x.test/hook"}]', "prefix")
     with pytest.raises(ValueError):
-        validate_raw("json", '["not-an-object"]')
+        validate_raw("routes", '["not-an-object"]', "prefix")
 
 
-def test_validate_inbound_dispatch_tolerates_pasted_whitespace():
+def test_validate_routes_checks_the_key_field_of_that_setting():
+    """A delivery route pasted into the inbound setting must not validate."""
+    delivery = '[{"app_id":"app1","webhook_url":"https://x.test/hook"}]'
+    validate_raw("routes", delivery, "app_id")
+    with pytest.raises(ValueError):
+        validate_raw("routes", delivery, "prefix")
+    with pytest.raises(ValueError):
+        validate_raw("routes", '[{"prefix":"X","webhook_url":"https://x.test/h"}]', "app_id")
+
+
+def test_validate_routes_needs_a_route_key():
+    with pytest.raises(ValueError):
+        validate_raw("routes", '[{"prefix":"X","webhook_url":"https://x.test/h"}]')
+
+
+def test_validate_routes_tolerates_pasted_whitespace():
     """Surrounding whitespace is normalized away, not an error."""
-    validate_raw("json", '[{"prefix":" X ","webhook_url":" https://x.test/hook "}]')
+    validate_raw("routes", '[{"prefix":" X ","webhook_url":" https://x.test/hook "}]', "prefix")
+    validate_raw("routes", '[{"app_id":" app1 ","webhook_url":" https://x.test/h "}]', "app_id")
 
 
 def test_normalize_inbound_dispatch_strips_route_fields():
     raw = '[{"prefix":" gmp ","webhook_url":" https://x.test/hook\\n","bearer":" tok "}]'
-    assert json.loads(normalize_raw("json", raw)) == [
+    assert json.loads(normalize_raw("routes", raw)) == [
         {"prefix": "gmp", "webhook_url": "https://x.test/hook", "bearer": "tok"}
     ]
 
 
 def test_normalize_leaves_other_types_alone():
     assert normalize_raw("int", " 7 ") == " 7 "
-    assert normalize_raw("json", "") == ""
+    assert normalize_raw("routes", "") == ""
 
 
 def test_inbound_dispatch_parsed_strips_stored_whitespace():
@@ -187,6 +204,22 @@ def test_inbound_dispatch_parsed_filters_invalid_rows():
     store._cache["inbound_dispatch"] = '[{"prefix":"X","webhook_url":"u"},{"prefix":"Y"}]'
     parsed = store.inbound_dispatch_parsed
     assert parsed == [{"prefix": "X", "webhook_url": "u"}]
+
+
+def test_delivery_dispatch_parsed_keys_on_app_id():
+    store = SettingsStore()
+    store._cache["delivery_dispatch"] = (
+        '[{"app_id":" app1 ","webhook_url":" https://x.test/d ","bearer":" t "},'
+        ' {"app_id":"","webhook_url":"https://x.test/d"},'
+        ' {"app_id":"turbo"}]'
+    )
+    assert store.delivery_dispatch_parsed == [
+        {"app_id": "app1", "webhook_url": "https://x.test/d", "bearer": "t"}
+    ]
+
+
+def test_delivery_dispatch_defaults_to_no_routes():
+    assert SettingsStore().delivery_dispatch_parsed == []
 
 
 def test_max_sms_parts_default_is_6():

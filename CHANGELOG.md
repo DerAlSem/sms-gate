@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.8.0] - 2026-07-24
+
+### Added
+- **Delivery dispatch** — the outbound counterpart of `inbound_dispatch`. When a message
+  changes status (`sent`, `delivered`, `failed`, `expired`) the gateway POSTs
+  `{id, status, error, occurred_at, resent_from?}` to the owning application's webhook,
+  routed by `messages.app_id`. Configure routes under `delivery_dispatch` on
+  `/admin/settings`; `pending` is never pushed (the API already returns it). Best-effort
+  with the same retry ladder and `dispatch_error` alert as inbound — `GET /sms/{id}`
+  stays authoritative, so a dropped notification self-heals on the next poll. Full
+  receiving-side contract in [`docs/delivery-webhook.md`](docs/delivery-webhook.md).
+- `messages.resent_from` (nullable) links an admin re-send to the message it replaces, so
+  an application can attribute the outcome of a re-sent SMS to its original id.
+
+### Changed
+- Settings of type `json` are now typed `routes` with a `route_key`, shared by
+  `inbound_dispatch` (`prefix`) and `delivery_dispatch` (`app_id`); the "Inbound
+  dispatch" section is now "Dispatch". The webhook retry/timeout transport moved to a
+  shared `app/modem/webhook.py`.
+- `expire_stale_messages` returns the ids it expired, so the bulk sweep notifies each
+  affected app instead of changing status silently.
+
 ## [0.7.0] - 2026-07-23
 
 ### Added

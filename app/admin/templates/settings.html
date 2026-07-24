@@ -24,7 +24,7 @@
               <option value="true" {% if f.value %}selected{% endif %}>true</option>
               <option value="false" {% if not f.value %}selected{% endif %}>false</option>
             </select>
-          {% elif f.key == 'inbound_dispatch' %}
+          {% elif f.type == 'routes' %}
             <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
           {% else %}
             <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">

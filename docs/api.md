@@ -130,6 +130,24 @@ Authorization: Bearer abc123def456
 
 ---
 
+## Webhooks
+
+Вместо опроса шлюз может **сам звонить** вашему приложению. Оба вебхука настраиваются
+оператором на `/admin/settings` как JSON-список маршрутов; общие для обоих `POST retries`
+и `POST timeout`. Аутентификация — `Authorization: Bearer <token>` из маршрута.
+
+| Настройка | Направление | Маршрутизация | Тело |
+|-----------|-------------|---------------|------|
+| `inbound_dispatch` | входящая SMS → приложение | по первому слову текста (`prefix`) | `{phone, text, received_at?}` |
+| `delivery_dispatch` | статус исходящего → приложение | по `app_id` сообщения | `{id, status, error, occurred_at, resent_from?}` |
+
+Доставка вебхука — **best-effort**: до 3 попыток, затем сообщение отбрасывается, а
+оператору уходит алерт в Telegram. `GET /sms/{id}` остаётся источником правды, поэтому
+опрос — это пол, а вебхук — ускоритель поверх него. Полный контракт исходящих статусов
+для приёмной стороны: [`delivery-webhook.md`](delivery-webhook.md).
+
+---
+
 ## Error Codes Summary
 
 | HTTP Code | Meaning |
@@ -288,6 +306,24 @@ A late `+CDS` arriving **after** a message has been marked `expired` will still 
   "detail": "Message not found"
 }
 ```
+
+---
+
+## Webhooks
+
+Instead of polling, the gateway can **call your app**. Both webhooks are configured by the
+operator on `/admin/settings` as a JSON list of routes and share the `POST retries` /
+`POST timeout` settings. Auth is `Authorization: Bearer <token>` from the route.
+
+| Setting | Direction | Routing | Body |
+|---------|-----------|---------|------|
+| `inbound_dispatch` | incoming SMS → app | first word of the text (`prefix`) | `{phone, text, received_at?}` |
+| `delivery_dispatch` | outbound status → app | message's `app_id` | `{id, status, error, occurred_at, resent_from?}` |
+
+Webhook delivery is **best-effort**: up to 3 attempts, then the message is dropped and an
+operator alert is sent to Telegram. `GET /sms/{id}` stays authoritative, so polling is the
+floor and the webhook is an accelerator on top of it. Full outbound-status contract for the
+receiving side: [`delivery-webhook.md`](delivery-webhook.md).
 
 ---
 
