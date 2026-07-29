@@ -174,9 +174,19 @@ moment that threshold is tuned.
   moving `sms.deralsem.ru` produces exactly the same symptom, and a new failure hiding behind
   an existing one is a failure nobody investigates. It is cleared first so that afterwards a
   red timer means something.
-- **`mprz.ru` already runs WireGuard** — `wg0` as a client of something else and `wg-burns` as
-  a server — so the house joins an addressing plan that exists rather than one this change
-  invents.
+- **`mprz.ru` already runs WireGuard, and only one of its two interfaces is ours.** `wg0` is
+  how the bots reach Telegram — `mprz.ru` is a *client* on it and its allowed addresses are
+  Telegram's ranges through a foreign endpoint. `wg-burns` is the estate's own, with
+  `mprz.ru` as its server and one peer already on it, confined to a single address. The house
+  joins there, which means the constraint this change requires is the convention that
+  interface already follows rather than something imposed on it.
+
+  The constraint that does *not* come free is on the house's side. A default route into the
+  tunnel — the value most guides supply — would send everything the house emits through
+  `mprz.ru`, including the gateway's outbound webhooks and the probes by which the uplink
+  watchdog decides whether the wired link is alive. Failover would then be reacting to the
+  tunnel's health instead of the link's, which inverts the relationship this change is built
+  on: the tunnel is supposed to ride whichever uplink is chosen, never to choose it.
 
 ## Open Questions
 

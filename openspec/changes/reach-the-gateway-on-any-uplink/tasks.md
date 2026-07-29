@@ -14,10 +14,19 @@
       produce: a new breakage would be indistinguishable from the existing red, and would be
       read as pre-existing. Clear it first, so that after the cutover a failing timer means
       something
-- [ ] 1.6 Establish what the existing WireGuard on `mprz.ru` already carries — it runs `wg0`
-      (10.66.66.2/24, as a client of something else) and `wg-burns` (10.67.67.1/24, as the
-      server) — so the house is added without colliding with an addressing plan this change
-      did not write
+- [x] 1.6 Establish what the existing WireGuard on `mprz.ru` already carries — so the house is
+      added without colliding with an addressing plan this change did not write
+      <!-- `wg0` is not a hub of ours: mprz is a *client* on it, and its allowed ips are
+           Telegram's ranges (149.154.160.0/20, 91.108.4.0/22) via a foreign endpoint — it is
+           how the bots reach Telegram. Not to be touched.
+           `wg-burns` is ours, mprz is the server at 10.67.67.1/24, one peer at 10.67.67.2/32.
+           The house joins there as a second peer. -->
+- [ ] 1.8 The house's own `AllowedIPs` must name only the far end, not a default route. The
+      usual `0.0.0.0/0` would send everything the house emits through `mprz.ru`, including the
+      gateway's outbound webhooks and the probes the uplink watchdog uses to decide whether
+      the wired link is alive — which would make failover a decision about the tunnel rather
+      than about the link. The far end's side already follows the convention this needs, with
+      its existing peer confined to a single address
 - [ ] 1.7 Read the `stream` block already present in `mprz.ru`'s `nginx.conf`; the decision to
       terminate TLS rather than pass it through was argued from its port 443 being ordinary
       HTTP, and that argument should rest on the file rather than on the listener
