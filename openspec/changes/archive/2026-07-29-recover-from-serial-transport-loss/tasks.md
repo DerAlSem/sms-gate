@@ -69,7 +69,7 @@
 ## 8. Verification and ship
 
 - [x] 8.1 Full test suite green
-- [ ] 8.2 Live verification: re-enumerate the modem deliberately (`AT+CFUN=1,1`) and confirm the gateway escalates, exits, restarts unattended, comes back with `CNMI` intact, drains the inbox, and delivers inbound
-- [ ] 8.3 Confirm the restart limits hold: the gateway must recover without the unit reaching its start limit
-- [ ] 8.4 Ship and verify against prod
-- [ ] 8.5 Archive so `openspec/specs/` carries `modem-link`, `service-runtime` and the `outbound-send` deltas
+- [x] 8.2 Live verification: re-enumerate the modem deliberately (`AT+CFUN=1,1`) and confirm the gateway escalates, exits, restarts unattended, comes back with `CNMI` intact, drains the inbox, and delivers inbound
+- [x] 8.3 Confirm the restart limits hold: the gateway must recover without the unit reaching its start limit
+- [x] 8.4 Ship and verify against prod
+- [x] 8.5 Archive so `openspec/specs/` carries `modem-link`, `service-runtime` and the `outbound-send` deltas
