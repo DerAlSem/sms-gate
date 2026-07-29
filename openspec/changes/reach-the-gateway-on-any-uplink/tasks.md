@@ -42,8 +42,20 @@
 
 ## 2. The tunnel, constrained at both ends
 
-- [ ] 2.1 Bring up the tunnel between the house and `mprz.ru`
-- [ ] 2.2 Constrain what each end may reach to the published service only, and verify from `mprz.ru` that nothing else on the home network answers — the difference between a published service and a joined network is one line of configuration
+- [x] 2.1 Bring up the tunnel between the house and `mprz.ru`
+      <!-- The house joins the estate's existing hub as a second peer on 10.67.67.3/32, added
+           live with `wg set` so the peer already on it kept its session. Its own AllowedIPs
+           name only the far end, never a default route. -->
+- [x] 2.2 Constrain what each end may reach to the published service only, and verify from `mprz.ru` that nothing else on the home network answers — the difference between a published service and a joined network is one line of configuration
+      <!-- `AllowedIPs` alone did nothing for this: it constrains routing, not access, and the
+           tunnel simply gives the host another address on which everything bound to 0.0.0.0
+           answers. Twenty-odd services did, including file sharing and the gateway's own port.
+           Closed with a filter on the interface rather than by binding services, so a service
+           added tomorrow is not exposed by default.
+           The part that would have been missed: half those ports are Docker containers reached
+           by DNAT, so they arrive on the *forward* path and an input chain alone would have
+           left them open while the check appeared to pass. -->
+- [ ] 2.5 Password authentication over the tunnel: reachable now from a machine hosting eleven public applications, so a compromise there becomes a brute-force attempt against the house over a private channel nobody watches
 - [ ] 2.3 Run it as a unit, enabled, ordered so it comes up after the network and does not depend on the primary uplink specifically
 - [ ] 2.4 Verify exactly one instance is carrying the tunnel, so a manual test run cannot survive the cutover and compete with the unit
 
