@@ -309,6 +309,16 @@ class ModemManager:
 
         try:
             await self._sender.send_sms_pdu(parts, on_part_sent)
+        except ModemTransportError as e:
+            # The link went while this message was in hand. Holding is allowed only when
+            # nothing of it reached the modem — no byte written *and* no part accepted.
+            # A multipart whose first part was accepted must not be held: the retry would
+            # transmit that part a second time under the same concatenation reference.
+            if not e.pdu_submitted and not reached_sent:
+                await self._hold_after_claim(msg, e)
+                return
+            await self._handle_send_failure(msg, e, attempt, reached_sent)
+            return
         except ATCommandError as e:
             await self._handle_send_failure(msg, e, attempt, reached_sent)
             return
@@ -325,21 +335,47 @@ class ModemManager:
         budget, because it was never offered to the network — and the pending deadline
         still terminates it, so declining cannot become indefinite retention.
         """
-        if await self._sender.registration_state() is not False:
-            return False        # registered, or we could not tell — try it
+        try:
+            if await self._sender.registration_state() is not False:
+                return False    # registered, or we could not tell — try it
+            reason = "held: modem not registered"
+        except ModemTransportError:
+            # Not "could not tell". That reading exists because a gateway which stops
+            # sending whenever it cannot ask a question is worse than one that tries and
+            # reports a real failure — but here there is nothing to ask: the port is not
+            # there, and writing into it cannot succeed. Asked *before* the attempt is
+            # claimed, so the message keeps its whole budget.
+            reason = "held: link to the modem is gone"
+
         backoff = store.send_retry_backoff_parsed
         delay = backoff[0] if backoff else _HOLD_RETRY_FALLBACK
-        await queries.schedule_message_retry(
-            msg.message_id, delay, "held: modem not registered"
-        )
+        await queries.schedule_message_retry(msg.message_id, delay, reason)
         logger.info(
-            "Holding message %d (app=%s to=%s): modem not registered — retrying in %ds",
-            msg.message_id, msg.app_id or "?", msg.phone, delay,
+            "Holding message %d (app=%s to=%s): %s — retrying in %ds",
+            msg.message_id, msg.app_id or "?", msg.phone, reason, delay,
         )
         return True
 
+    async def _hold_after_claim(self, msg: OutgoingMessage, error: ModemFailure) -> None:
+        """Decline a message whose attempt was already claimed, giving the claim back.
+
+        The link can go after `begin_message_attempt` and before any byte is written —
+        the mode switch that opens a send is itself a command. Without giving the claim
+        back the message would carry a spent attempt *and* no schedule, which makes it
+        invisible to the scheduler until its deadline: declined and then stranded, which
+        is worse than either.
+        """
+        backoff = store.send_retry_backoff_parsed
+        delay = backoff[0] if backoff else _HOLD_RETRY_FALLBACK
+        reason = f"held: {error}"
+        await queries.hold_message_after_attempt(msg.message_id, delay, reason)
+        logger.info(
+            "Holding message %d (app=%s to=%s): %s — retrying in %ds, attempt returned",
+            msg.message_id, msg.app_id or "?", msg.phone, error, delay,
+        )
+
     async def _handle_send_failure(
-        self, msg: OutgoingMessage, error: ATCommandError, attempt: int, reached_sent: bool
+        self, msg: OutgoingMessage, error: ModemFailure, attempt: int, reached_sent: bool
     ) -> None:
         text = str(error)
         backoff = store.send_retry_backoff_parsed
@@ -511,7 +547,7 @@ class ModemManager:
                     logger.warning("Could not parse +CMGR for index %d: %r", index, response)
                 else:
                     await self._process_inbound_pdu(pdu_hex, index)
-            except ATCommandError as e:
+            except ModemFailure as e:
                 logger.error("Inbound processing failed for index %d: %s", index, e)
             except Exception:
                 logger.exception("Unexpected error processing inbound index %d", index)
@@ -547,7 +583,7 @@ class ModemManager:
         """Drain whatever SMS already sit in modem memory at startup."""
         try:
             response = await self._sender.list_all_sms()
-        except ATCommandError as e:
+        except ModemFailure as e:
             logger.warning("Inbox scan failed: %s", e)
             return
         items = parse_cmgl_pdu(response)
@@ -558,7 +594,7 @@ class ModemManager:
         for index, pdu_hex in items:
             try:
                 await self._process_inbound_pdu(pdu_hex, index)
-            except ATCommandError as e:
+            except ModemFailure as e:
                 logger.error("Failed to drain index %d: %s", index, e)
             except Exception:
                 logger.exception("Unexpected error draining index %d", index)
@@ -582,7 +618,7 @@ class ModemManager:
             try:
                 response = await self._sender.check_registration()
                 logger.info("Keepalive AT+CREG? -> %s", response.strip())
-            except ATCommandError as e:
+            except ModemFailure as e:
                 logger.warning("Keepalive AT+CREG? failed: %s", e)
 
     async def _poll(self) -> tuple[bool, bool]:
@@ -750,7 +786,7 @@ class ModemManager:
                 raw = await self._sender.command(cmd, timeout=2.0)
                 item["raw"] = raw.strip()
                 item["parsed"] = decoder(raw)
-            except ATCommandError as e:
+            except ModemFailure as e:
                 item["error"] = str(e)
             except Exception as e:
                 item["error"] = f"{type(e).__name__}: {e}"

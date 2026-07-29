@@ -152,6 +152,36 @@ async def schedule_message_retry(
     await db.commit()
 
 
+async def hold_message_after_attempt(
+    message_id: int, delay_seconds: int, error: str
+) -> None:
+    """Undo a claimed attempt and put the message back on the clock.
+
+    `begin_message_attempt` counts the attempt and clears the schedule before a single
+    byte goes out, deliberately: a message with no schedule is never re-queued, which is
+    what makes a half-finished attempt safe. That leaves no way to decline *after* the
+    claim without both spending a chance and stranding the message — an attempt counted
+    against it and no `next_attempt_at` for the scheduler to find, so it sits `pending`
+    until its deadline having never been offered to the modem again.
+
+    This is the narrow exit for the one case that needs it: the link was found gone after
+    the claim and before any byte was written. Holding costs a message time, never
+    chances.
+    """
+    db = await get_db()
+    await db.execute(
+        """
+        UPDATE messages
+        SET attempts = MAX(attempts - 1, 0),
+            last_attempt_error = ?,
+            next_attempt_at = datetime('now', ? || ' seconds')
+        WHERE id = ?
+        """,
+        (error, f"{int(delay_seconds):+d}", message_id),
+    )
+    await db.commit()
+
+
 async def due_pending_messages(
     max_age_seconds: int, limit: int = 20
 ) -> list[aiosqlite.Row]:

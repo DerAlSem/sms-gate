@@ -38,15 +38,15 @@
 
 ## 5. The send path
 
-- [ ] 5.1 Decide the hold **before** `begin_message_attempt` claims the message, so no attempt is counted and no schedule is cleared; if a hold is unavoidable after that point, restore both
-- [ ] 5.2 Hold only when no byte has been written **and** no part has been accepted; otherwise fail, whatever the classification
-- [ ] 5.3 Revisit the nine `except ATCommandError` sites — `manager.py` in `_send_one`, the inbound path, `scan_inbox` (two), `keepalive_loop`, `collect_diagnostics`; `at_commands.py` in `_restore_cmgf_unlocked`, `registration_state`, `hard_reset`. Three decide on the distinction, six widen to the shared base
-- [ ] 5.4 Check `_failed()`, which calls `_drain()` while building an `ATCommandError`: a transport failure there changes the class the caller receives
-- [ ] 5.5 Test: a link lost before transmission leaves the message `pending`, attempt count unchanged, with a schedule that brings it back, and emits no `failed` webhook
-- [ ] 5.6 Test: a link lost after the PDU was written fails the message at once and schedules no retry
-- [ ] 5.7 Test: a link lost between the parts of a multipart message fails it rather than holding it
-- [ ] 5.8 Test: a message held for a lost link still reaches `failed` at the pending deadline and its app is notified once
-- [ ] 5.9 Test: a registration query failing with an AT error against a usable link still attempts the message
+- [x] 5.1 Decide the hold **before** `begin_message_attempt` claims the message, so no attempt is counted and no schedule is cleared; if a hold is unavoidable after that point, restore both
+- [x] 5.2 Hold only when no byte has been written **and** no part has been accepted; otherwise fail, whatever the classification
+- [x] 5.3 Revisit the nine `except ATCommandError` sites — `manager.py` in `_send_one`, the inbound path, `scan_inbox` (two), `keepalive_loop`, `collect_diagnostics`; `at_commands.py` in `_restore_cmgf_unlocked`, `registration_state`, `hard_reset`. Three decide on the distinction, six widen to the shared base
+- [x] 5.4 Check `_failed()`, which calls `_drain()` while building an `ATCommandError`: a transport failure there changes the class the caller receives
+- [x] 5.5 Test: a link lost before transmission leaves the message `pending`, attempt count unchanged, with a schedule that brings it back, and emits no `failed` webhook
+- [x] 5.6 Test: a link lost after the PDU was written fails the message at once and schedules no retry
+- [x] 5.7 Test: a link lost between the parts of a multipart message fails it rather than holding it
+- [x] 5.8 Test: a message held for a lost link still reaches `failed` at the pending deadline and its app is notified once
+- [x] 5.9 Test: a registration query failing with an AT error against a usable link still attempts the message
 
 ## 6. Startup and restart limits
 
