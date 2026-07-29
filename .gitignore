@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 data/sms.db*
+# Runtime state, never source. The hard-reset marker is read by
+# `_hard_reset_on_cooldown()`, so a timestamp committed from someone's test run and then
+# deployed would silently suppress a legitimate hard reset for half an hour.
+data/modem_hard_reset_at
 .env
 venv/
 *.mo
