@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.13.0] - 2026-07-29
 
 ### Changed
 - **A re-enumerating modem is now a pause, not a restart cycle.** The gentle rung for a

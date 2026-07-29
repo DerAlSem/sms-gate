@@ -62,11 +62,15 @@
       attempt at 6.3, where the device returned five seconds after the reopen gave up and
       the gateway spent forty more seconds not looking. The settle protects a modem that
       was deliberately reset; the transport rung resets nothing.
-- [ ] 6.3 Live verification of the case this change is most likely to break: send an SMS to the gateway while the link is down, and confirm it is delivered after the reopen without a restart
-      <!-- Attempt 2 (2026-07-29 17:11) proved the property but not the path: the SMS sent
-           during the outage was stored, its +CMTI lost, and "Inbox scan: found 1 stored
-           SMS" delivered it — from the restart's startup scan, because the outage outlasted
-           the reopen budget. What is still unproven is the reopen's own scan. -->
+- [x] 6.3 Live verification of the case this change is most likely to break: send an SMS to the gateway while the link is down, and confirm it is delivered after the reopen without a restart
+      <!-- prod 2026-07-29 17:28:24→17:28:51, pid 2377595 unchanged. SMS sent into a
+           device unbound from USB: stored by the modem, its +CMTI lost with the link.
+           Reopened ttyUSB2 on attempt 10 (36s of budget still left — the five-attempt
+           budget this change started with would have died at twelve seconds), then
+           ttyUSB3, then "Inbox scan: found 1 stored SMS" and "Inbound saved". One green
+           notification, no ERROR. Attempt 2 at 17:11 had proved the property but not the
+           path: the outage outlasted the budget, so the restart's startup scan delivered
+           it instead. -->
 
 - [ ] 6.4 Ship and verify against prod
 - [ ] 6.5 Archive so the `modem-link` additions land in `openspec/specs/`
