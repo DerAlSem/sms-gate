@@ -3,6 +3,40 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.1] - 2026-07-29
+
+### Fixed
+- **The backup uplink survives the modem being replaced underneath it.** A USB
+  re-enumeration at 01:28 recreated every device node; the QMI proxy kept a descriptor to
+  the device that no longer existed, and every request through it was accepted and then
+  timed out. The channel stayed down for six hours.
+- **A cold start now uses the modem's default profile.** With no session present, a start
+  request carrying an explicit `apn=internet.tele2.ru,ip-type=4` was refused with
+  `no-service` continuously, while the default profile succeeded on the first attempt —
+  holding that identical APN and that identical IPv4 PDP type. The values were never in
+  dispute; the form of the request was. An explicit APN survives as an override.
+- **One QMI client, acquired once and reused.** The id is only ever printed by a
+  *successful* reply, so a script that learns its client from success alone acquires a
+  fresh one on every failure and can never name what it leaked: 131 refused attempts
+  consumed roughly 150 of the modem's finite pool until every WDS request timed out, and
+  only rebooting the modem cleared it. The client is now allocated explicitly, up front.
+- **A broken session no longer disables failover.** `cmd_up` exited the whole script on
+  failure, so while QMI was down the primary uplink was never tested and its counters never
+  advanced. The incident hid this because only one thing was broken at a time.
+- **Retrying is bounded**, and slows rather than stops: a channel that gave up entirely
+  could never notice it had recovered. Giving up alerts the operator and shows in `status`.
+- **Access to the device is renewed on repeated timeouts, never on refusals.** A refusal is
+  the network answering; reacting to it by restarting a process we do not own would turn an
+  ordinary carrier outage into an escalation.
+- The network interface is confirmed present before it is configured, as the control
+  device already was.
+
+### Added
+- `tests/test_wwan_backup.sh` — 13 assertions against stubbed `qmicli`/`ip`/`ping`, which
+  record what was asked so the tests can assert the *form* of each request, not just its
+  result. The script's config is overridable from the environment so it can run in a
+  sandbox; `/etc/default/wwan-backup` still wins over both.
+
 ## [0.11.0] - 2026-07-24
 
 ### Added

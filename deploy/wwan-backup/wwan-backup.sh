@@ -14,18 +14,38 @@
 set -u
 
 # --- config (can be overridden in /etc/default/wwan-backup) -------------------
-DEVICE="/dev/cdc-wdm0"
-IFACE="wwan0"
-APN="internet.tele2.ru"
-MAIN_IFACE="enp2s0"
-BACKUP_METRIC=700      # standby route in normal mode (ignored by the kernel)
-FAILOVER_METRIC=50     # overrides the primary (metric 100) during failover
-PING_TARGETS="1.1.1.1 8.8.8.8"
-FAIL_THRESHOLD=3       # consecutive failures before switching (3 x 30s = ~1.5 min)
-OK_THRESHOLD=3         # consecutive successes before restoring
-STATE_DIR="/run/wwan-backup"
-ENV_FILE="/opt/sms-gate/.env"   # ALERT_BOT_TOKEN/ALERT_CHAT_ID for notifications
-SRC_TABLE=100          # routing table for reply traffic sourced from enp2s0
+# `${VAR:-default}` so a test can point the script at a sandbox without a root-owned
+# /etc file. /etc/default is sourced afterwards and still wins over both, so the
+# deployed behaviour is unchanged.
+DEVICE="${DEVICE:-/dev/cdc-wdm0}"
+IFACE="${IFACE:-wwan0}"
+# Empty means "use the modem's default profile", which is the form that works from a
+# cold start. Set it only to override the profile — see APN_OVERRIDE below.
+APN_OVERRIDE="${APN_OVERRIDE:-}"
+MAIN_IFACE="${MAIN_IFACE:-enp2s0}"
+BACKUP_METRIC="${BACKUP_METRIC:-700}"    # standby route in normal mode (ignored by the kernel)
+FAILOVER_METRIC="${FAILOVER_METRIC:-50}" # overrides the primary (metric 100) during failover
+PING_TARGETS="${PING_TARGETS:-1.1.1.1 8.8.8.8}"
+FAIL_THRESHOLD="${FAIL_THRESHOLD:-3}"    # consecutive failures before switching (3 x 30s = ~1.5 min)
+OK_THRESHOLD="${OK_THRESHOLD:-3}"        # consecutive successes before restoring
+# How many consecutive failed session attempts before the uplink stops retrying on its
+# normal schedule and tells the operator. Unbounded retrying is what exhausted the
+# modem's QMI client pool on 2026-07-29 and turned a recoverable outage into one that
+# needed the modem rebooted.
+MAX_SESSION_FAILS="${MAX_SESSION_FAILS:-10}"
+# How many consecutive *timeouts* — never refusals — before access to the device is
+# renewed, proxy included. A refusal is the network answering; reacting to it by
+# killing a process we do not own would make an ordinary carrier outage escalate.
+STALE_AFTER_TIMEOUTS="${STALE_AFTER_TIMEOUTS:-3}"
+MAX_RENEWALS="${MAX_RENEWALS:-2}"        # renewal is bounded like any other retry
+# Once given up, still probe this often (in watchdog passes) so a channel that could
+# recover is not stopped forever — ~10 min at the 30s cadence.
+SLOW_RETRY_EVERY="${SLOW_RETRY_EVERY:-20}"
+STATE_DIR="${STATE_DIR:-/run/wwan-backup}"
+ENV_FILE="${ENV_FILE:-/opt/sms-gate/.env}"  # ALERT_BOT_TOKEN/ALERT_CHAT_ID for notifications
+SRC_TABLE="${SRC_TABLE:-100}"            # routing table for reply traffic sourced from enp2s0
+SYS_NET="${SYS_NET:-/sys/class/net}"     # overridable so the interface check is testable
+QMI_PROXY_PATTERN="${QMI_PROXY_PATTERN:-/usr/libexec/qmi-proxy}"
 # ------------------------------------------------------------------------------
 [ -f /etc/default/wwan-backup ] && . /etc/default/wwan-backup
 
@@ -73,6 +93,72 @@ mask2prefix() {
 
 qmi() { qmicli -p -d "$DEVICE" "$@"; }
 
+# How the last QMI request ended: ok | refused | timeout.
+#
+# The distinction is the safeguard that keeps recovery from becoming the next incident.
+# A refusal (`no-service`, `CallFailed`) is the modem answering: the stack is healthy and
+# the network has said no. A timeout is the stack not answering, which is what a
+# descriptor pointing at a replaced device looks like from outside. Reacting to a refusal
+# by renewing access would mean any carrier-side outage — the very condition this channel
+# exists for — sends us into killing a process we do not own.
+# Recorded in a file rather than a variable: every caller reads a QMI reply through
+# `$(...)`, which is a subshell, so an exported variable would never reach the code that
+# has to act on the distinction.
+qmi_run() {
+    local out rc status
+    out=$(qmi "$@" 2>&1); rc=$?
+    if [ "$rc" -eq 0 ]; then
+        status=ok
+    elif printf '%s' "$out" | grep -qi "timed out"; then
+        status=timeout
+    else
+        status=refused
+    fi
+    printf '%s' "$status" > "$STATE_DIR/.qmi_status" 2>/dev/null || true
+    printf '%s\n' "$out"
+    return "$rc"
+}
+
+qmi_last_status() { cat "$STATE_DIR/.qmi_status" 2>/dev/null || echo ok; }
+
+# One client, acquired once and reused.
+#
+# `--client-no-release-cid` is deliberate — a later teardown has to address the session it
+# started — but the id is only ever printed by a *successful* reply. So a script that
+# learns its client only from success acquires a fresh one on every failure and can never
+# name what it leaked: 131 refused attempts consumed ~150 of the modem's finite pool until
+# every WDS request timed out and only rebooting the modem cleared it. Allocating the
+# client explicitly, up front, is what makes "release it on failure" unnecessary.
+ensure_client() {
+    local cid out
+    cid=$(cat "$STATE_DIR/cid" 2>/dev/null || true)
+    [ -n "$cid" ] && return 0
+    out=$(qmi_run --wds-noop --client-no-release-cid) || return 1
+    cid=$(awk -F"'" '/CID:/ {print $2}' <<<"$out")
+    [ -n "$cid" ] || return 1
+    echo "$cid" > "$STATE_DIR/cid"
+}
+
+client_args() {
+    local cid
+    ensure_client >/dev/null 2>&1 || true
+    cid=$(cat "$STATE_DIR/cid" 2>/dev/null || true)
+    if [ -n "$cid" ]; then
+        printf -- '--client-cid=%s --client-no-release-cid' "$cid"
+    else
+        printf -- '--client-no-release-cid'
+    fi
+}
+
+# Drop the descriptor-bound state and the proxy holding it. Called only after repeated
+# timeouts (see qmi_last_status), never after a refusal.
+renew_device_access() {
+    log "renewing access to $DEVICE after repeated timeouts"
+    pkill -f "$QMI_PROXY_PATTERN" 2>/dev/null || true
+    # Both belonged to the connection just dropped; a re-enumerated modem does not know them.
+    rm -f "$STATE_DIR/cid" "$STATE_DIR/pdh"
+}
+
 setup_src_routing() {
     # Replies to inbound connections via MAIN_IFACE (SSH, port-forwarded 443) must
     # leave via MAIN_IFACE even during failover — asymmetric routing would kill them.
@@ -93,7 +179,12 @@ teardown_src_routing() {
 }
 
 session_connected() {
-    qmi --wds-get-packet-service-status 2>/dev/null | grep -q "Connection status: 'connected'"
+    # Asked through the client that owns the session. A fresh client is not bound to it and
+    # reports no session, which sent every run down the cold-start path — tearing the
+    # interface down and requesting a new session — instead of the idempotent one this
+    # check exists to provide.
+    qmi_run $(client_args) --wds-get-packet-service-status 2>/dev/null \
+        | grep -q "Connection status: 'connected'"
 }
 
 apply_addressing() {
@@ -125,7 +216,12 @@ apply_addressing() {
 
 cmd_up() {
     mkdir -p "$STATE_DIR"
-    [ -c "$DEVICE" ] || { log "$DEVICE not found — modem not in QMI mode?"; exit 1; }
+    [ -c "$DEVICE" ] || { log "$DEVICE not found — modem not in QMI mode?"; return 1; }
+    # A re-enumeration recreates the netdev as well as the control device, and it may be
+    # absent for a while or come back under another name. Addressing applied to an absent
+    # interface fails quietly, leaving a session we believe is up and no traffic path —
+    # indistinguishable in the logs from a working backup channel.
+    [ -d "$SYS_NET/$IFACE" ] || { log "$IFACE not present — netdev has not reappeared?"; return 1; }
     setup_src_routing
 
     # idempotency: session already connected (unit restart) — just re-apply addressing
@@ -137,18 +233,26 @@ cmd_up() {
 
     # raw-ip is required for qmi_wwan on modern kernels; can only be changed while the link is down
     ip link set "$IFACE" down
-    echo Y > "/sys/class/net/$IFACE/qmi/raw_ip" 2>/dev/null || true
+    echo Y > "$SYS_NET/$IFACE/qmi/raw_ip" 2>/dev/null || true
     ip link set "$IFACE" up
 
-    local out pdh cid
-    out=$(qmi --wds-start-network="apn=$APN,ip-type=4" --client-no-release-cid) \
-        || { log "wds-start-network failed: $out"; exit 1; }
+    local out pdh cid start_arg=""
+    # Empty override means the modem's default profile. That is the form that works from a
+    # cold start: on 2026-07-29 an explicit `apn=internet.tele2.ru,ip-type=4` was refused
+    # with `no-service` for six hours straight, while the default profile — holding that
+    # identical APN and that identical IPv4 PDP type — succeeded on the first attempt. The
+    # values were never in dispute; the form of the request was.
+    [ -n "$APN_OVERRIDE" ] && start_arg="=apn=$APN_OVERRIDE,ip-type=4"
+    out=$(qmi_run $(client_args) --wds-start-network"$start_arg") \
+        || { log "wds-start-network failed ($(qmi_last_status)): $out"; return 1; }
     pdh=$(awk -F"'" '/Packet data handle:/ {print $2}' <<<"$out")
     cid=$(awk -F"'" '/CID:/ {print $2}' <<<"$out")
     echo "${pdh:-}" > "$STATE_DIR/pdh"
-    echo "${cid:-}" > "$STATE_DIR/cid"
+    # Only when we do not already hold one: this file is what makes the client reused
+    # rather than re-acquired.
+    [ -s "$STATE_DIR/cid" ] || echo "${cid:-}" > "$STATE_DIR/cid"
 
-    apply_addressing || exit 1
+    apply_addressing || return 1
 }
 
 cmd_down() {
@@ -194,18 +298,86 @@ restore_main_route() {
     rm -f "$STATE_DIR/failover"
 }
 
+read_counter() { cat "$STATE_DIR/$1" 2>/dev/null || echo 0; }
+
+# Keep the data session up, bounded. Returns non-zero when the session is not up, but
+# never exits: the caller has a second duty that must run regardless.
+session_step() {
+    local fails timeouts renewals
+
+    fails=$(read_counter session_fails)
+    timeouts=$(read_counter timeouts)
+    renewals=$(read_counter renewals)
+
+    if session_connected; then
+        if [ "$fails" -ne 0 ]; then
+            log "session recovered after $fails failed attempt(s)"
+            alert "backup uplink recovered after $fails failed attempt(s)"
+        fi
+        # A success clears the allowance, so a later unrelated outage gets a full one.
+        echo 0 > "$STATE_DIR/session_fails"
+        echo 0 > "$STATE_DIR/timeouts"
+        echo 0 > "$STATE_DIR/renewals"
+        return 0
+    fi
+    [ "$(qmi_last_status)" = timeout ] && timeouts=$((timeouts + 1))
+
+    # Past the bound the uplink stops trying on its normal schedule. Unbounded retrying is
+    # what exhausted the modem's client pool: a mechanism that can neither succeed nor stop
+    # makes the problem it was built to solve strictly worse. It still probes occasionally,
+    # because a channel that has stopped trying entirely can never notice it could recover.
+    if [ "$fails" -ge "$MAX_SESSION_FAILS" ]; then
+        local since
+        since=$(read_counter since_giveup)
+        since=$((since + 1))
+        echo "$since" > "$STATE_DIR/since_giveup"
+        echo "$timeouts" > "$STATE_DIR/timeouts"
+        if [ "$since" -lt "$SLOW_RETRY_EVERY" ]; then
+            return 1
+        fi
+        echo 0 > "$STATE_DIR/since_giveup"
+    fi
+
+    # Renew only on repeated timeouts, never on refusals — see qmi_last_status.
+    if [ "$timeouts" -ge "$STALE_AFTER_TIMEOUTS" ] && [ "$renewals" -lt "$MAX_RENEWALS" ]; then
+        renew_device_access
+        renewals=$((renewals + 1))
+        timeouts=0
+        echo "$renewals" > "$STATE_DIR/renewals"
+    fi
+    echo "$timeouts" > "$STATE_DIR/timeouts"
+
+    log "QMI session dropped — re-establishing"
+    if cmd_up; then
+        echo 0 > "$STATE_DIR/session_fails"
+        echo 0 > "$STATE_DIR/since_giveup"
+        # if we were in failover — restore the priority route
+        [ -f "$STATE_DIR/failover" ] && enter_failover
+        return 0
+    fi
+
+    [ "$(qmi_last_status)" = timeout ] && { timeouts=$((timeouts + 1)); echo "$timeouts" > "$STATE_DIR/timeouts"; }
+    fails=$((fails + 1))
+    echo "$fails" > "$STATE_DIR/session_fails"
+    if [ "$fails" -eq "$MAX_SESSION_FAILS" ]; then
+        log "giving up after $fails consecutive failures — retrying slowed"
+        alert "backup uplink down: $fails consecutive failures, retrying slowed"
+    fi
+    return 1
+}
+
 cmd_watchdog() {
     mkdir -p "$STATE_DIR"
     exec 9>"$STATE_DIR/lock"
     flock -n 9 || exit 0   # previous run still in progress
 
-    # 1) keep QMI session alive
-    if ! session_connected; then
-        log "QMI session dropped — re-establishing"
-        cmd_up || { log "re-up failed"; exit 1; }
-        # if we were in failover — restore the priority route
-        [ -f "$STATE_DIR/failover" ] && enter_failover
-    fi
+    # 1) keep QMI session alive.
+    #
+    # Never with `exit`: this run has a second, independent duty below, and `cmd_up`'s own
+    # `exit 1` used to take the whole script down with it — so while QMI was broken the
+    # primary uplink was never tested, its counters never advanced, and failover could not
+    # happen. The 2026-07-29 incident hid that because only one thing was broken at a time.
+    session_step || true
 
     # 2) primary channel health (strictly via MAIN_IFACE, routing table does not affect this)
     local fails oks
@@ -231,12 +403,16 @@ cmd_watchdog() {
 
 cmd_status() {
     echo "=== QMI ==="
-    qmi --wds-get-packet-service-status 2>&1 || true
+    qmi $(client_args) --wds-get-packet-service-status 2>&1 || true
     echo "=== state ==="
-    for f in pdh cid gw fails oks failover; do
+    for f in pdh cid gw fails oks failover session_fails timeouts renewals; do
         [ -e "$STATE_DIR/$f" ] && echo "$f: $(cat "$STATE_DIR/$f" 2>/dev/null)"
     done
     [ -f "$STATE_DIR/failover" ] && echo ">>> FAILOVER MODE <<<"
+    # A channel that has given up looks identical to a healthy one from the outside; say so.
+    if [ "$(read_counter session_fails)" -ge "$MAX_SESSION_FAILS" ]; then
+        echo ">>> GAVE UP after $(read_counter session_fails) consecutive failures — retrying slowed to 1 in $SLOW_RETRY_EVERY passes <<<"
+    fi
     echo "=== routes ==="
     ip route show default
     echo "=== resolved ==="
