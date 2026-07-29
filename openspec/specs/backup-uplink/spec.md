@@ -116,6 +116,30 @@ why.
 - **WHEN** the session cannot be established and the primary uplink is also down
 - **THEN** failover to the backup is still attempted rather than skipped
 
+### Requirement: A live session is not a working channel without its addressing
+
+The uplink SHALL verify that its network interface actually carries the session's
+addressing, and SHALL re-apply it when the interface has none, even while the data
+session reports itself connected.
+
+A re-enumeration recreates the network interface, and its address goes with it — while
+the QMI session can survive and keep reporting `connected`. Every check the uplink makes
+then passes and no traffic moves: the worst outcome available here, because it is
+indistinguishable from a healthy backup channel until the day the primary link fails.
+
+This was repaired by accident before the liveness check worked: a check that always
+reported "no session" sent every pass down the cold-start path, which re-applies
+addressing on its way through. Correcting the check removed the accident, which is how
+the gap came to light.
+
+#### Scenario: The interface loses its address but the session survives
+- **WHEN** the data session reports connected and the interface has no address
+- **THEN** the addressing is re-applied rather than the pass being treated as healthy
+
+#### Scenario: An ordinary pass over a healthy channel
+- **WHEN** the session is connected and the interface carries its address
+- **THEN** nothing is re-applied
+
 ### Requirement: The network interface is confirmed present before it is configured
 
 The uplink SHALL confirm its network interface exists before bringing it down, setting its

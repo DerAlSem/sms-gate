@@ -332,6 +332,18 @@ session_step() {
     renewals=$(read_counter renewals)
 
     if session_connected; then
+        # A live session is not a working channel. A re-enumeration recreates the netdev
+        # and its address goes with it, while the QMI session survives and keeps
+        # reporting `connected` — so every check passes and nothing carries traffic.
+        #
+        # This used to be repaired by accident: the liveness check was broken, always
+        # reported "no session", and so every pass ran the cold path, which re-applies
+        # addressing on its way through. Fixing that check removed the accident, which is
+        # how this surfaced. Two defects had been holding each other up.
+        if ! ip -4 -br addr show "$IFACE" 2>/dev/null | grep -q "[0-9]"; then
+            log "session is up but $IFACE has no address — re-applying"
+            apply_addressing || true
+        fi
         if [ "$fails" -ne 0 ]; then
             log "session recovered after $fails failed attempt(s)"
             alert "backup uplink recovered after $fails failed attempt(s)"

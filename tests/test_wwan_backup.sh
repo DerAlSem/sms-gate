@@ -77,6 +77,8 @@ STUB
 #!/usr/bin/env bash
 echo "ip $*" >> "$CALLS"
 case "$*" in
+    *"-br addr show wwan"*|*"-br addr show ${IFACE:-wwan0}"*)
+        [ -n "${FAKE_WWAN_ADDR:-}" ] && echo "wwan   UNKNOWN   ${FAKE_WWAN_ADDR}" ;;
     *"-br addr show"*) echo "${FAKE_MAIN_IFACE:-eth0}   UP   192.168.1.2/24" ;;
     *"route show default dev"*) echo "default via 192.168.1.1 dev ${FAKE_MAIN_IFACE:-eth0}" ;;
     *"route show default"*) echo "default via 192.168.1.1 dev ${FAKE_MAIN_IFACE:-eth0} metric 100" ;;
@@ -261,6 +263,27 @@ setup
 IFACE_NAME="wwan-absent0" run up >/dev/null 2>&1
 if called "link set wwan-absent0 up"; then
     fail "6.1: the interface was configured without confirming it exists"
+fi
+ok
+teardown
+
+# --- 1.4 a live session with a bare interface is re-addressed -------------------
+
+setup
+# The re-enumeration case: the QMI session survived and reports connected, but the
+# netdev was recreated and lost its address. Nothing carries traffic, and the channel
+# looks healthy from every angle the script checks.
+FAKE_CONN=connected FAKE_WWAN_ADDR="" run watchdog >/dev/null
+called "--wds-get-current-settings" \
+    || fail "1.4: a connected session with no address on the interface was left alone"
+ok
+teardown
+
+setup
+# And the opposite: a session that is up *and* addressed must not be touched every pass.
+FAKE_CONN=connected FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null
+if called "--wds-get-current-settings"; then
+    fail "1.4: a healthy channel was re-addressed on an ordinary pass"
 fi
 ok
 teardown
