@@ -1,6 +1,7 @@
 ## 1. Establish what the cutover depends on
 
-- [ ] 1.1 Confirm nothing that calls this gateway pins an address rather than a hostname — a precondition, not a check to run afterwards, since discovering it later means discovering it broken
+- [x] 1.1 Confirm nothing that calls this gateway pins an address rather than a hostname — a precondition, not a check to run afterwards, since discovering it later means discovering it broken
+      <!-- GM+ calls the API by hostname. The move is transparent to it. -->
 - [x] 1.2 Establish whether the hostnames on the home server share one certificate or hold separate ones; this decides whether one broken renewal can take a neighbour with it
       <!-- Separate. Read off the wire: sms.deralsem.ru is CN=sms.deralsem.ru with itself as
            its only SAN, valid to 2026-09-14. No shared lineage, so one broken renewal cannot
