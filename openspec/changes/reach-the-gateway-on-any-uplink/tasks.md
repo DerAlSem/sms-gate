@@ -89,9 +89,16 @@
 ## 6. Serving the hostname from the far end
 
 - [ ] 6.1 Add a server block for the hostname on `mprz.ru`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
+- [x] 6.0 Serve the hostname on the house's tunnel address, so the far end has something to proxy to
+      <!-- A block bound to 10.67.67.3:80 specifically, not to every address: the existing
+           block redirects to https, and a wildcard listener would have caught the proxied
+           request and answered it with a redirect loop. nginx prefers the more specific
+           address, so the two coexist.
+           The filter opened port 80 to the far end only; everything else stayed shut,
+           verified again after reloading the table. -->
 - [ ] 6.2 Issue its certificate there and confirm renewal works — routine on a machine already renewing eleven, but its renewal is shared with them, so a break here is a break for somebody else's site
 - [ ] 6.3 Verify the neighbouring services on `mprz.ru` are unaffected
-- [ ] 6.4 Verify through the tunnel, with the public record still pointing at the house — the new path proven before it carries anything
+- [x] 6.4 Verify through the tunnel, with the public record still pointing at the house — the new path proven before it carries anything
 
 ## 7. Administrative access
 
