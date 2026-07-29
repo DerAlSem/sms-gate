@@ -28,12 +28,13 @@
            how the bots reach Telegram. Not to be touched.
            `wg-burns` is ours, mprz is the server at 10.67.67.1/24, one peer at 10.67.67.2/32.
            The house joins there as a second peer. -->
-- [ ] 1.8 The house's own `AllowedIPs` must name only the far end, not a default route. The
+- [x] 1.8 The house's own `AllowedIPs` must name only the far end, not a default route. The
       usual `0.0.0.0/0` would send everything the house emits through `mprz.ru`, including the
       gateway's outbound webhooks and the probes the uplink watchdog uses to decide whether
       the wired link is alive — which would make failover a decision about the tunnel rather
       than about the link. The far end's side already follows the convention this needs, with
       its existing peer confined to a single address
+      <!-- Done: `AllowedIPs = 10.67.67.1/32`, verified in the running interface. -->
 - [x] 1.7 Check whether `mprz.ru` routes by SNI already; the decision to terminate TLS rather
       than pass it through was argued from its port 443 being ordinary HTTP, and that argument
       should rest on the file rather than on the listener
