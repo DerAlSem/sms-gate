@@ -162,10 +162,23 @@ moment that threshold is tuned.
   believing themselves right. The external check is what surfaces it; correlating the two
   signals automatically is deliberately not attempted here.
 
+## Settled during reconnaissance
+
+- **The certificates are separate, not one covering several.** Read off the wire:
+  `sms.deralsem.ru` is its own certificate with itself as its only subject alternative name.
+  One broken renewal cannot take another with it, so the renewal migration needs no special
+  care on that account.
+- **Renewal on the home server is already failing, and was before this change existed.**
+  `nas.deralsem.ru` resolves to a third machine now, so its challenge is delivered somewhere
+  else and the timer exits in failure on every run. This is not ours, but it is in our way:
+  moving `sms.deralsem.ru` produces exactly the same symptom, and a new failure hiding behind
+  an existing one is a failure nobody investigates. It is cleared first so that afterwards a
+  red timer means something.
+- **`mprz.ru` already runs WireGuard** — `wg0` as a client of something else and `wg-burns` as
+  a server — so the house joins an addressing plan that exists rather than one this change
+  invents.
+
 ## Open Questions
 
-- **Are the neighbouring hostnames separate certificates or one covering several?** Decides
-  whether one broken renewal can take the others with it, and therefore how much care the
-  renewal migration needs.
 - **What is the measured re-establishment time?** To be measured on the rig that already
   exists, then written into the spec as a figure.

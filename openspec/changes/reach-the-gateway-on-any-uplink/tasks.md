@@ -1,9 +1,26 @@
 ## 1. Establish what the cutover depends on
 
 - [ ] 1.1 Confirm nothing that calls this gateway pins an address rather than a hostname — a precondition, not a check to run afterwards, since discovering it later means discovering it broken
-- [ ] 1.2 Establish whether the hostnames on the home server share one certificate or hold separate ones; this decides whether one broken renewal can take a neighbour with it
+- [x] 1.2 Establish whether the hostnames on the home server share one certificate or hold separate ones; this decides whether one broken renewal can take a neighbour with it
+      <!-- Separate. Read off the wire: sms.deralsem.ru is CN=sms.deralsem.ru with itself as
+           its only SAN, valid to 2026-09-14. No shared lineage, so one broken renewal cannot
+           take the other with it. -->
 - [ ] 1.3 Record what `mprz.ru` already serves on port 443, so the addition can be confirmed additive rather than assumed to be
-- [ ] 1.4 Note that nothing in the gateway reads `X-Real-IP`, `X-Forwarded-For` or the client address — verified during review, so the header rename is not a migration; what is missing is recording the address at all, which is task 5
+- [x] 1.4 Note that nothing in the gateway reads `X-Real-IP`, `X-Forwarded-For` or the client address — verified during review, so the header rename is not a migration; what is missing is recording the address at all, which is task 5
+- [ ] 1.5 **Renewal on the home server is already failing, before this change touches anything.**
+      `nas.deralsem.ru` no longer resolves to the house — it points at a third machine — so its
+      challenge is delivered elsewhere and `certbot.service` exits in failure on every run.
+      This matters here because the same failure is what moving `sms.deralsem.ru` would
+      produce: a new breakage would be indistinguishable from the existing red, and would be
+      read as pre-existing. Clear it first, so that after the cutover a failing timer means
+      something
+- [ ] 1.6 Establish what the existing WireGuard on `mprz.ru` already carries — it runs `wg0`
+      (10.66.66.2/24, as a client of something else) and `wg-burns` (10.67.67.1/24, as the
+      server) — so the house is added without colliding with an addressing plan this change
+      did not write
+- [ ] 1.7 Read the `stream` block already present in `mprz.ru`'s `nginx.conf`; the decision to
+      terminate TLS rather than pass it through was argued from its port 443 being ordinary
+      HTTP, and that argument should rest on the file rather than on the listener
 
 ## 2. The tunnel, constrained at both ends
 
