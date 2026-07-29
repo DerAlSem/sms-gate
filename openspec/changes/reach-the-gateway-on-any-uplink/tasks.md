@@ -55,7 +55,12 @@
            The part that would have been missed: half those ports are Docker containers reached
            by DNAT, so they arrive on the *forward* path and an input chain alone would have
            left them open while the check appeared to pass. -->
-- [ ] 2.5 Password authentication over the tunnel: reachable now from a machine hosting eleven public applications, so a compromise there becomes a brute-force attempt against the house over a private channel nobody watches
+- [x] 2.5 Password authentication over the tunnel: reachable now from a machine hosting eleven public applications, so a compromise there becomes a brute-force attempt against the house over a private channel nobody watches
+      <!-- Refused for the tunnel's addresses only, so the local network keeps what it had.
+           Written at the end of the main configuration rather than into the include
+           directory: the include is processed near the top, and a Match block runs to the end
+           of the file, so it would have captured every global setting below it. Verified both
+           ways before reloading, and verified refused from the far end afterwards. -->
 - [ ] 2.3 Run it as a unit, enabled, ordered so it comes up after the network and does not depend on the primary uplink specifically
 - [ ] 2.4 Verify exactly one instance is carrying the tunnel, so a manual test run cannot survive the cutover and compete with the unit
 
