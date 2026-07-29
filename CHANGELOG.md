@@ -10,11 +10,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   re-enumeration at 01:28 recreated every device node; the QMI proxy kept a descriptor to
   the device that no longer existed, and every request through it was accepted and then
   timed out. The channel stayed down for six hours.
-- **A cold start now uses the modem's default profile.** With no session present, a start
-  request carrying an explicit `apn=internet.tele2.ru,ip-type=4` was refused with
-  `no-service` continuously, while the default profile succeeded on the first attempt —
-  holding that identical APN and that identical IPv4 PDP type. The values were never in
-  dispute; the form of the request was. An explicit APN survives as an override.
+- **A cold start now uses the modem's default profile, named by number.** With no session
+  present, a start request carrying an explicit `apn=internet.tele2.ru,ip-type=4` was
+  refused with `no-service` continuously, while the default profile succeeded on the first
+  attempt — holding that identical APN and that identical IPv4 PDP type. The values were
+  never in dispute; the form of the request was. The profile number is read from the modem
+  rather than assumed, because `--wds-start-network` requires an argument: passing the flag
+  bare is a parse error, and passing it bare in front of another flag is worse — that flag
+  is swallowed as the value and the request silently becomes something nobody wrote. An
+  explicit APN survives as an override.
 - **One QMI client, acquired once and reused.** The id is only ever printed by a
   *successful* reply, so a script that learns its client from success alone acquires a
   fresh one on every failure and can never name what it leaked: 131 refused attempts

@@ -129,6 +129,21 @@ qmi_last_status() { cat "$STATE_DIR/.qmi_status" 2>/dev/null || echo ok; }
 # name what it leaked: 131 refused attempts consumed ~150 of the modem's finite pool until
 # every WDS request timed out and only rebooting the modem cleared it. Allocating the
 # client explicitly, up front, is what makes "release it on failure" unnecessary.
+# The modem's own default profile number.
+#
+# `--wds-start-network` requires an argument (qmicli 1.35.2: `["key=value,..."]`, allowed
+# keys apn, 3gpp-profile, ip-type, ...), so "use the default profile" has to be asked for
+# explicitly, by number. Passing the flag bare is a parse error — and passing it bare with
+# another flag behind it is worse, because that flag is swallowed as the value and the
+# request silently becomes something nobody wrote.
+default_profile() {
+    local out n
+    out=$(qmi_run --wds-get-default-profile-number=3gpp) || return 1
+    n=$(awk -F"'" '/Default profile number:/ {print $2}' <<<"$out")
+    [ -n "$n" ] || return 1
+    printf '%s' "$n"
+}
+
 ensure_client() {
     local cid out
     cid=$(cat "$STATE_DIR/cid" 2>/dev/null || true)
@@ -236,14 +251,21 @@ cmd_up() {
     echo Y > "$SYS_NET/$IFACE/qmi/raw_ip" 2>/dev/null || true
     ip link set "$IFACE" up
 
-    local out pdh cid start_arg=""
-    # Empty override means the modem's default profile. That is the form that works from a
-    # cold start: on 2026-07-29 an explicit `apn=internet.tele2.ru,ip-type=4` was refused
-    # with `no-service` for six hours straight, while the default profile — holding that
-    # identical APN and that identical IPv4 PDP type — succeeded on the first attempt. The
-    # values were never in dispute; the form of the request was.
-    [ -n "$APN_OVERRIDE" ] && start_arg="=apn=$APN_OVERRIDE,ip-type=4"
-    out=$(qmi_run $(client_args) --wds-start-network"$start_arg") \
+    local out pdh cid profile start_arg
+    # Empty override means the modem's default profile, asked for by number. That is the
+    # form that works from a cold start: on 2026-07-29 an explicit
+    # `apn=internet.tele2.ru,ip-type=4` was refused with `no-service` for six hours
+    # straight, while the default profile — holding that identical APN and that identical
+    # IPv4 PDP type — succeeded on the first attempt. The values were never in dispute; the
+    # form of the request was.
+    if [ -n "$APN_OVERRIDE" ]; then
+        start_arg="apn=$APN_OVERRIDE,ip-type=4"
+    else
+        profile=$(default_profile) \
+            || { log "could not read the default profile number ($(qmi_last_status))"; return 1; }
+        start_arg="3gpp-profile=$profile"
+    fi
+    out=$(qmi_run $(client_args) --wds-start-network="$start_arg") \
         || { log "wds-start-network failed ($(qmi_last_status)): $out"; return 1; }
     pdh=$(awk -F"'" '/Packet data handle:/ {print $2}' <<<"$out")
     cid=$(awk -F"'" '/CID:/ {print $2}' <<<"$out")

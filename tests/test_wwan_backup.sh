@@ -60,6 +60,8 @@ case "$*" in
         echo "IPv4 gateway address: 10.0.0.1"
         echo "IPv4 primary DNS: 10.0.0.9"
         echo "MTU: 1500" ;;
+    *--wds-get-default-profile-number*)
+        echo "[/dev/cdc-wdm0] Default profile number: '${FAKE_PROFILE:-1}'" ;;
     *--wds-noop*)
         echo "[/dev/cdc-wdm0] Client ID: '${FAKE_CID:-20}'"
         echo "        CID: '${FAKE_CID:-20}'" ;;
@@ -128,6 +130,12 @@ run up >/dev/null
 called "--wds-start-network" || fail "1.1: no start-network was issued at all"
 if grep -F -e "--wds-start-network" "$CALLS" | grep -q "apn="; then
     fail "1.1: cold start passed an explicit apn=, which is the form the network refused"
+fi
+# qmicli requires an argument here, so "the default profile" must be asked for by number.
+grep -F -e "--wds-start-network" "$CALLS" | grep -q "3gpp-profile=1" \
+    || fail "1.1: cold start must name the modem's default profile explicitly"
+if grep -F -e "--wds-start-network=" "$CALLS" | grep -qE -- "--wds-start-network( |$)"; then
+    fail "1.1: --wds-start-network was passed without an argument, which qmicli rejects"
 fi
 ok
 teardown
