@@ -205,12 +205,13 @@ the gateway itself sees is the tunnel's.
 Every hostname served by either machine SHALL continue to renew its certificate after the
 public hostname moves.
 
-Renewal is answered today by a challenge delivered to the house. Moving the hostname moves
-where that challenge arrives, and a hostname whose certificate silently stops renewing fails
-up to ninety days later, with nothing having changed on the day it broke. Renewal is shared
-with neighbouring hostnames that have nothing to do with this change, and whether they are
-separate certificates or one certificate covering several decides whether one broken renewal
-takes the others with it.
+The hostname acquires a second certificate — one at the far end that now terminates it, one at
+the house that keeps the fallback able to serve — and a certificate that silently stops
+renewing fails up to ninety days later, with nothing having changed on the day it broke.
+
+A machine carrying many hostnames renews them together, so a renewal broken by this change is
+not confined to this change's hostname. This requirement is what keeps that from being noticed
+by an outage on somebody else's site.
 
 #### Scenario: Renewal runs after the hostname has moved
 - **WHEN** the renewal next runs on either machine

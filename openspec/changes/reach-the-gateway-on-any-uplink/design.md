@@ -72,15 +72,24 @@ attractive on two counts: nothing, not even `mprz.ru`, sees plaintext, and the c
 story does not change at all, because the existing challenge keeps arriving through the tunnel
 and the home nginx keeps its own configuration.
 
-It is rejected because of what `mprz.ru` is. Passing through by hostname means restructuring
-its port-443 listener into a stream with SNI inspection — touching the single entry point of
-every other service in the estate for the sake of one. The blast radius of a mistake there is
-everything, and the thing being gained is protection from a machine we already trust with our
-own secrets.
+It is rejected because of what `mprz.ru` is, and the files say so rather than the guess that
+first said it. Its nginx serves eleven hostnames — `gmplus.ru` and its subdomains,
+`propevay.ru`, `romantsova.store`, `turbo01.ru`, three under `mprz.ru` itself — every one of
+them on `listen 443 ssl` in the HTTP context, and there is no stream section at all. Passing
+through by hostname would mean converting that single listener into a stream with SNI
+inspection: touching the entry point of every service in the estate for the sake of one. The
+blast radius of a mistake there is everything, and what is gained is protection from a machine
+we already trust with all our own secrets.
 
 Terminating at the far end is instead a new server block beside the existing ones: additive,
-contained, and unremarkable to its neighbours. The cost paid is that renewal for this hostname
-moves there too, which is ordinary work rather than a workaround.
+contained, unremarkable to its neighbours, and a certificate it already issues eleven of.
+
+The second half of the original argument turned out to be false and is withdrawn. It said
+renewal at the house would break because the tunnel takes port 80. Renewal there is validated
+over DNS and always has been, so it never depended on being reachable at all. That removes a
+whole group of work — and it removes a hazard the critique had raised against the rollback
+path, which was that a certificate quietly failing to renew would take the fallback with it.
+It cannot: the fallback's certificate renews whether or not anything can reach the house.
 
 ### The direct path is retired in two stages
 
@@ -174,6 +183,12 @@ moment that threshold is tuned.
   moving `sms.deralsem.ru` produces exactly the same symptom, and a new failure hiding behind
   an existing one is a failure nobody investigates. It is cleared first so that afterwards a
   red timer means something.
+- **Renewal at the house is validated over DNS, not over an inbound challenge.** The premise
+  that the tunnel would break it was wrong and is withdrawn, together with the work it
+  implied. Noted rather than dropped, because it carries a real risk that predates this
+  change: the credential enabling it can edit the zone that decides where this hostname
+  points, so a compromise of the house is already a hijack of the name. That is worth its own
+  look at the token's scope, and it is not this change's to fix.
 - **`mprz.ru` already runs WireGuard, and only one of its two interfaces is ours.** `wg0` is
   how the bots reach Telegram — `mprz.ru` is a *client* on it and its allowed addresses are
   Telegram's ranges through a foreign endpoint. `wg-burns` is the estate's own, with

@@ -33,10 +33,17 @@ paid for and already running: `mprz.ru`, which hosts the applications that call 
   gateway today runs on the gateway. That answers "is the process up", never "does the name
   answer from the internet" — and the two diverge exactly when it matters.
 - **Administrative access survives the wired link**, through the same tunnel.
+- **Requests are recorded with where they came from.** Nothing records this today, which was
+  survivable while reaching the gateway meant being on the house's network; it stops being so
+  when there is one public entrance and the credentials behind it are long-lived.
 - **The direct path is retired in two stages, not one.** It stays serving through a soak
   period, so rollback is real while the new path is unproven; it is retired afterwards, so
   "the tunnel is the only way in" becomes true rather than being asserted while port 443 on
   the house still answers to anyone who knows the address.
+- The far end needs a certificate of its own, which is routine there — it already issues them
+  for eleven hostnames. Renewal at the house is unaffected either way: it is validated over
+  DNS and has never depended on being reachable, which also means the rollback path cannot
+  quietly expire out from under itself.
 
 ## Capabilities
 

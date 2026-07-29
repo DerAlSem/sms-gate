@@ -5,15 +5,21 @@
       <!-- Separate. Read off the wire: sms.deralsem.ru is CN=sms.deralsem.ru with itself as
            its only SAN, valid to 2026-09-14. No shared lineage, so one broken renewal cannot
            take the other with it. -->
-- [ ] 1.3 Record what `mprz.ru` already serves on port 443, so the addition can be confirmed additive rather than assumed to be
+- [x] 1.3 Record what `mprz.ru` already serves on port 443, so the addition can be confirmed additive rather than assumed to be
+      <!-- Eleven hostnames: gmplus.ru + demo/parking, propevay.ru, romantsova.store,
+           turbo01.ru, hrm/signage/turbo.mprz.ru, mprz.ru, and a default. All `listen 443 ssl`
+           in the HTTP context, certificates issued there already. -->
+- [x] 1.9 Establish how the house validates its certificate, before assuming the tunnel breaks it
+      <!-- `authenticator = dns-cloudflare`. Validated over DNS, never over an inbound
+           challenge — so the premise that moving the hostname breaks renewal was wrong, and
+           the work it implied is withdrawn. Consequence worth keeping: the fallback path
+           cannot expire out from under itself.
+           Separate, pre-existing, not ours: the credential that enables this can edit the zone
+           that decides where the hostname points. -->
+- [x] 1.10 Clear the renewal failure that predates this change, so that a red timer afterwards means something
+      <!-- `nas.deralsem.ru` resolves elsewhere now; its renewal config is disabled, a dry run
+           passes for the remaining hostname, and the unit's failed state is cleared. -->
 - [x] 1.4 Note that nothing in the gateway reads `X-Real-IP`, `X-Forwarded-For` or the client address — verified during review, so the header rename is not a migration; what is missing is recording the address at all, which is task 5
-- [ ] 1.5 **Renewal on the home server is already failing, before this change touches anything.**
-      `nas.deralsem.ru` no longer resolves to the house — it points at a third machine — so its
-      challenge is delivered elsewhere and `certbot.service` exits in failure on every run.
-      This matters here because the same failure is what moving `sms.deralsem.ru` would
-      produce: a new breakage would be indistinguishable from the existing red, and would be
-      read as pre-existing. Clear it first, so that after the cutover a failing timer means
-      something
 - [x] 1.6 Establish what the existing WireGuard on `mprz.ru` already carries — so the house is
       added without colliding with an addressing plan this change did not write
       <!-- `wg0` is not a hub of ours: mprz is a *client* on it, and its allowed ips are
@@ -27,9 +33,11 @@
       the wired link is alive — which would make failover a decision about the tunnel rather
       than about the link. The far end's side already follows the convention this needs, with
       its existing peer confined to a single address
-- [ ] 1.7 Read the `stream` block already present in `mprz.ru`'s `nginx.conf`; the decision to
-      terminate TLS rather than pass it through was argued from its port 443 being ordinary
-      HTTP, and that argument should rest on the file rather than on the listener
+- [x] 1.7 Check whether `mprz.ru` routes by SNI already; the decision to terminate TLS rather
+      than pass it through was argued from its port 443 being ordinary HTTP, and that argument
+      should rest on the file rather than on the listener
+      <!-- It does not — there is no stream section at all. The earlier reading came from the
+           word inside `upstream`. The argument stands, now on the files. -->
 
 ## 2. The tunnel, constrained at both ends
 
@@ -62,7 +70,7 @@
 ## 6. Serving the hostname from the far end
 
 - [ ] 6.1 Add a server block for the hostname on `mprz.ru`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
-- [ ] 6.2 Issue its certificate there and confirm renewal works
+- [ ] 6.2 Issue its certificate there and confirm renewal works — routine on a machine already renewing eleven, but its renewal is shared with them, so a break here is a break for somebody else's site
 - [ ] 6.3 Verify the neighbouring services on `mprz.ru` are unaffected
 - [ ] 6.4 Verify through the tunnel, with the public record still pointing at the house — the new path proven before it carries anything
 
