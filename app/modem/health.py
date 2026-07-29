@@ -32,6 +32,15 @@ HARD = "hard"
 # mixing them is what let a stall inherit a recovery it did not earn.
 REGISTRATION = "registration"
 STALL = "stall"
+# The link itself is gone — the port cannot be read or written at all. Distinct from the
+# two above because no remedy made of AT commands can reach a modem whose port has been
+# destroyed, so the ladder must not spend its rungs issuing them.
+TRANSPORT = "transport"
+
+# How many consecutive observations a cause needs before the ladder acts on it. Three
+# exists to absorb one unlucky registration sample; a port that cannot be written is not
+# a sample, and waiting three minutes to act on it buys nothing.
+_IMMEDIATE = 1
 
 
 class ModemHealth:
@@ -90,15 +99,42 @@ class ModemHealth:
 
     # -------------------------------------------------------------------- ladder
 
-    def decide(self, *, registered: bool, stalled: bool, hard_reset_allowed: bool) -> str:
-        """Advance the ladder one step and name the rung to act on.
+    def _threshold(self, cause: str) -> int:
+        """How many consecutive observations this cause needs before the ladder acts.
 
-        Pure: no serial port, no filesystem, no clock. The caller supplies the two
-        observations and performs whatever this returns.
+        Belongs to the cause, not to the ladder: the three-poll threshold is there to
+        absorb a single unlucky registration sample, which is not a thing a missing port
+        can be.
         """
-        cause = None if registered and not stalled else (
-            REGISTRATION if not registered else STALL
-        )
+        return _IMMEDIATE if cause == TRANSPORT else self._fail_threshold
+
+    def decide(
+        self,
+        *,
+        registered: bool,
+        stalled: bool,
+        hard_reset_allowed: bool,
+        link_lost: bool = False,
+    ) -> str:
+        """Advance the ladder one step and name the escalation level to act on.
+
+        Pure: no serial port, no filesystem, no clock. The caller supplies the
+        observations, chooses the remedy that fits the cause, and performs it.
+
+        The returned value is a *level*, not a command sequence. What "gentle" and
+        "blunt" mean depends on why the modem is unhealthy, and for a lost link neither
+        of them is an AT command.
+        """
+        # A lost link outranks the other two: with the port gone, "is it registered" is
+        # not a question that has an answer, and the value passed for it says more about
+        # how the caller handled the failure than about the modem.
+        cause = None
+        if link_lost:
+            cause = TRANSPORT
+        elif not registered:
+            cause = REGISTRATION
+        elif stalled:
+            cause = STALL
         if cause is None:
             self.fails = 0
             self.soft_tried = False
@@ -114,12 +150,19 @@ class ModemHealth:
         self.cause = cause
 
         self.fails += 1
-        if self.fails < self._fail_threshold:
+        if self.fails < self._threshold(cause):
             return WAIT
         if not self.soft_tried:
             self.soft_tried = True
             self.fails = 0
             return SOFT
+        if cause == TRANSPORT:
+            # The cooldown exists so a modem is not hammered with resets. The blunt
+            # remedy for a lost link is not a reset — it restarts this process — so
+            # nothing is being hammered and the supervisor's own restart limits bound it.
+            # Gating it here would leave the gateway unusable for up to half an hour with
+            # no remedy available in the meantime.
+            return HARD
         if not hard_reset_allowed:
             self.fails = 0
             return COOLDOWN

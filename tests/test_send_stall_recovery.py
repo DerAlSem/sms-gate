@@ -31,6 +31,10 @@ class FakeSender:
         self.hard = 0
         self.commands = []
         self._recover_raises = recover_raises
+        # Mirrors ATSerial: the manager asks whether the link is usable, and waits on
+        # this event so a lost link wakes it instead of costing a whole poll interval.
+        self.usable = True
+        self.link_lost = asyncio.Event()
 
     async def registration_ok(self):
         # A default rather than False-when-empty: the reattach wait polls this too, so a

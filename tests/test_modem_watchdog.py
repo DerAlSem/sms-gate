@@ -20,6 +20,9 @@ class FakeSender:
         self.reg_results = list(reg_results)
         self.soft = 0
         self.hard = 0
+        # Mirrors ATSerial, which the manager now asks about the link itself.
+        self.usable = True
+        self.link_lost = asyncio.Event()
 
     async def registration_ok(self):
         return self.reg_results.pop(0) if self.reg_results else False

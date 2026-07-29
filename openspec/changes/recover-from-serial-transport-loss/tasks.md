@@ -24,17 +24,17 @@
 
 ## 4. The recovery ladder
 
-- [ ] 4.1 Add a `TRANSPORT` cause and a `link_lost` observation to `ModemHealth.decide()`, keeping it free of I/O
-- [ ] 4.2 Make the failure threshold per-cause in `ModemHealth.__init__` rather than one shared count, with transport acting on the first observation
-- [ ] 4.3 Map `(cause, level)` to an action in the caller: for transport, the gentle level stops using the link and the blunt level exits — no radio cycle, no modem reset
-- [ ] 4.4 Catch `ModemTransportError` in `_watchdog_step` and feed it to `decide()` instead of letting it escape
-- [ ] 4.5 Make a poll that could not be completed count as a failed poll
-- [ ] 4.6 Make `_recover()` treat a remedy it could not carry out as attempted so the ladder proceeds; same for `hard_reset()` meeting a dead port
-- [ ] 4.7 Test the ladder as a history table: transport escalates on its own cause and threshold, and a change of cause restarts it as it already does for registration versus stall
-- [ ] 4.8 Test: with a dead port the ladder reaches the service-exit level rather than looping — the regression that caused the incident
-- [ ] 4.9 Make a lost link act even when `modem_watchdog_enabled` is false, since `watchdog_loop` skips the step entirely today; give it its own switch if one is wanted
-- [ ] 4.10 Let the send path's observation of a lost link start the response rather than waiting for the next 60-second poll
-- [ ] 4.11 Test: the watchdog disabled and the link lost still produces a response
+- [x] 4.1 Add a `TRANSPORT` cause and a `link_lost` observation to `ModemHealth.decide()`, keeping it free of I/O
+- [x] 4.2 Make the failure threshold per-cause in `ModemHealth.__init__` rather than one shared count, with transport acting on the first observation
+- [x] 4.3 Map `(cause, level)` to an action in the caller: for transport, the gentle level stops using the link and the blunt level exits — no radio cycle, no modem reset
+- [x] 4.4 Catch `ModemTransportError` in `_watchdog_step` and feed it to `decide()` instead of letting it escape
+- [x] 4.5 Make a poll that could not be completed count as a failed poll
+- [x] 4.6 Make `_recover()` treat a remedy it could not carry out as attempted so the ladder proceeds; same for `hard_reset()` meeting a dead port
+- [x] 4.7 Test the ladder as a history table: transport escalates on its own cause and threshold, and a change of cause restarts it as it already does for registration versus stall
+- [x] 4.8 Test: with a dead port the ladder reaches the service-exit level rather than looping — the regression that caused the incident
+- [x] 4.9 Make a lost link act even when `modem_watchdog_enabled` is false, since `watchdog_loop` skips the step entirely today; give it its own switch if one is wanted
+- [x] 4.10 Let the send path's observation of a lost link start the response rather than waiting for the next 60-second poll
+- [x] 4.11 Test: the watchdog disabled and the link lost still produces a response
 
 ## 5. The send path
 

@@ -9,11 +9,11 @@ import serial_asyncio
 
 from app.config import settings
 from app.settings_store import store
-from app.modem.at_commands import ATSerial, ATCommandError
+from app.modem.at_commands import ATSerial, ATCommandError, ModemFailure, ModemTransportError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
 from app.modem.errors import is_retryable
-from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, WAIT
+from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANSPORT, WAIT
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver
 from app.modem.pdu_encode import encode_submit
@@ -204,6 +204,13 @@ class ModemManager:
                 await asyncio.wait_for(action(), timeout=_RECOVERY_TIMEOUT)
             except asyncio.TimeoutError:
                 logger.error("Recovery did not finish within %.0fs", _RECOVERY_TIMEOUT)
+            except Exception:
+                # A remedy the gateway could not carry out counts as attempted. Every
+                # rung here is an AT command, so a fault that stops AT commands reaching
+                # the modem stops every rung — and if that escapes, the step never
+                # returns the level that ends the process. Escalation must not depend on
+                # the modem cooperating with its own recovery.
+                logger.exception("Recovery could not be carried out — counting it as attempted")
             if reopen:
                 await self._await_reattach()
         finally:
@@ -578,17 +585,36 @@ class ModemManager:
             except ATCommandError as e:
                 logger.warning("Keepalive AT+CREG? failed: %s", e)
 
+    async def _poll(self) -> tuple[bool, bool]:
+        """Ask the modem whether it is registered. Returns (registered, link_lost).
+
+        Never raises. The watchdog acts on doubt, and an exception is a stronger form of
+        doubt than a negative answer — but for five hours on 2026-07-29 an exception was
+        no answer at all: it escaped this step before the ladder was consulted and was
+        swallowed by the loop above, so nothing was ever counted.
+        """
+        try:
+            return await self._sender.registration_ok(), False
+        except ModemTransportError as e:
+            logger.warning("Registration poll found the link gone: %s", e)
+            return False, True
+        except Exception:
+            logger.exception("Registration poll failed")
+            return False, False
+
     async def _watchdog_step(self) -> str:
-        registered = await self._sender.registration_ok()
+        registered, link_lost = await self._poll()
         # A modem that answers every command and still cannot send is unhealthy too.
-        # One check, one ladder — two independent recovery paths would race each other
-        # over a single serial port.
+        # One check, one ladder — not because two would race over the port (the gate and
+        # the serial lock already prevent that) but because there must be exactly one
+        # escalation counter and one place that decides to end the process.
         stalled = self._stalled
         previous = self._health.cause
         action = self._health.decide(
             registered=registered,
             stalled=stalled,
             hard_reset_allowed=not _hard_reset_on_cooldown(),
+            link_lost=link_lost,
         )
         cause = self._health.cause
 
@@ -609,6 +635,22 @@ class ModemManager:
             )
         if action == WAIT:
             return WAIT
+
+        # The remedy belongs to the cause, not to the level. For a lost link neither
+        # level is an AT command: the port is not there to carry one, and an
+        # implementation that kept the old level-to-command mapping would spend the whole
+        # escalation writing into a missing port — the incident's failure mode, reached
+        # by a different route.
+        if cause == TRANSPORT:
+            if action == SOFT:
+                logger.error(
+                    "Link to the modem is gone — no AT remedy applies; "
+                    "waiting one interval before restarting the service"
+                )
+                return SOFT
+            logger.error("Link to the modem is still gone; restarting the service")
+            return HARD
+
         if action == SOFT:
             logger.warning("Modem unhealthy: %s — soft recovery", cause)
             await self._recover(self._sender.soft_recover)
@@ -634,15 +676,45 @@ class ModemManager:
         await self._recover(self._sender.hard_reset, reopen=False)
         return HARD
 
+    async def _wait_for_tick(self) -> None:
+        """Wait for the next poll, or for someone to report the link gone.
+
+        The send path meets a lost link first, and at the moment it matters. Making that
+        observation wait up to a full interval to be noticed is a minute spent already
+        knowing the answer. The event is cleared once taken, so a link that stays lost
+        still escalates on the ordinary cadence rather than spinning.
+        """
+        try:
+            await asyncio.wait_for(self._sender.link_lost.wait(), timeout=_WD_INTERVAL)
+            logger.info("Watchdog woken early: the link was reported gone")
+        except asyncio.TimeoutError:
+            pass
+        finally:
+            self._sender.link_lost.clear()
+
     async def watchdog_loop(self) -> None:
         """Periodically ensure the modem is registered; soft/hard recover if not."""
         logger.info("Modem watchdog started")
         while True:
-            await asyncio.sleep(_WD_INTERVAL)
+            await self._wait_for_tick()
             if not store.modem_watchdog_enabled:
                 # Recovery is the operator's job now, so stop accumulating a suspicion
                 # nothing will act on.
                 self._health.forget()
+                # A lost link is the exception, and deliberately not covered by this
+                # switch. It exists so an operator can take over judgement about an
+                # unhealthy *modem* — whether to cycle its radio, whether to reset it.
+                # A port that does not exist is not that kind of judgement call: there is
+                # no policy under which the right answer is to keep writing to it, and
+                # silencing the watchdog to investigate a flapping registration should
+                # not silently opt out of ever recovering the port.
+                if not self._sender.usable:
+                    logger.error(
+                        "Link to the modem is gone while the watchdog is disabled — "
+                        "restarting the service anyway"
+                    )
+                    await asyncio.sleep(_WD_HARD_RESET_SETTLE)
+                    os._exit(1)
                 continue
             try:
                 action = await self._watchdog_step()

@@ -83,12 +83,22 @@ class ATSerial:
         # being rediscovered one command timeout at a time. Tests that install a
         # transport directly start from an open link.
         self._usable = True
+        # Set when the link is found gone, so whoever is responsible for acting can be
+        # woken at once. The send path meets the loss first and at the moment it matters;
+        # leaving it to be rediscovered by the next periodic poll spends a minute knowing
+        # the answer. Consumers clear it after taking it.
+        self.link_lost = asyncio.Event()
+
+    @property
+    def usable(self) -> bool:
+        return self._usable
 
     async def connect(self) -> None:
         self._reader, self._writer = await serial_asyncio.open_serial_connection(
             url=self._port, baudrate=self._baudrate
         )
         self._usable = True
+        self.link_lost.clear()
         logger.info("Opened serial port %s", self._port)
 
     async def close(self) -> None:
@@ -109,6 +119,7 @@ class ATSerial:
         if self._usable:
             logger.error("Lost the link to %s: %s", self._port, reason)
         self._usable = False
+        self.link_lost.set()
         return ModemTransportError(f"link to {self._port} lost: {reason}")
 
     def _check_usable(self) -> None:
@@ -383,7 +394,10 @@ class ATSerial:
         command may not return OK — swallow that."""
         try:
             await self.command("AT+CFUN=1,1", timeout=5.0)
-        except ATCommandError:
+        except ModemFailure:
+            # Widened from the AT failure alone: the port drops as the modem reboots, and
+            # on a link that was already gone this raises a transport failure instead —
+            # which would otherwise escape and abort the escalation that ordered the reset.
             pass
 
     async def init(self) -> None:
