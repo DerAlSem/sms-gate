@@ -1,8 +1,8 @@
 ## 1. Test scaffolding
 
 - [x] 1.1 Add a serial fake that can raise on write/drain, return EOF on read, and be told the device is absent — the existing `_DelayedSerial` in `tests/test_at_recovery.py` never raises and the watchdog tests replace whole methods, so no current fixture can express a dead port
-- [ ] 1.2 Note in the fixture which module to patch: `serial_asyncio` is imported separately by `app/modem/at_commands.py` and `app/modem/manager.py`, so reader-side and command-side tests patch different names
-- [ ] 1.3 Extract background-task supervision out of `app/main.py`'s lifespan into a function that can be called from a test — there is no test file for `main.py` today
+- [x] 1.2 Note in the fixture which module to patch: `serial_asyncio` is imported separately by `app/modem/at_commands.py` and `app/modem/manager.py`, so reader-side and command-side tests patch different names
+- [x] 1.3 Extract background-task supervision out of `app/main.py`'s lifespan into a function that can be called from a test — there is no test file for `main.py` today
 
 ## 2. The failure class
 
@@ -50,25 +50,25 @@
 
 ## 6. Startup and restart limits
 
-- [ ] 6.1 Make `connect()` at startup wait for the device on the same bounded terms as any other lost link, tolerating both a missing node and a permission error while udev applies its rules
-- [ ] 6.2 Choose the bound together with `RestartSec` and `StartLimitBurst` in `deploy/sms-gate.service`, so an exit followed by a slow re-enumeration cannot stop the unit permanently
-- [ ] 6.3 Test: a device absent at startup is waited for and the service starts when it appears
-- [ ] 6.4 Test: a device that never appears exits within the bound rather than hanging startup
+- [x] 6.1 Make `connect()` at startup wait for the device on the same bounded terms as any other lost link, tolerating both a missing node and a permission error while udev applies its rules
+- [x] 6.2 Choose the bound together with `RestartSec` and `StartLimitBurst` in `deploy/sms-gate.service`, so an exit followed by a slow re-enumeration cannot stop the unit permanently
+- [x] 6.3 Test: a device absent at startup is waited for and the service starts when it appears
+- [x] 6.4 Test: a device that never appears exits within the bound rather than hanging startup
 
 ## 7. Loop supervision
 
-- [ ] 7.1 Replace `asyncio.gather(*tasks, return_exceptions=True)` with per-task supervision that logs the traceback and alerts
-- [ ] 7.2 Exclude cancellation during shutdown from being treated as a death — no alert, no exit, and do not read the exception off a cancelled task
-- [ ] 7.3 Make essential loops exit the service when they die; `reader_loop` alerts and exits on a lost link rather than reconnecting
-- [ ] 7.4 Drain pending notifications, within a bound, before any deliberate exit
-- [ ] 7.5 Record a notification that cannot be queued or cannot be delivered, instead of dropping it silently
-- [ ] 7.6 Test: a raising background loop produces a logged traceback and an alert
-- [ ] 7.7 Test: an orderly shutdown produces no alert and no exit, and closes the modem and the database
-- [ ] 7.8 Test: the alert explaining a fatal exit is delivered before the process ends
+- [x] 7.1 Replace `asyncio.gather(*tasks, return_exceptions=True)` with per-task supervision that logs the traceback and alerts
+- [x] 7.2 Exclude cancellation during shutdown from being treated as a death — no alert, no exit, and do not read the exception off a cancelled task
+- [x] 7.3 Make essential loops exit the service when they die; `reader_loop` alerts and exits on a lost link rather than reconnecting
+- [x] 7.4 Drain pending notifications, within a bound, before any deliberate exit
+- [x] 7.5 Record a notification that cannot be queued or cannot be delivered, instead of dropping it silently
+- [x] 7.6 Test: a raising background loop produces a logged traceback and an alert
+- [x] 7.7 Test: an orderly shutdown produces no alert and no exit, and closes the modem and the database
+- [x] 7.8 Test: the alert explaining a fatal exit is delivered before the process ends
 
 ## 8. Verification and ship
 
-- [ ] 8.1 Full test suite green
+- [x] 8.1 Full test suite green
 - [ ] 8.2 Live verification: re-enumerate the modem deliberately (`AT+CFUN=1,1`) and confirm the gateway escalates, exits, restarts unattended, comes back with `CNMI` intact, drains the inbox, and delivers inbound
 - [ ] 8.3 Confirm the restart limits hold: the gateway must recover without the unit reaching its start limit
 - [ ] 8.4 Ship and verify against prod

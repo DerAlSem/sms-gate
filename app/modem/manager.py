@@ -9,6 +9,7 @@ import serial_asyncio
 
 from app.config import settings
 from app.settings_store import store
+from app.modem import at_commands
 from app.modem.at_commands import ATSerial, ATCommandError, ModemFailure, ModemTransportError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
@@ -219,7 +220,10 @@ class ModemManager:
                 self._modem_gate.set()
 
     async def connect(self) -> None:
-        await self._sender.connect()
+        # Waits for the device rather than failing outright: a restart provoked by a lost
+        # link lands while the modem is still re-enumerating, and treating that as fatal
+        # would turn the remedy into an indefinite outage.
+        await self._sender.connect(wait_for_device=at_commands._DEVICE_WAIT)
         await self._sender.init()
 
     async def disconnect(self) -> None:
@@ -470,9 +474,23 @@ class ModemManager:
         while True:
             try:
                 chunk = await asyncio.wait_for(reader.read(256), timeout=1.0)
-                buf += chunk
             except asyncio.TimeoutError:
-                pass
+                continue
+            except OSError as e:
+                # This loop is supervised and essential: raising ends the service, which
+                # restarts it with both ports freshly opened. It deliberately does not
+                # reconnect on its own — a second bounded reconnector, on a port with no
+                # lock behind it, could race the settling period after a deliberate modem
+                # reset and could decide to end the service in parallel with the watchdog.
+                raise ModemTransportError(
+                    f"link to {self._read_port} lost: {type(e).__name__}: {e}"
+                ) from e
+            if not chunk:
+                # A closed stream returns nothing rather than raising, so without this the
+                # loop spins for ever delivering no URCs — no +CDS, no +CMTI — while
+                # looking perfectly healthy.
+                raise ModemTransportError(f"link to {self._read_port} lost: end of stream")
+            buf += chunk
 
             while b'\n' in buf:
                 line, buf = buf.split(b'\n', 1)

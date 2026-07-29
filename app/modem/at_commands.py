@@ -21,6 +21,14 @@ PROMPT = b'> '
 _DRAIN_QUIET = 0.3
 _DRAIN_BUDGET = 2.0
 
+# How long startup waits for a device that has not come back yet, and how often it looks.
+# The bound is chosen against the unit's restart policy, not in isolation: with
+# `RestartSec=30` a failed start costs 90s, so five of them span 450s and cannot exhaust
+# `StartLimitBurst=5` inside its 300s window. A fast crash — a bad `.env`, an import
+# error — still trips that limit within seconds, which is what it is for.
+_DEVICE_WAIT = 60.0
+_DEVICE_WAIT_POLL = 2.0
+
 
 class ModemFailure(Exception):
     """Anything that stopped an exchange with the modem.
@@ -93,10 +101,35 @@ class ATSerial:
     def usable(self) -> bool:
         return self._usable
 
-    async def connect(self) -> None:
-        self._reader, self._writer = await serial_asyncio.open_serial_connection(
-            url=self._port, baudrate=self._baudrate
-        )
+    async def connect(self, wait_for_device: float = 0.0) -> None:
+        """Open the port, optionally waiting for the device to come back first.
+
+        A device absent at startup is the same fault as one lost in flight, seen at a
+        different moment — and the moment is not ours to choose. A restart provoked by a
+        lost link lands while the modem is still re-enumerating, because it takes longer
+        to return than a supervisor takes to restart a service. Treating that as fatal
+        turns the remedy into the failure: the gateway restarts, cannot open the port,
+        exits, and repeats until its supervisor gives up altogether.
+
+        Two ways to be "not back yet", and both are tolerated. The node may not exist; and
+        just after it is recreated it may exist while this process still may not open it,
+        because udev has not yet applied the ownership the service runs under.
+        """
+        deadline = asyncio.get_event_loop().time() + wait_for_device
+        while True:
+            try:
+                self._reader, self._writer = await serial_asyncio.open_serial_connection(
+                    url=self._port, baudrate=self._baudrate
+                )
+                break
+            except OSError as e:
+                if asyncio.get_event_loop().time() >= deadline:
+                    self._usable = False
+                    raise ModemTransportError(
+                        f"{self._port} did not appear within {wait_for_device:.0f}s: {e}"
+                    ) from e
+                logger.warning("Waiting for %s: %s", self._port, e)
+                await asyncio.sleep(_DEVICE_WAIT_POLL)
         self._usable = True
         self.link_lost.clear()
         logger.info("Opened serial port %s", self._port)

@@ -9,6 +9,10 @@ import time
 import httpx
 
 _TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+# WARNING-level only from this module's own failure paths: the alert handler listens at
+# ERROR, so logging an alerting failure at ERROR would re-enter it and recurse.
+logger = logging.getLogger(__name__)
+
 _MAX_LEN = 3500
 _BODY_MAX = _MAX_LEN - 200   # headroom for the title line + tags
 
@@ -62,6 +66,14 @@ class TelegramNotifier:
         self._time = time_fn
         self._last_sent: dict = {}
         self._suppressed: dict = {}
+        # Counted and logged rather than dropped in silence. Both paths below discard a
+        # notification on purpose — to keep alerting from failing the thing it reports on
+        # — but discarding it *silently* makes a broken alerting path indistinguishable
+        # from a system with nothing to report, and a long incident is exactly when the
+        # queue is most likely to fill. WARNING, not ERROR: the handler that would feed
+        # this back into itself only listens at ERROR.
+        self.dropped = 0
+        self.undelivered = 0
         self._lock = threading.Lock()
         self._queue: queue.Queue = queue.Queue(maxsize=queue_maxsize)
         self._sender = sender or self._http_send
@@ -117,25 +129,45 @@ class TelegramNotifier:
         try:
             self._queue.put_nowait(item)
         except queue.Full:
+            self.dropped += 1
+            logger.warning(
+                "Alert queue full — dropped a notification (%d so far)", self.dropped
+            )
             if dedup_sig is not None:
                 self._rollback(dedup_sig, suppressed)
 
+    def _drain_once(self) -> bool:
+        """Deliver one queued notification. Returns False on the stop sentinel."""
+        item = self._queue.get()
+        if item is None:                   # stop sentinel
+            self._queue.task_done()
+            return False
+        text, phone = item if isinstance(item, tuple) else (item, None)
+        try:
+            message_id = self._sender(text)
+            if phone is not None:
+                self._record(message_id, phone)
+        except Exception as e:
+            # WARNING, never ERROR: the alert handler listens at ERROR and would
+            # re-enter this path and recurse. Silence here is what made an alerting
+            # path that had stopped working look like a quiet system.
+            self.undelivered += 1
+            logger.warning(
+                "Could not deliver a notification (%d so far): %s", self.undelivered, e
+            )
+        finally:
+            self._queue.task_done()
+        return True
+
     def _worker(self) -> None:
-        while True:
-            item = self._queue.get()
-            if item is None:               # stop sentinel
-                self._queue.task_done()
-                break
-            text, phone = item if isinstance(item, tuple) else (item, None)
-            try:
-                message_id = self._sender(text)
-                if phone is not None:
-                    self._record(message_id, phone)
-            except Exception:
-                # Never log here: it would re-enter the ERROR handler and recurse.
-                pass
-            finally:
-                self._queue.task_done()
+        while self._drain_once():
+            pass
+
+    def drain(self, timeout: float = 5.0) -> None:
+        """Wait, briefly, for what is already queued to go out."""
+        deadline = time.monotonic() + timeout
+        while not self._queue.empty() and time.monotonic() < deadline:
+            time.sleep(0.05)
 
     def close(self) -> None:
         try:
@@ -260,3 +292,13 @@ def notify(event_type: str, text: str, dedup_extra=None, phone=None) -> None:
     body = f"{head}\n{_bounded(text, _BODY_MAX)}"
     dedup_sig = (event_type, dedup_extra) if dedup_extra is not None else None
     _notifier.maybe_send(body, dedup_sig=dedup_sig, phone=phone)
+
+
+def drain(timeout: float = 5.0) -> None:
+    """Module-level drain, so a deliberate exit can flush its own explanation.
+
+    A no-op when alerting is not configured — an unconfigured gateway still has to be
+    able to exit.
+    """
+    if _notifier is not None:
+        _notifier.drain(timeout)

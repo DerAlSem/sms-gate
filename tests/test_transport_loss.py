@@ -298,3 +298,68 @@ def test_a_failing_mode_restore_does_not_replace_the_original_failure():
     # The restore fails too, against the same dead link. If it had replaced the original,
     # the flag would be gone.
     assert error.pdu_submitted is True
+
+
+# --- the device being absent when the service starts ---------------------------
+
+
+class _AbsentThenPresent:
+    """`open_serial_connection` as it behaves across a re-enumeration.
+
+    Two ways to be "not back yet", and both must be tolerated: the node does not exist,
+    and — briefly after it is recreated — it exists but this process may not open it,
+    because udev has not yet applied the ownership the service runs under.
+    """
+
+    def __init__(self, failures):
+        self.failures = list(failures)
+        self.calls = 0
+
+    async def __call__(self, url=None, baudrate=None):
+        self.calls += 1
+        if self.failures:
+            raise self.failures.pop(0)
+        transport = _TalkingSerial([b"\r\nOK\r\n"] * 20)
+        return transport, transport
+
+
+def test_a_device_absent_at_startup_is_waited_for(monkeypatch):
+    """A restart provoked by a lost link lands while the device is still gone: a
+    re-enumerating modem takes longer to come back than the supervisor takes to restart
+    the service. Treating that as fatal turns the remedy into the failure."""
+    import app.modem.at_commands as at
+
+    opener = _AbsentThenPresent([
+        FileNotFoundError("no such device"),
+        PermissionError("udev has not applied the group yet"),
+    ])
+    monkeypatch.setattr(at.serial_asyncio, "open_serial_connection", opener)
+    monkeypatch.setattr(at, "_DEVICE_WAIT_POLL", 0.01)
+
+    async def run():
+        s = ATSerial("/dev/ttyUSB2")
+        await s.connect(wait_for_device=1.0)
+        return s.usable
+
+    assert asyncio.run(run()) is True
+    assert opener.calls == 3, "the wait gave up on a device that was only briefly absent"
+
+
+def test_a_device_that_never_appears_ends_startup_rather_than_hanging(monkeypatch):
+    """Bounded: a gateway that hangs in startup for ever is not visibly broken, it is
+    just gone — which is the failure mode this whole change exists to remove."""
+    import app.modem.at_commands as at
+
+    opener = _AbsentThenPresent([FileNotFoundError("no such device")] * 500)
+    monkeypatch.setattr(at.serial_asyncio, "open_serial_connection", opener)
+    monkeypatch.setattr(at, "_DEVICE_WAIT_POLL", 0.01)
+
+    async def run():
+        s = ATSerial("/dev/ttyUSB2")
+        started = time.monotonic()
+        with pytest.raises(ModemTransportError):
+            await s.connect(wait_for_device=0.2)
+        return time.monotonic() - started
+
+    elapsed = asyncio.run(run())
+    assert elapsed < 2.0, f"startup hung for {elapsed:.1f}s instead of ending at its bound"
