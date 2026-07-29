@@ -3,6 +3,48 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-07-29
+
+### Fixed
+- **A modem that disappears from USB no longer takes the gateway down with it.** On
+  2026-07-29 at 01:28 the modem re-enumerated, every device node was recreated, and the
+  gateway's file descriptors went stale. It stayed down for **5 hours 10 minutes** while
+  reporting `active (running)`, until an operator restarted it by hand.
+- **A lost link is now a named failure, distinct from a modem that answers badly.** The
+  modem layer had exactly one word — `ATCommandError` — so `serial.SerialException` was
+  caught nowhere: it escaped `registration_state()` and the watchdog step before the
+  recovery ladder was consulted, and was swallowed 316 times. `ModemTransportError` is a
+  **sibling**, not a subclass, because a subclass would be absorbed by
+  `registration_state()`, which reports "could not tell" — and the send path reads that as
+  permission to transmit.
+- **A cleanly closed port counts as a lost link.** It raises nothing at all: reads return
+  no bytes, immediately and for ever, so the reader spun to its deadline and reported an
+  ordinary AT timeout — routing the fault back into handling that cannot fix it.
+- **The ladder's rungs are escalation levels, and the remedy is chosen by cause.** Every
+  rung is an AT command, so a missing port made every rung raise and abort the step that
+  returns the level which ends the process. A lost link now acts on the first observation,
+  spends no AT remedy, and its exit is not gated by the hard-reset cooldown — restarting
+  is not a reset, so nothing is being hammered.
+- **A message is held, not failed, when the link goes.** It used to be failed at zero
+  attempts with a `failed` webhook — which GM+ answers by SMS-ing an operator — bypassing
+  the whole retry ladder. Holding is allowed only when no byte was written *and* no part
+  was accepted; a multipart whose first part is at the SMSC still fails, because a retry
+  would transmit it again under the same concatenation reference.
+- **A device absent at startup is waited for.** A restart provoked by a lost link lands
+  while the modem is still re-enumerating; treating that as fatal turned the remedy into
+  an indefinite outage, since five failed starts stop the unit permanently. The 60s wait
+  is paired with `RestartSec`, raised to 30s, so five failed starts span 450s and cannot
+  exhaust the start limit. A fast crash still trips it in seconds.
+- **A background loop can no longer die unnoticed.** `gather(..., return_exceptions=True)`
+  returned each loop's exception and dropped it, which is how the URC reader — no `+CDS`,
+  no `+CMTI` — died in total silence. Cancellation during shutdown is not treated as a
+  death, and a deliberate exit delivers its own explanation before ending.
+- Dropped and undeliverable notifications are counted and logged, instead of vanishing.
+
+### Changed
+- **BREAKING for deployment:** `deploy/sms-gate.service` changed (`RestartSec` 10 → 30).
+  Requires `systemctl daemon-reload`; a plain restart will not pick it up.
+
 ## [0.11.1] - 2026-07-29
 
 ### Fixed
