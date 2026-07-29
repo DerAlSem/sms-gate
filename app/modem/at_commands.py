@@ -328,7 +328,11 @@ class ATSerial:
         nothing did.
         """
         if self._usable:
-            logger.error("Lost the link to %s: %s", self._port, reason)
+            # WARNING, not ERROR: the alert handler listens at ERROR, and a lost link is
+            # now the opening of a remedy rather than an outcome. Whoever completes that
+            # remedy reports it once, knowing whether it worked; announcing the loss here
+            # as well is the same outage told twice, in red, before anything is known.
+            logger.warning("Lost the link to %s: %s", self._port, reason)
         self._usable = False
         self.link_lost.set()
         return ModemTransportError(f"link to {self._port} lost: {reason}")

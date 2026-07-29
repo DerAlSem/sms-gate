@@ -42,7 +42,16 @@
 ## 6. Verification and ship
 
 - [x] 6.1 Full test suite green
-- [ ] 6.2 Live verification: re-enumerate the modem (`AT+CFUN=1,1`) and confirm the gateway recovers **without restarting**, with `CNMI` intact
+- [x] 6.2 Live verification: re-enumerate the modem (`AT+CFUN=1,1`) and confirm the gateway recovers **without restarting**, with `CNMI` intact
+      <!-- prod 2026-07-29 15:53:28→15:53:42, pid 2315970 unchanged. Reopened ttyUSB2 after
+           4 attempts (two [Errno 2], one init timeout on a node that was back before the
+           modem was), then ttyUSB3 after 1. CNMI re-issued. Inbox scan ran. -->
+- [x] 6.6 Alert once per outage, once the outcome is known — found by 6.2, which sent three
+      red alerts for a pause that healed itself in 14 s where the restart it replaces sent
+      one. The three in-flight ERRORs became WARNING, a single `link` notification reports
+      the restored link with its reopen count and duration, and the rungs that give up stay
+      at ERROR. A failed prune of the deduplication keys was demoted too: it costs a table
+      that grows, not a message that is lost.
 - [ ] 6.3 Live verification of the case this change is most likely to break: send an SMS to the gateway while the link is down, and confirm it is delivered after the reopen without a restart
 - [ ] 6.4 Ship and verify against prod
 - [ ] 6.5 Archive so the `modem-link` additions land in `openspec/specs/`

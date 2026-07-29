@@ -43,6 +43,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   read *through* `__getattr__`, pinning it as a real instance attribute for the rest of the
   session — so later tests silently ran against the wrong setting.
 
+- **One operator alert per outage, sent once the outcome is known.** Found in live
+  verification: the reopen sent three red alerts for a pause that healed itself in 14
+  seconds, where the restart it replaces sent one — alerting *more* for a better outcome,
+  which is how an operator learns to stop reading them. The steps on the way to a reopen
+  are now WARNING; a single `link` notification reports the restored port with its reopen
+  count and how long it took; the rungs that give up and restart the service stay at ERROR.
+  Deduplicated per port, so a flapping modem yields one message per window carrying the
+  count of the ones it stood in for.
+
 ### Added
 - The diagnostics page reports the link itself: its state, when it was last known good, how
   often it has been reopened, and the state of the URC port. Until now it said what the

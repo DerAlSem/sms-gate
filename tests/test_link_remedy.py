@@ -118,6 +118,48 @@ def test_exhausted_attempts_still_reach_the_service_exit():
     assert m._modem_gate.is_set() is True, "the restart path must not strand the gate"
 
 
+def test_a_self_healing_reopen_alerts_once_and_says_it_healed(monkeypatch):
+    """Found on prod 2026-07-29: the reopen sent three red alerts for a pause that healed
+    itself in fourteen seconds, where the restart it replaced sent one. Alerting more for
+    a better outcome teaches an operator to stop reading them — which is the masked fault
+    the reopen count exists to prevent, reached from the other side."""
+    sent = []
+    monkeypatch.setattr(mgr, "notify", lambda *a, **kw: sent.append((a, kw)))
+
+    m = _mgr(FakeSender())
+    asyncio.run(m._watchdog_step())
+
+    assert len(sent) == 1, f"one alert per outage, once the outcome is known: {sent}"
+    (event, text), kwargs = sent[0]
+    assert event == "link"
+    assert "without restarting" in text, "the alert must say the gateway survived it"
+    assert kwargs["dedup_extra"] == "/dev/ttyUSB2", "a flapping modem is one per window"
+
+
+def test_the_steps_on_the_way_to_a_reopen_do_not_alert(caplog):
+    """The alert handler listens at ERROR. Nothing on the successful path may reach it —
+    the failure rungs still do."""
+    import logging
+
+    m = _mgr(FakeSender())
+    with caplog.at_level(logging.DEBUG):
+        asyncio.run(m._watchdog_step())
+
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == [], f"a self-healing reopen must raise no ERROR: {errors}"
+
+
+def test_a_reopen_that_failed_still_alerts_loudly(caplog):
+    import logging
+
+    m = _mgr(FakeSender(reopen=False))
+    with caplog.at_level(logging.DEBUG):
+        asyncio.run(m._watchdog_step())
+
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("restarted" in e for e in errors), errors
+
+
 def test_a_reopened_link_lets_the_ladder_come_all_the_way_down():
     sender = FakeSender()
     m = _mgr(sender)

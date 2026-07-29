@@ -247,9 +247,13 @@ class ModemManager:
         own state on the next tick, and an exhausted reopen is an ordinary outcome with a
         remedy waiting, not an error to log a traceback for.
         """
-        if not self._sender.usable and not await self._sender.reconnect():
-            logger.error("Could not reopen the link — the service will be restarted")
-            return
+        started = time.monotonic()
+        reopened: list[ATSerial] = []
+        if not self._sender.usable:
+            if not await self._sender.reconnect():
+                logger.error("Could not reopen the link — the service will be restarted")
+                return
+            reopened.append(self._sender)
         if not self._reader_link.usable:
             # Second, and without an init sequence of its own — the design's open question,
             # settled here. It has no writer, so it cannot issue commands at all; the URC
@@ -262,6 +266,7 @@ class ModemManager:
                     "Could not reopen %s — the service will be restarted", self._read_port
                 )
                 return
+            reopened.append(self._reader_link)
         # The reconciliation the restart used to provide for free, and the reason this
         # change could otherwise make inbound delivery *worse* than the restart it
         # replaces: SMS accumulate in modem memory while the link is down, and the +CMTI
@@ -269,6 +274,25 @@ class ModemManager:
         # later restart.
         self._drop_queued_inbound_indices()
         await self.scan_inbox()
+        if reopened:
+            # One notification, sent once the outcome is known, in place of one per step on
+            # the way there. Three red alerts for a pause that healed itself in fourteen
+            # seconds is how an operator learns to stop reading them — which is the same
+            # masked fault the reopen count exists to prevent, arrived at from the other
+            # side. Deduplicated on the ports, so a modem that flaps produces one message
+            # per window carrying the count of the ones it stood in for.
+            self._notify_reopened(reopened, time.monotonic() - started)
+
+    def _notify_reopened(self, reopened: list[ATSerial], seconds: float) -> None:
+        detail = ", ".join(
+            f"{link.port} (reopen #{link.reopens})" for link in reopened
+        )
+        logger.info("Link restored in %.0fs — %s", seconds, detail)
+        notify(
+            "link",
+            f"restored after {seconds:.0f}s without restarting — {detail}",
+            dedup_extra=",".join(link.port for link in reopened),
+        )
 
     def _drop_queued_inbound_indices(self) -> None:
         """Discard indexes announced before the outage; the scan supersedes them.
@@ -555,7 +579,7 @@ class ModemManager:
                 # nothing touches a rebooting modem, and could decide to end the service
                 # in parallel with the watchdog. Reporting the link gone is enough; the
                 # one coordinated recovery either puts this port back or ends the process.
-                logger.error("Reader link lost: %s", e)
+                logger.warning("Reader link lost: %s", e)
                 buf = b''      # a half-line from before the outage is not a URC
                 await self._await_link_restored()
                 continue
@@ -705,8 +729,13 @@ class ModemManager:
         try:
             gone = await queries.prune_inbound_seen(_INBOUND_SEEN_RETENTION)
         except Exception:
-            # Housekeeping must never be the reason inbound goes unread.
-            logger.exception("Could not prune the inbound deduplication keys")
+            # Housekeeping must never be the reason inbound goes unread — nor the reason
+            # an operator is paged. WARNING, not ERROR: the alert handler listens at
+            # ERROR, and a prune that failed costs a table that grows, not a message that
+            # is lost. The traceback is kept, because the cause is worth having.
+            logger.warning(
+                "Could not prune the inbound deduplication keys", exc_info=True
+            )
         else:
             if gone:
                 logger.info("Pruned %d expired inbound deduplication key(s)", gone)
@@ -821,7 +850,9 @@ class ModemManager:
                 # with a process restart drops the in-memory send queue and re-runs
                 # startup. Reopening the port turns that restart cycle into a pause. The
                 # blunt rung is unchanged: the restart is what an exhausted reopen earns.
-                logger.error("Link to the modem is gone — reopening the port in place")
+                # WARNING: this announces a remedy starting, not a fault standing. The
+                # rung below it, which gives up and ends the process, stays at ERROR.
+                logger.warning("Link to the modem is gone — reopening the port in place")
                 await self._recover(self._reopen_link)
                 return SOFT
             logger.error(
