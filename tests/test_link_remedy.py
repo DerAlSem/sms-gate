@@ -44,6 +44,9 @@ class FakeSender:
         if self._on_reconnect:
             await self._on_reconnect()
         if not self._reopen:
+            # As `ATSerial.reconnect` does when its budget runs out: whoever escalates
+            # should not spend another whole interval rediscovering this.
+            self.link_lost.set()
             return False
         self.usable = True
         self.reopens += 1
@@ -158,6 +161,76 @@ def test_a_reopen_that_failed_still_alerts_loudly(caplog):
 
     errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
     assert any("restarted" in e for e in errors), errors
+
+
+def test_giving_up_on_a_lost_link_exits_without_the_hard_reset_settle(monkeypatch):
+    """The settle exists so nothing touches a modem the gateway has just reset. A lost
+    link is reached without issuing one AT command, so there is nothing rebooting to wait
+    for — and on prod 2026-07-29 the device came back five seconds after the reopen gave
+    up, while the gateway spent the next forty seconds not looking."""
+    from app.settings_store import store
+
+    monkeypatch.setitem(store._cache, "modem_watchdog_enabled", "true")
+    monkeypatch.setattr(mgr, "_WD_HARD_RESET_SETTLE", 30.0)
+    monkeypatch.setattr(mgr, "_WD_INTERVAL", 0.01)
+    exits = []
+    monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))
+
+    m = _mgr(FakeSender(reopen=False))
+
+    async def run():
+        task = asyncio.create_task(m.watchdog_loop())
+        started = asyncio.get_event_loop().time()
+        while not exits:
+            await asyncio.sleep(0.01)
+            if asyncio.get_event_loop().time() - started > 5.0:
+                break
+        task.cancel()
+        return asyncio.get_event_loop().time() - started
+
+    elapsed = asyncio.run(run())
+    assert exits == [1]
+    assert elapsed < 5.0, f"waited {elapsed:.0f}s on a settle that protects nothing"
+
+
+def test_a_deliberate_reset_still_gets_its_settle(monkeypatch):
+    """The other half: a modem that *was* reset must not be restarted into mid-reboot."""
+    from app.settings_store import store
+
+    monkeypatch.setitem(store._cache, "modem_watchdog_enabled", "true")
+    monkeypatch.setattr(mgr, "_WD_HARD_RESET_SETTLE", 0.3)
+    monkeypatch.setattr(mgr, "_hard_reset_on_cooldown", lambda: False)
+    monkeypatch.setattr(mgr, "_mark_hard_reset", lambda: None)
+    monkeypatch.setattr(mgr, "_WD_INTERVAL", 0.01)
+    exits = []
+    monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))
+
+    sender = FakeSender()
+    sender.usable = True                       # the link is fine; the radio is not
+    sender.registration_ok = lambda: _false()
+    sender.soft_recover = _noop
+    sender.hard_reset = _noop
+    m = _mgr(sender)
+
+    async def run():
+        task = asyncio.create_task(m.watchdog_loop())
+        started = asyncio.get_event_loop().time()
+        while not exits and asyncio.get_event_loop().time() - started < 5.0:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        return asyncio.get_event_loop().time() - started
+
+    elapsed = asyncio.run(run())
+    assert exits == [1], "the registration ladder must still reach the exit"
+    assert elapsed >= 0.3, "a modem that was reset must not be restarted into its reboot"
+
+
+async def _false():
+    return False
+
+
+async def _noop():
+    return None
 
 
 def test_a_reopened_link_lets_the_ladder_come_all_the_way_down():

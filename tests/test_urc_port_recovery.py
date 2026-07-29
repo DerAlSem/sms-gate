@@ -182,7 +182,6 @@ def test_a_disabled_watchdog_still_restarts_on_a_lost_urc_port(monkeypatch):
     from app.settings_store import store
 
     monkeypatch.setitem(store._cache, "modem_watchdog_enabled", "false")
-    monkeypatch.setattr(mgr, "_WD_HARD_RESET_SETTLE", 0.01)
     exits = []
     monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))
 

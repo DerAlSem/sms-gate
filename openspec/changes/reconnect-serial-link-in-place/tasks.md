@@ -58,6 +58,15 @@
       that was merely still coming back. `connect()` waits 60 s for the same node at
       startup for the same reason; the reopen now waits the same, as an identity in the
       code rather than a coincidence between two numbers.
+- [x] 6.8 Do not spend the hard-reset settling period on a lost link — found by the second
+      attempt at 6.3, where the device returned five seconds after the reopen gave up and
+      the gateway spent forty more seconds not looking. The settle protects a modem that
+      was deliberately reset; the transport rung resets nothing.
 - [ ] 6.3 Live verification of the case this change is most likely to break: send an SMS to the gateway while the link is down, and confirm it is delivered after the reopen without a restart
+      <!-- Attempt 2 (2026-07-29 17:11) proved the property but not the path: the SMS sent
+           during the outage was stored, its +CMTI lost, and "Inbox scan: found 1 stored
+           SMS" delivered it — from the restart's startup scan, because the outage outlasted
+           the reopen budget. What is still unproven is the reopen's own scan. -->
+
 - [ ] 6.4 Ship and verify against prod
 - [ ] 6.5 Archive so the `modem-link` additions land in `openspec/specs/`

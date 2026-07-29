@@ -53,6 +53,10 @@ suspends sending and inbound reads during a recovery.
 - **WHEN** the budget is spent with the device still gone
 - **THEN** the gateway restarts the service, as it does today
 
+#### Scenario: The restart for a lost link is not delayed by the settling period
+- **WHEN** reopening has failed and the service is to be restarted
+- **THEN** it restarts at once, because no modem was reset and there is nothing rebooting to wait for — the settling period belongs to the deliberate reset, not to the rung
+
 ### Requirement: A reopened link is not in service until its init sequence has completed
 
 A reopened port SHALL have the full modem init sequence applied to it before it is

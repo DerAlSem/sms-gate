@@ -21,6 +21,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   same reason; two answers to one question drift, and the smaller one governed the path
   where it mattered more. The budget is now `_DEVICE_WAIT` by identity, pinned by a test,
   with each attempt still bounded on its own.
+- **Giving up on a lost link restarts at once, without the hard-reset settling period.**
+  That 40-second wait exists so nothing touches a modem the gateway has just deliberately
+  reset. A lost link is reached without issuing a single AT command, so there is nothing
+  rebooting to wait for — and on prod 2026-07-29 the device came back five seconds after
+  the reopen gave up, while the gateway spent the next forty seconds not looking. The
+  settle now belongs to the remedy that needs it rather than to the rung.
 - **A node that is absent and one that is not yet permitted count alike as "not back
   yet".** A recreated node carries its ownership only once udev has applied its rules, so
   the first attempts after a re-enumeration can fail on permission rather than absence.

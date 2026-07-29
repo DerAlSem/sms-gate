@@ -932,7 +932,7 @@ class ModemManager:
                         "Link to the modem is gone while the watchdog is disabled — "
                         "restarting the service anyway"
                     )
-                    await asyncio.sleep(_WD_HARD_RESET_SETTLE)
+                    # No settle: see the exit below. Nothing was reset here either.
                     os._exit(1)
                 continue
             try:
@@ -940,8 +940,20 @@ class ModemManager:
             except Exception:
                 logger.exception("Watchdog step failed")
                 continue
-            if action == "hard":
-                await asyncio.sleep(_WD_HARD_RESET_SETTLE)
+            if action == HARD:
+                # The settle belongs to the remedy, not to the rung. It exists so that
+                # nothing touches a modem the gateway has just deliberately reset — the
+                # restart would otherwise land mid-reboot and fail to open the port.
+                #
+                # A lost link is reached without issuing a single AT command, so there is
+                # nothing rebooting to wait for, and the wait is spent lying down with the
+                # decision to die already taken. Prod 2026-07-29: the device came back
+                # five seconds after the reopen gave up, and the gateway spent the next
+                # forty seconds not looking. Exiting at once hands the question to
+                # `connect(wait_for_device=...)`, which is the code that waits for a
+                # device properly.
+                if self._health.cause != TRANSPORT:
+                    await asyncio.sleep(_WD_HARD_RESET_SETTLE)
                 os._exit(1)
 
     def health_snapshot(self) -> dict:
