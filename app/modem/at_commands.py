@@ -22,19 +22,43 @@ _DRAIN_QUIET = 0.3
 _DRAIN_BUDGET = 2.0
 
 
-class ATCommandError(Exception):
-    """A failed AT exchange.
+class ModemFailure(Exception):
+    """Anything that stopped an exchange with the modem.
+
+    Exists so a caller with no stake in *why* can handle both kinds in one place, while
+    the callers whose behaviour differs name them apart. Most of the existing handlers
+    are the former; only three are the latter.
 
     `pdu_submitted` says whether message bytes had already been written to the modem
     when this failed. It is the difference between a failure that can be retried and
     one that must not be: once the PDU and its Ctrl-Z are out, the SMSC may have
     accepted the message even though we never saw the confirmation, and sending it
-    again would put a second copy on someone's handset.
+    again would put a second copy on someone's handset. It lives on the base class
+    because the fact is about the message, not about which way the exchange broke.
     """
 
     def __init__(self, message: str, *, pdu_submitted: bool = False) -> None:
         super().__init__(message)
         self.pdu_submitted = pdu_submitted
+
+
+class ATCommandError(ModemFailure):
+    """The modem answered badly, or did not answer. The link itself is usable."""
+
+
+class ModemTransportError(ModemFailure):
+    """The link to the modem is gone — the port cannot be read or written at all.
+
+    Deliberately a *sibling* of `ATCommandError` rather than a subclass. A subclass
+    would be absorbed silently by every existing `except ATCommandError`, and the worst
+    of those is `registration_state()`: it turns a caught AT failure into "could not
+    tell", which the send path is required to read as permission to transmit, on the
+    deliberate reasoning that not knowing is not a refusal. A lost link folded in there
+    makes the gateway write messages into a port that no longer exists.
+
+    The two also have disjoint cures. Every remedy for a misbehaving modem is an AT
+    command, and none of them can reach a modem whose port is gone.
+    """
 
 
 def _clean_error(buf: bytes, expected: bytes) -> str:
@@ -54,23 +78,54 @@ class ATSerial:
         self._reader: asyncio.StreamReader | None = None
         self._writer: asyncio.StreamWriter | None = None
         self._lock = asyncio.Lock()
+        # Whether the link is believed open. Set by `connect`, cleared the moment the
+        # port is found gone, so a link already known to be lost fails fast instead of
+        # being rediscovered one command timeout at a time. Tests that install a
+        # transport directly start from an open link.
+        self._usable = True
 
     async def connect(self) -> None:
         self._reader, self._writer = await serial_asyncio.open_serial_connection(
             url=self._port, baudrate=self._baudrate
         )
+        self._usable = True
         logger.info("Opened serial port %s", self._port)
 
     async def close(self) -> None:
+        self._usable = False
         if self._writer:
             self._writer.close()
             await self._writer.wait_closed()
             logger.info("Closed serial port %s", self._port)
 
+    def _lose_link(self, reason: str) -> ModemTransportError:
+        """Mark the link unusable and build the failure describing it.
+
+        Marking matters as much as raising. Without it each consumer rediscovers the
+        same dead port by waiting out its own timeout, and — worse — a write to a closed
+        transport does not raise at all, so a caller can believe a command went out when
+        nothing did.
+        """
+        if self._usable:
+            logger.error("Lost the link to %s: %s", self._port, reason)
+        self._usable = False
+        return ModemTransportError(f"link to {self._port} lost: {reason}")
+
+    def _check_usable(self) -> None:
+        if not self._usable:
+            raise ModemTransportError(f"link to {self._port} is not open")
+
     async def _send(self, data: bytes) -> None:
+        self._check_usable()
         assert self._writer
-        self._writer.write(data)
-        await self._writer.drain()
+        try:
+            self._writer.write(data)
+            await self._writer.drain()
+        except (OSError, RuntimeError) as e:
+            # serial.SerialException derives from OSError, and this is where it
+            # surfaces: `write()` succeeds against a transport that is already dead and
+            # `drain()` re-raises the error the reader stored.
+            raise self._lose_link(f"{type(e).__name__}: {e}") from e
 
     async def _drain(self) -> bytes:
         """Discard whatever the modem is still emitting, until the port goes quiet.
@@ -89,7 +144,13 @@ class ATSerial:
                 chunk = await asyncio.wait_for(self._reader.read(256), timeout=remaining)
             except asyncio.TimeoutError:
                 break
+            except OSError as e:
+                self._lose_link(f"{type(e).__name__}: {e}")
+                break
             if not chunk:
+                # End of stream, not silence: a live port with nothing to say blocks
+                # until the timeout above. This is the link closing under us.
+                self._lose_link("end of stream")
                 break
             discarded += chunk
         if discarded:
@@ -99,10 +160,14 @@ class ATSerial:
             )
         return discarded
 
-    async def _failed(self, buf: bytes, expected: bytes) -> ATCommandError:
+    async def _failed(self, buf: bytes, expected: bytes) -> ModemFailure:
         """Build the error for an unsuccessful read and leave the port usable."""
         error = ATCommandError(_clean_error(buf, expected))
         await self._drain()
+        if not self._usable:
+            # The drain found the port gone. The caller is owed the link failure, not
+            # the timeout that was only its symptom — they have different cures.
+            return ModemTransportError(f"link to {self._port} lost while draining")
         return error
 
     async def _read_until(self, expected: bytes, timeout: float) -> str:
@@ -111,7 +176,15 @@ class ATSerial:
         message instead of blocking until `timeout` and dumping raw bytes.
 
         On failure the stream is drained before raising, so one timeout does not
-        desync every command that follows."""
+        desync every command that follows.
+
+        A read that ends the stream, or errors outright, is the link going away rather
+        than the modem being slow, and is raised as such. Without the end-of-stream case
+        a closed port produces no exception at all: `read` returns nothing, immediately
+        and for ever, so this loop spins to its deadline and then reports an ordinary AT
+        timeout — routing a lost link straight back into the handling that cannot fix
+        it."""
+        self._check_usable()
         assert self._reader
         buf = b''
         deadline = asyncio.get_event_loop().time() + timeout
@@ -121,11 +194,15 @@ class ATSerial:
                 raise await self._failed(buf, expected)
             try:
                 chunk = await asyncio.wait_for(self._reader.read(256), timeout=remaining)
-                buf += chunk
-                if expected in buf or b'ERROR' in buf:
-                    return buf.decode(errors='replace')
             except asyncio.TimeoutError:
                 raise await self._failed(buf, expected) from None
+            except OSError as e:
+                raise self._lose_link(f"{type(e).__name__}: {e}") from e
+            if not chunk:
+                raise self._lose_link("end of stream")
+            buf += chunk
+            if expected in buf or b'ERROR' in buf:
+                return buf.decode(errors='replace')
 
     async def command(self, cmd: str, timeout: float = 5.0) -> str:
         """Send AT command, return full response."""
@@ -151,10 +228,18 @@ class ATSerial:
 
     async def _restore_cmgf_unlocked(self) -> None:
         """Return the modem to the text-mode default without masking a failure
-        that is already on its way to the caller."""
+        that is already on its way to the caller.
+
+        Catches the shared base rather than only an AT failure. This runs in a `finally`,
+        so an exception raised here *replaces* the one already propagating — and on a lost
+        link this restore is exactly what fails. The caller would lose both the reason the
+        send failed and, worse, the record of whether the message had already been
+        written: a message reported as untransmitted when the SMSC may hold it is a
+        duplicate SMS on someone's handset.
+        """
         try:
             await self._set_cmgf_unlocked(1)
-        except ATCommandError as e:
+        except ModemFailure as e:
             logger.warning("Could not restore CMGF=1: %s", e)
 
     async def send_sms_pdu(self, parts, on_part_sent, timeout: float = 30.0,
@@ -193,7 +278,12 @@ class ATSerial:
                     await on_part_sent(seq, ref)
                     submitted = False       # this part is accounted for
             except BaseException as exc:
-                if isinstance(exc, ATCommandError) and submitted:
+                # `ModemFailure`, not `ATCommandError`: a lost link is a sibling class, so
+                # an `isinstance` against the AT failure alone would let a link that died
+                # after the PDU and Ctrl-Z were written report that nothing was written.
+                # The hold-instead-of-fail rule would then retry it, and the SMSC may
+                # already hold the message.
+                if isinstance(exc, ModemFailure) and submitted:
                     exc.pdu_submitted = True
                 await self._abort_prompt_unlocked()
                 raise

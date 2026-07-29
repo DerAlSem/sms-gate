@@ -1,26 +1,26 @@
 ## 1. Test scaffolding
 
-- [ ] 1.1 Add a serial fake that can raise on write/drain, return EOF on read, and be told the device is absent — the existing `_DelayedSerial` in `tests/test_at_recovery.py` never raises and the watchdog tests replace whole methods, so no current fixture can express a dead port
+- [x] 1.1 Add a serial fake that can raise on write/drain, return EOF on read, and be told the device is absent — the existing `_DelayedSerial` in `tests/test_at_recovery.py` never raises and the watchdog tests replace whole methods, so no current fixture can express a dead port
 - [ ] 1.2 Note in the fixture which module to patch: `serial_asyncio` is imported separately by `app/modem/at_commands.py` and `app/modem/manager.py`, so reader-side and command-side tests patch different names
 - [ ] 1.3 Extract background-task supervision out of `app/main.py`'s lifespan into a function that can be called from a test — there is no test file for `main.py` today
 
 ## 2. The failure class
 
-- [ ] 2.1 Add a shared base and `ModemTransportError` as a sibling of `ATCommandError` in `app/modem/at_commands.py`, carrying the written-bytes flag with the same meaning
-- [ ] 2.2 Classify `serial.SerialException` and `OSError` from `_send`, `_read_until` and `_drain` as transport failures — decide deliberately whether to catch `OSError` alone, since `SerialException` derives from it and `serial` is not currently imported
-- [ ] 2.3 Classify an empty read on a previously open link as a transport failure, in both `_read_until` and `_drain`; `_read_until` today has no empty-chunk check and would spin to its deadline and report an AT timeout
-- [ ] 2.4 Add a usable/unusable state to `ATSerial`, set on connect and cleared on any transport failure; every entry point fails fast when it is clear, and `close()` clears the reader and writer so their state after a failure is defined
-- [ ] 2.5 Test: a raising transport produces `ModemTransportError`; a `+CMS ERROR` reply still produces `ATCommandError`
-- [ ] 2.6 Test: `ModemTransportError` is not an instance of `ATCommandError`, and both are instances of the shared base
-- [ ] 2.7 Test: a closed stream is classified as a lost link rather than as a command timeout, and does not spin
-- [ ] 2.8 Test: a command issued after a lost link fails immediately rather than after its timeout
+- [x] 2.1 Add a shared base and `ModemTransportError` as a sibling of `ATCommandError` in `app/modem/at_commands.py`, carrying the written-bytes flag with the same meaning
+- [x] 2.2 Classify `serial.SerialException` and `OSError` from `_send`, `_read_until` and `_drain` as transport failures — decide deliberately whether to catch `OSError` alone, since `SerialException` derives from it and `serial` is not currently imported
+- [x] 2.3 Classify an empty read on a previously open link as a transport failure, in both `_read_until` and `_drain`; `_read_until` today has no empty-chunk check and would spin to its deadline and report an AT timeout
+- [x] 2.4 Add a usable/unusable state to `ATSerial`, set on connect and cleared on any transport failure; every entry point fails fast when it is clear, and `close()` clears the reader and writer so their state after a failure is defined
+- [x] 2.5 Test: a raising transport produces `ModemTransportError`; a `+CMS ERROR` reply still produces `ATCommandError`
+- [x] 2.6 Test: `ModemTransportError` is not an instance of `ATCommandError`, and both are instances of the shared base
+- [x] 2.7 Test: a closed stream is classified as a lost link rather than as a command timeout, and does not spin
+- [x] 2.8 Test: a command issued after a lost link fails immediately rather than after its timeout
 
 ## 3. The written-bytes record
 
-- [ ] 3.1 Change the flag assignment in `send_sms_pdu` from `isinstance(exc, ATCommandError)` to the shared base, so a transport failure after the write carries it
-- [ ] 3.2 Make `_restore_cmgf_unlocked` catch the shared base, so a failure inside the `finally` cannot replace the exception already propagating
-- [ ] 3.3 Test **at the `ATSerial` level**: a transport failure raised after the Ctrl-Z write carries the written-bytes flag — testing this only at the manager level passes trivially against a hand-built exception
-- [ ] 3.4 Test: a transport failure raised inside the state restore leaves the original failure and its flag intact
+- [x] 3.1 Change the flag assignment in `send_sms_pdu` from `isinstance(exc, ATCommandError)` to the shared base, so a transport failure after the write carries it
+- [x] 3.2 Make `_restore_cmgf_unlocked` catch the shared base, so a failure inside the `finally` cannot replace the exception already propagating
+- [x] 3.3 Test **at the `ATSerial` level**: a transport failure raised after the Ctrl-Z write carries the written-bytes flag — testing this only at the manager level passes trivially against a hand-built exception
+- [x] 3.4 Test: a transport failure raised inside the state restore leaves the original failure and its flag intact
 
 ## 4. The recovery ladder
 
