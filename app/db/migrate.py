@@ -69,6 +69,24 @@ async def run_migrations() -> None:
             UNIQUE(phone, ref, total, seq)
         );
 
+        -- Which stored messages have already been handled. A message is deleted from the
+        -- modem only after it has been persisted, so an interruption between the two
+        -- leaves it in memory to be found by the next scan. That was rare while scanning
+        -- happened once per restart; a link reopened in place scans every time, which
+        -- turns a latent duplicate into a likely one.
+        --
+        -- New and therefore empty on upgrade: a message persisted before this shipped and
+        -- still sitting in modem memory can be delivered once more, exactly as it would
+        -- have been by the next restart. Pruned by age — the modem's copy is deleted on
+        -- the first scan that recognises the key, so a row outlives what it guards by
+        -- days.
+        CREATE TABLE IF NOT EXISTS inbound_seen (
+            pdu_key     TEXT PRIMARY KEY,
+            received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbound_seen_at ON inbound_seen(received_at);
+
         CREATE TABLE IF NOT EXISTS message_parts (
             modem_ref   INTEGER PRIMARY KEY,
             message_id  INTEGER NOT NULL REFERENCES messages(id),

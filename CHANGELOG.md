@@ -3,6 +3,52 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **A re-enumerating modem is now a pause, not a restart cycle.** The gentle rung for a
+  lost link reopens the port in place — bounded attempts, each bounded in time as well —
+  and the service restart stays as what an exhausted reopen earns. Reopening and
+  initialising are one act under the serial lock, issued through a new `_init_unlocked`:
+  `init()` goes through `command()`, which takes the same non-reentrant lock, so the naive
+  version deadlocks — and wrapped in the recovery timeout that reads as "recovery took
+  five minutes and achieved nothing".
+- **A node that is absent and one that is not yet permitted count alike as "not back
+  yet".** A recreated node carries its ownership only once udev has applied its rules, so
+  the first attempts after a re-enumeration can fail on permission rather than absence.
+- **Reopening is cancellation-safe.** Every exit path leaves the link either fully open and
+  initialised or explicitly unusable. Recovery reopens the gate that suspends sending
+  however the reopen ended, so a link left merely undefined is one the sender discovers
+  one command timeout at a time.
+- **A restored link is reconciled with the modem's stored messages.** Inbound SMS
+  accumulate in modem memory during an outage and the `+CMTI` announcing them go with the
+  link; the restart's startup scan is what used to drain them. Indexes queued before the
+  outage are dropped rather than trusted — they describe what was announced, not what
+  arrived while nothing was listening.
+- **The unsolicited-result port is recovered by the same mechanism**, waiting on the
+  recovery gate instead of growing a reopen loop of its own. Two bounded budgets, each able
+  to end the service, is the worse failure — and a second reopener could race the settling
+  period after a deliberate modem reset. It is reopened after the command port and without
+  an init sequence: it has no writer, so the URC subscription is applied through the
+  command port and takes effect for both.
+
+### Fixed
+- **Re-reading the modem's memory cannot deliver an inbound SMS twice.** A stored message
+  is deleted only after it has been persisted, so an interruption between the two left it
+  to be found again — latent while scanning happened once per restart, likely now that a
+  restored link scans every time. Keyed on a hash of the PDU, not the modem index, which
+  names a slot rather than a message.
+- **A settings override in the test suite no longer leaks into every test after it.**
+  `monkeypatch.setattr(store, ...)` on a `__getattr__`-served setting restores the value it
+  read *through* `__getattr__`, pinning it as a real instance attribute for the rest of the
+  session — so later tests silently ran against the wrong setting.
+
+### Added
+- The diagnostics page reports the link itself: its state, when it was last known good, how
+  often it has been reopened, and the state of the URC port. Until now it said what the
+  gateway believed about the *modem* and nothing about the link underneath — during the
+  incident the only external symptom was silence.
+
 ## [0.12.0] - 2026-07-29
 
 ### Fixed

@@ -476,6 +476,40 @@ async def save_inbound(phone: str, text: str) -> int:
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def inbound_pdu_seen(pdu_key: str) -> bool:
+    """Whether this stored message has already been persisted by an earlier read."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM inbound_seen WHERE pdu_key = ?", (pdu_key,)
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def mark_inbound_pdu_seen(pdu_key: str) -> None:
+    db = await get_db()
+    await db.execute(
+        "INSERT OR IGNORE INTO inbound_seen (pdu_key) VALUES (?)", (pdu_key,)
+    )
+    await db.commit()
+
+
+async def prune_inbound_seen(max_age_seconds: int) -> int:
+    """Drop keys older than `max_age_seconds`, and report how many went.
+
+    The key guards against re-reading a copy still in modem memory, and that copy is
+    deleted by the first scan that recognises the key — so a row that has outlived the
+    retention has nothing left to guard.
+    """
+    db = await get_db()
+    async with db.execute(
+        "DELETE FROM inbound_seen WHERE received_at < datetime('now', ?) RETURNING pdu_key",
+        (f"-{max_age_seconds} seconds",),
+    ) as cursor:
+        gone = len(await cursor.fetchall())
+    await db.commit()
+    return gone
+
+
 async def list_inbound(
     phone: str | None, limit: int, offset: int
 ) -> list[aiosqlite.Row]:

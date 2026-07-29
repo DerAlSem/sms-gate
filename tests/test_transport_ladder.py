@@ -220,7 +220,11 @@ def test_a_lost_link_is_acted_on_even_when_the_watchdog_is_disabled(monkeypatch)
     watchdog must not silently opt out of ever recovering the port."""
     monkeypatch.setattr(mgr, "_WD_INTERVAL", 0.01)
     monkeypatch.setattr(mgr, "_WD_HARD_RESET_SETTLE", 0.01)
-    monkeypatch.setattr(mgr.store, "modem_watchdog_enabled", False, raising=False)
+    # Through the cache, not `setattr` on the store: the settings are served by
+    # `__getattr__`, so patching the attribute writes a real one — and monkeypatch's undo
+    # restores the value it read *through* `__getattr__`, leaving the setting pinned as an
+    # instance attribute for every test that runs after this one.
+    monkeypatch.setitem(mgr.store._cache, "modem_watchdog_enabled", "false")
 
     exits = []
     monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))

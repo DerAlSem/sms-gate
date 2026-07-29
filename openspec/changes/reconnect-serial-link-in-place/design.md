@@ -117,9 +117,19 @@ port and appears to take effect for both.
   is a different change with its own trade-offs. Recorded here so it is not rediscovered as
   a defect.
 
-## Open Questions
+## Settled questions
 
-- **Does the unsolicited-result port need its own init, and in what order relative to the
-  command port's?** It cannot issue commands as it stands.
-- **What is the deduplication key for a re-read inbound message** — modem index plus
-  timestamp, or a hash of the PDU? The index alone is reused by the modem.
+Both were open when this was written, and were answered by building it.
+
+- **The unsolicited-result port gets no init of its own, and is reopened second.** It has
+  no writer, so it cannot issue a command at all; the URC subscription is applied through
+  the command port and takes effect for both. Reopening it after the command port is what
+  makes that ordering true rather than incidental — the subscription is back in place
+  before the port carrying its results starts listening.
+- **The deduplication key is a hash of the PDU.** Not the modem index: the modem reuses an
+  index the moment its slot is freed, so an index names a slot and not a message. The PDU
+  carries the sender, the SMSC timestamp and — for a multipart — the concatenation
+  reference and sequence, which is as close to an identity as GSM offers. Two genuinely
+  distinct messages with the same sender, the same text and the same SMSC *second* collide
+  and the second is dropped; that is the accepted cost, and it is the narrower failure of
+  the two.

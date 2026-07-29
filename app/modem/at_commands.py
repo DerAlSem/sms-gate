@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import time
+from datetime import datetime, timezone
+
 import serial_asyncio
 
 from app.modem.parser import describe_at_error
@@ -10,6 +13,17 @@ logger = logging.getLogger(__name__)
 # The URC subscription that makes the modem report delivery reports (+CDS) and inbound
 # messages (+CMTI). Named because it has to survive every path that resets the modem.
 CNMI_SUBSCRIBE = 'AT+CNMI=2,1,2,1,0'
+
+# The init sequence, as data rather than a literal inside `init()`, because it now has two
+# callers: the one that takes the serial lock and the one that already holds it.
+INIT_COMMANDS = [
+    'AT',
+    'ATE0',
+    'AT+CMGF=1',
+    'AT+CSCS="GSM"',
+    CNMI_SUBSCRIBE,
+    'AT+CSMP=49,167,0,0',
+]
 
 CTRL_Z = b'\x1a'
 ESC = b'\x1b'
@@ -28,6 +42,23 @@ _DRAIN_BUDGET = 2.0
 # error — still trips that limit within seconds, which is what it is for.
 _DEVICE_WAIT = 60.0
 _DEVICE_WAIT_POLL = 2.0
+
+# Reopening a lost port in place. A re-enumerating modem is absent for a few seconds, so
+# attempts are repeated with a delay — and each attempt is bounded on its own as well,
+# because `wait_closed()` on a device that has vanished and `open()` on a node udev has
+# not finished with can both block indefinitely. A bound on the *number* of attempts does
+# not bound the wait.
+#
+# The budget is fixed against `manager._RECOVERY_TIMEOUT` (300s), which wraps the whole
+# operation — not against the sender's own gate backstop, which is longer and therefore
+# not the binding constraint. Ordinary worst case is five delays plus one init sequence,
+# roughly 30s; even the pathological case where every attempt hangs to its own bound is
+# 5 x (30 + 3) = 165s. Cancellation is thus the exception rather than the ordinary
+# outcome, which matters because a cancelled reopen hands the sender back a link that
+# must be explicitly unusable rather than merely undefined.
+_REOPEN_ATTEMPTS = 5
+_REOPEN_DELAY = 3.0
+_REOPEN_ATTEMPT_TIMEOUT = 30.0
 
 
 class ModemFailure(Exception):
@@ -96,10 +127,36 @@ class ATSerial:
         # leaving it to be rediscovered by the next periodic poll spends a minute knowing
         # the answer. Consumers clear it after taking it.
         self.link_lost = asyncio.Event()
+        # What an operator needs to see about the link itself. A port being reopened
+        # repeatedly is exactly the condition that is invisible today: the admin page
+        # reports what the gateway believes about the *modem*, and the only external
+        # symptom of a lost link was silence.
+        self._last_good: float | None = None
+        self._reopens = 0
+
+    @property
+    def port(self) -> str:
+        return self._port
 
     @property
     def usable(self) -> bool:
         return self._usable
+
+    @property
+    def reopens(self) -> int:
+        return self._reopens
+
+    def link_snapshot(self) -> dict:
+        """The link's state, for the health snapshot the diagnostics page renders."""
+        return {
+            "link": "open" if self._usable else "lost",
+            "link_last_good": (
+                datetime.fromtimestamp(self._last_good, timezone.utc)
+                .strftime("%Y-%m-%d %H:%M:%SZ")
+                if self._last_good is not None else "—"
+            ),
+            "link_reopens": self._reopens,
+        }
 
     async def connect(self, wait_for_device: float = 0.0) -> None:
         """Open the port, optionally waiting for the device to come back first.
@@ -131,15 +188,136 @@ class ATSerial:
                 logger.warning("Waiting for %s: %s", self._port, e)
                 await asyncio.sleep(_DEVICE_WAIT_POLL)
         self._usable = True
+        self._last_good = time.time()
         self.link_lost.clear()
         logger.info("Opened serial port %s", self._port)
 
     async def close(self) -> None:
         self._usable = False
-        if self._writer:
-            self._writer.close()
-            await self._writer.wait_closed()
+        await self._close_unlocked()
+
+    async def _close_unlocked(self) -> None:
+        """Discard the current transport, tolerating a device that has already gone.
+
+        The writer is let go of *before* it is closed, so an attempt abandoned while
+        `wait_closed()` hangs — which is what a vanished device makes it do — does not
+        leave the next attempt to hang on the same dead transport. The old port is being
+        thrown away either way, so an error closing it is worth a line and nothing more.
+        """
+        writer, self._writer, self._reader = self._writer, None, None
+        if writer is None:
+            return
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            logger.warning("Ignoring an error closing %s: %s", self._port, e)
+        else:
             logger.info("Closed serial port %s", self._port)
+
+    async def reconnect(self, *, init: bool = True) -> bool:
+        """Reopen this port in place, and re-initialise it, as one indivisible act.
+
+        Returns True once the link is open and initialised, False when every attempt has
+        failed — at which point the caller's remedy is the blunt one it always was.
+
+        The lock is held for the whole operation, not per attempt: no command may run
+        against a port that is half replaced. That is also why the init sequence goes
+        through `_init_unlocked` — `command()` acquires the same lock, which is an
+        `asyncio.Lock` and therefore not reentrant, so issuing init the ordinary way from
+        here deadlocks outright. Wrapped in the recovery timeout that deadlock surfaces as
+        "recovery took five minutes and achieved nothing", which is close enough to the
+        original incident to be mistaken for it.
+
+        Every exit path leaves the link either fully open and initialised or explicitly
+        unusable — including cancellation, which is not hypothetical: recovery reopens the
+        gate that suspends sending regardless of how the reopen ended, so a link left
+        merely undefined is one the sender would discover one command timeout at a time.
+
+        `init=False` is for a port that only listens: it has no writer, so it cannot issue
+        commands at all.
+        """
+        async with self._lock:
+            try:
+                for attempt in range(1, _REOPEN_ATTEMPTS + 1):
+                    if attempt > 1:
+                        await asyncio.sleep(_REOPEN_DELAY)
+                    try:
+                        await asyncio.wait_for(
+                            self._reopen_once(init=init),
+                            timeout=_REOPEN_ATTEMPT_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "Reopen attempt %d/%d for %s did not finish within %.0fs",
+                            attempt, _REOPEN_ATTEMPTS, self._port,
+                            _REOPEN_ATTEMPT_TIMEOUT,
+                        )
+                        continue
+                    except OSError as e:
+                        # `FileNotFoundError` while the node is gone, `PermissionError` in
+                        # the moment after udev recreates it and before it applies the
+                        # ownership this service runs under. A recreated node carries its
+                        # ownership only once the rules have run, so the first attempts
+                        # after a re-enumeration can fail on permission rather than on
+                        # absence — both mean "not back yet", neither means "broken".
+                        logger.warning(
+                            "Reopen attempt %d/%d for %s: %s",
+                            attempt, _REOPEN_ATTEMPTS, self._port, e,
+                        )
+                        continue
+                    except ModemFailure as e:
+                        # The port opened but would not initialise. A port that accepts
+                        # commands without its URC subscription is the worst outcome
+                        # available here — every health check passes while no delivery
+                        # report and no inbound notification ever arrives — so this counts
+                        # as a failed attempt, not as a reopen.
+                        logger.warning(
+                            "Reopen attempt %d/%d for %s failed to initialise: %s",
+                            attempt, _REOPEN_ATTEMPTS, self._port, e,
+                        )
+                        continue
+                    self._reopens += 1
+                    logger.info(
+                        "Reopened %s after %d attempt(s)", self._port, attempt
+                    )
+                    return True
+            except BaseException:
+                # Cancellation included, and deliberately: this is the guarantee the
+                # sender relies on when the gate reopens under it.
+                self._usable = False
+                raise
+            self._usable = False
+            # Whoever is waiting on the ladder should not spend another full interval
+            # rediscovering what this loop just proved.
+            self.link_lost.set()
+            logger.error(
+                "Could not reopen %s after %d attempt(s)", self._port, _REOPEN_ATTEMPTS
+            )
+            return False
+
+    async def _reopen_once(self, *, init: bool = True) -> None:
+        """One attempt: close, open, initialise. Raises on any failure.
+
+        Marks the link usable only after the whole sequence has succeeded — with one
+        deliberate exception. `_send` refuses to write to a link marked unusable and the
+        init sequence is made of writes, so the link is provisionally usable across init;
+        every way out of that window takes it back.
+        """
+        self._usable = False
+        await self._close_unlocked()
+        self._reader, self._writer = await serial_asyncio.open_serial_connection(
+            url=self._port, baudrate=self._baudrate
+        )
+        self._usable = True
+        try:
+            if init:
+                await self._init_unlocked()
+        except BaseException:
+            self._usable = False
+            raise
+        self._last_good = time.time()
+        self.link_lost.clear()
 
     def _lose_link(self, reason: str) -> ModemTransportError:
         """Mark the link unusable and build the failure describing it.
@@ -246,16 +424,46 @@ class ATSerial:
                 raise self._lose_link("end of stream")
             buf += chunk
             if expected in buf or b'ERROR' in buf:
+                self._last_good = time.time()
                 return buf.decode(errors='replace')
+
+    async def read_urc(self, timeout: float) -> bytes:
+        """Read whatever the modem volunteered, for a port that only ever listens.
+
+        Deliberately not `_read_until`: there is no command in flight and no terminator to
+        wait for. Both ways a port goes away are raised as the transport failure they are
+        — an error, and a stream that ends without raising at all. The second is the one
+        that hides: a closed port returns nothing immediately and for ever, so a loop
+        reading it spins delivering no URCs while looking perfectly healthy.
+
+        `asyncio.TimeoutError` is left to the caller — on a live port with nothing to say
+        it is the ordinary outcome, not a fault.
+        """
+        self._check_usable()
+        assert self._reader
+        try:
+            chunk = await asyncio.wait_for(self._reader.read(256), timeout=timeout)
+        except asyncio.TimeoutError:
+            # Caught before `OSError` on purpose: since 3.11 this *is* a subclass of it.
+            raise
+        except OSError as e:
+            raise self._lose_link(f"{type(e).__name__}: {e}") from e
+        if not chunk:
+            raise self._lose_link("end of stream")
+        self._last_good = time.time()
+        return chunk
+
+    async def _command_unlocked(self, cmd: str, timeout: float = 5.0) -> str:
+        await self._send(f"{cmd}\r".encode())
+        response = await self._read_until(b'OK', timeout)
+        if 'ERROR' in response:
+            raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
+        return response
 
     async def command(self, cmd: str, timeout: float = 5.0) -> str:
         """Send AT command, return full response."""
         async with self._lock:
-            await self._send(f"{cmd}\r".encode())
-            response = await self._read_until(b'OK', timeout)
-            if 'ERROR' in response:
-                raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
-            return response
+            return await self._command_unlocked(cmd, timeout)
 
     async def _abort_prompt_unlocked(self) -> None:
         """Cancel a pending `> ` prompt with ESC.
@@ -433,6 +641,19 @@ class ATSerial:
             # which would otherwise escape and abort the escalation that ordered the reset.
             pass
 
+    async def _init_unlocked(self) -> None:
+        """The init sequence, issued on a lock the caller already holds.
+
+        Joins `_cmgr_unlocked`, `_cmgl_unlocked`, `_set_cmgf_unlocked` and
+        `_abort_prompt_unlocked` in the convention they established. It exists for
+        `reconnect`, which must hold the lock across close, open and init as one act — and
+        which would deadlock on the lock-acquiring path, since `asyncio.Lock` is not
+        reentrant.
+        """
+        for cmd in INIT_COMMANDS:
+            await self._command_unlocked(cmd)
+            logger.info("AT init: %s OK", cmd)
+
     async def init(self) -> None:
         """Run modem initialization sequence.
 
@@ -440,14 +661,5 @@ class ATSerial:
         and bakes SRR/VP into the PDU itself), so CMGF=1 / CSCS / CSMP here only
         set a sane text-mode default for any manual AT use — they no longer
         affect outbound SMS. CNMI is what matters: it enables +CDS/+CMTI."""
-        commands = [
-            'AT',
-            'ATE0',
-            'AT+CMGF=1',
-            'AT+CSCS="GSM"',
-            CNMI_SUBSCRIBE,
-            'AT+CSMP=49,167,0,0',
-        ]
-        for cmd in commands:
-            await self.command(cmd)
-            logger.info("AT init: %s OK", cmd)
+        async with self._lock:
+            await self._init_unlocked()

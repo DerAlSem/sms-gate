@@ -179,7 +179,9 @@ def test_a_disabled_watchdog_discards_the_evidence(monkeypatch):
     """With the watchdog off, recovery is the operator's job — so the gateway must not
     keep accumulating a suspicion nothing will ever act on."""
     monkeypatch.setattr(mgr, "_WD_INTERVAL", 0.01)
-    monkeypatch.setattr(mgr.store, "modem_watchdog_enabled", False, raising=False)
+    # Through the cache: `setattr` on the store would survive its own undo, because the
+    # settings are served by `__getattr__` and monkeypatch restores what it read there.
+    monkeypatch.setitem(mgr.store._cache, "modem_watchdog_enabled", "false")
 
     async def body():
         m = _mgr([True] * 5)
@@ -375,7 +377,7 @@ def test_a_soft_recovery_restores_the_delivery_report_subscription():
 def test_the_coupling_can_be_switched_off(monkeypatch):
     """A mechanism that can restart the service needs its own switch — turning the whole
     watchdog off instead would also give up registration recovery."""
-    monkeypatch.setattr(mgr.store, "send_stall_recovery_enabled", False, raising=False)
+    monkeypatch.setitem(mgr.store._cache, "send_stall_recovery_enabled", "false")
     m = _mgr()
     for i in (1, 2, 3):
         _fail(m, i, exhausted=True)

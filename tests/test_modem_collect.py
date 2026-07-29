@@ -16,6 +16,10 @@ class FakeSender:
             raise ATCommandError(f"{cmd} failed")
         return self.responses.get(cmd, "OK")
 
+    def link_snapshot(self):
+        # The snapshot now carries the link's own state alongside the modem's.
+        return {"link": "open", "link_last_good": "—", "link_reopens": 0}
+
 
 def _mgr(sender):
     m = ModemManager("/dev/null", "/dev/null")

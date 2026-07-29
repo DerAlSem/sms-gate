@@ -6,6 +6,7 @@ PDU mode is required for UDH: only there are multipart metadata
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 from app.modem.gsm7 import GSM7_BASIC as _GSM7_BASIC, GSM7_EXT as _GSM7_EXT
@@ -82,6 +83,23 @@ def _decode_address(addr_len: int, addr_type: int, addr: bytes) -> str:
 def _decode_scts(data: bytes) -> str:
     s = _swap_nibbles(data)
     return f"20{s[0:2]}-{s[2:4]}-{s[4:6]} {s[6:8]}:{s[8:10]}:{s[10:12]}"
+
+
+def inbound_pdu_key(pdu_hex: str) -> str:
+    """A stable identity for a stored message, so re-reading modem memory cannot deliver
+    it twice.
+
+    Derived from the PDU rather than from the index it was read at: the modem reuses an
+    index the moment its slot is freed, so an index names a slot and not a message. The
+    PDU carries the sender, the SMSC timestamp and — for a multipart — the concatenation
+    reference and sequence number, which is as close to an identity as GSM offers.
+
+    Two genuinely distinct messages with the same sender, the same text and the same SMSC
+    second are indistinguishable here and the second would be dropped. That is the
+    accepted cost: a stored message delivered twice is the failure this exists to prevent,
+    and the collision needs a duplicate sent inside one second.
+    """
+    return hashlib.sha256(pdu_hex.strip().upper().encode()).hexdigest()
 
 
 def decode_deliver(pdu_hex: str) -> DeliverPdu:
