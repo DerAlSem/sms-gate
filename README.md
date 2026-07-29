@@ -49,6 +49,24 @@ POST с номером и текстом; шлюз отправляет сооб
   чтение входящих приостанавливаются и возобновляются, только когда модем снова
   зарегистрировался, — иначе восстановление само порождало бы те сбои, на которые
   реагирует. Выключается отдельно (`send_stall_recovery_enabled`)
+- **Шлюз переживает модем, пропавший с шины USB** — модем, который переподключается
+  (`re-enumeration`), уничтожает все свои узлы `/dev/ttyUSB*`, и дескрипторы процесса
+  становятся мусором. Раньше это выглядело как исправно работающая служба: `active
+  (running)`, ошибок нет, а наружу — тишина. Потеря линка теперь названа отдельным сбоем
+  (`ModemTransportError`), а не путается с модемом, который просто плохо ответил: у них
+  нет общего лекарства, потому что ни одну AT-команду в исчезнувший порт не доставить
+- **Порт переоткрывается на месте, а не через перезапуск службы** — переподключение модема
+  физически длится несколько секунд, и платить за него перезапуском процесса значило
+  терять очередь отправки в памяти и заново проходить старт. Теперь шлюз переоткрывает
+  порт, заново проигрывает init (включая подписку `CNMI` — порт, который отвечает на
+  команды, но не шлёт `+CDS` и `+CMTI`, прошёл бы любую проверку здоровья, оставаясь
+  бесполезным) и продолжает работу; перезапуск остаётся последним средством, если
+  переоткрыть не удалось. Бюджет на переоткрытие — срок, а не число попыток, и он равен
+  тому, сколько старт и так ждёт это же устройство. Восстановление обоих портов —
+  одна согласованная операция, а не два независимых цикла. После восстановления память
+  модема перечитывается: входящие, накопившиеся за время простоя, не теряются, а
+  дедупликация по PDU не даёт доставить их дважды. Состояние линка, время последней
+  исправности и счётчик переоткрытий видны на странице диагностики
 - **Автоматические повторы отправки** — если сообщение не дошло до модема (нет ответа,
   таймаут приглашения, временный отказ сети), шлюз повторяет отправку с нарастающими
   паузами (`send_retry_backoff`, по умолчанию `30,120,300` — четыре попытки примерно за
@@ -258,6 +276,25 @@ supervision. No external broker, no container required.
   resume only once the modem reports registration again — otherwise recovery would
   manufacture the very failures it reacts to. Switchable on its own
   (`send_stall_recovery_enabled`)
+- **Survives a modem that leaves the USB bus** — a modem that re-enumerates destroys every
+  `/dev/ttyUSB*` node it owns and leaves the process holding stale descriptors. That used
+  to look like a perfectly healthy service: `active (running)`, no errors, and silence
+  going out. A lost link is now its own named failure (`ModemTransportError`) rather than
+  being confused with a modem that merely answered badly — the two share no cure, because
+  no AT command reaches a port that is gone
+- **The port is reopened in place, not by restarting the service** — a re-enumeration is
+  physically a few seconds of absence, and paying for it with a process restart meant
+  dropping the in-memory send queue and re-running startup. The gateway now reopens the
+  port, replays the init sequence (including the `CNMI` subscription — a port that accepts
+  commands but delivers no `+CDS` and no `+CMTI` would pass every health check while being
+  useless) and carries on; the restart remains the last resort once reopening has failed.
+  The reopen budget is a deadline rather than a count of attempts, and it is the same wait
+  the startup path already gives that device. Both ports are recovered in one coordinated
+  operation instead of two independent loops. Afterwards the modem's memory is re-read, so
+  inbound SMS accumulated during the outage are not stranded, and a PDU-level
+  deduplication key stops a re-read message being delivered twice. The link's state, when
+  it was last known good and how often it has been reopened are shown on the diagnostics
+  page
 - **Automatic send retries** — when a message never reached the modem (no response, a
   prompt timeout, a temporary network refusal), the gateway tries again with growing
   delays (`send_retry_backoff`, default `30,120,300` — four attempts inside about eight

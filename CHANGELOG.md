@@ -113,6 +113,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - **BREAKING for deployment:** `deploy/sms-gate.service` changed (`RestartSec` 10 → 30).
   Requires `systemctl daemon-reload`; a plain restart will not pick it up.
+- The hard-reset cooldown marker is no longer tracked in git. It is runtime state written
+  by the running gateway, so a deploy would overwrite the server's own cooldown with
+  whatever the repository happened to hold.
+- **The backup uplink re-addresses its interface when a session outlives its netdev.** Same
+  re-enumeration, seen from the other side: the QMI data session survived while `wwan0`
+  was recreated without an address, so the channel looked connected and carried nothing.
 
 ## [0.11.1] - 2026-07-29
 
