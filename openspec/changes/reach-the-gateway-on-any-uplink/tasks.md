@@ -61,8 +61,8 @@
            directory: the include is processed near the top, and a Match block runs to the end
            of the file, so it would have captured every global setting below it. Verified both
            ways before reloading, and verified refused from the far end afterwards. -->
-- [ ] 2.3 Run it as a unit, enabled, ordered so it comes up after the network and does not depend on the primary uplink specifically
-- [ ] 2.4 Verify exactly one instance is carrying the tunnel, so a manual test run cannot survive the cutover and compete with the unit
+- [x] 2.3 Run it as a unit, enabled, ordered so it comes up after the network and does not depend on the primary uplink specifically
+- [x] 2.4 Verify exactly one instance is carrying the tunnel, so a manual test run cannot survive the cutover and compete with the unit
 
 ## 3. Supervision that tests traffic, and an alert that can fire
 
