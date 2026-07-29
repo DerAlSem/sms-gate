@@ -9,7 +9,7 @@
 - [x] 1.1 `cmd_up` starts the session from the modem's default profile instead of passing `apn=$APN,ip-type=4`
 - [x] 1.2 Keep `APN` as an override: when it is set explicitly in `/etc/default/wwan-backup`, use it; otherwise use the profile
 - [x] 1.3 Fix `session_connected()` so an established session is reported as present and the idempotent path is taken
-- [ ] 1.4 Verify on the live server: with no session present, a cold start succeeds on the first attempt
+- [x] 1.4 Verify on the live server: with no session present, a cold start succeeds on the first attempt
 
 ## 2. Client handling
 
@@ -42,7 +42,7 @@
 
 ## 7. Ship
 
-- [ ] 7.1 Deploy from merged `main` through the normal path
-- [ ] 7.2 Live verification of 1.4, 2.3, 3.2 and 5.4 against the production modem
-- [ ] 7.3 Re-enable `wwan-watchdog.timer`, stopped since 2026-07-29, and confirm one clean cycle
+- [x] 7.1 Deploy from merged `main` through the normal path
+- [x] 7.2 Live verification of 1.4, 2.3, 3.2 and 5.4 against the production modem
+- [x] 7.3 Re-enable `wwan-watchdog.timer`, stopped since 2026-07-29, and confirm one clean cycle
 - [ ] 7.4 Archive the change so `openspec/specs/backup-uplink` becomes the living spec

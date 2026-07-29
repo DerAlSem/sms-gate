@@ -235,9 +235,9 @@ scheduler.
 
 ### Requirement: A message may not stay `pending` indefinitely
 
-A message `pending` longer than the retry deadline — the sum of the configured backoff
-delays plus a margin for a slow final attempt — SHALL be failed and its owning app
-notified.
+A message SHALL be failed, and its owning app notified, once it has been `pending` longer
+than the retry deadline — the sum of the configured backoff delays plus a margin for a
+slow final attempt.
 
 [normative · evidence: app/modem/manager.py:226-236, app/db/queries.py:184-203 · conf: high]
 
