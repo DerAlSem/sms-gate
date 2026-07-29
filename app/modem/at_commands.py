@@ -43,21 +43,30 @@ _DRAIN_BUDGET = 2.0
 _DEVICE_WAIT = 60.0
 _DEVICE_WAIT_POLL = 2.0
 
-# Reopening a lost port in place. A re-enumerating modem is absent for a few seconds, so
-# attempts are repeated with a delay — and each attempt is bounded on its own as well,
-# because `wait_closed()` on a device that has vanished and `open()` on a node udev has
-# not finished with can both block indefinitely. A bound on the *number* of attempts does
-# not bound the wait.
+# Reopening a lost port in place. The budget is a *deadline*, not a count of attempts:
+# what has to be waited out is the device's absence, and absence is a duration. Counting
+# attempts answers a different question and answers it badly — five attempts three seconds
+# apart is twelve seconds, which reads like a budget until you notice what it is a budget
+# for.
 #
-# The budget is fixed against `manager._RECOVERY_TIMEOUT` (300s), which wraps the whole
-# operation — not against the sender's own gate backstop, which is longer and therefore
-# not the binding constraint. Ordinary worst case is five delays plus one init sequence,
-# roughly 30s; even the pathological case where every attempt hangs to its own bound is
-# 5 x (30 + 3) = 165s. Cancellation is thus the exception rather than the ordinary
-# outcome, which matters because a cancelled reopen hands the sender back a link that
-# must be explicitly unusable rather than merely undefined.
-_REOPEN_ATTEMPTS = 5
+# It is the same number as `_DEVICE_WAIT` above, and deliberately so: that is this same
+# question asked at startup — how long can this device take to come back — and two
+# different answers to one question is how they drift. Prod 2026-07-29 is why the rule is
+# written down rather than left to arithmetic: a twelve-second budget gave up and
+# restarted the service for a device that was merely still absent, while the startup path
+# would have waited a full minute for the very same node.
+_REOPEN_BUDGET = _DEVICE_WAIT
 _REOPEN_DELAY = 3.0
+# Per attempt, on top of the budget, because a deadline for the whole operation does not
+# bound a single attempt that never returns: `wait_closed()` on a device that has vanished
+# and `open()` on a node udev has not finished with can both block indefinitely.
+#
+# Worst case is therefore the budget plus one attempt — 90s — against the 300s of
+# `manager._RECOVERY_TIMEOUT` that wraps it. (Not against the sender's gate backstop,
+# which is longer and so not the binding constraint.) That margin is what keeps
+# cancellation the exception rather than the ordinary outcome, which matters because a
+# cancelled reopen hands the sender back a link that must be explicitly unusable rather
+# than merely undefined.
 _REOPEN_ATTEMPT_TIMEOUT = 30.0
 
 
@@ -237,23 +246,23 @@ class ATSerial:
         `init=False` is for a port that only listens: it has no writer, so it cannot issue
         commands at all.
         """
+        loop = asyncio.get_event_loop()
         async with self._lock:
+            attempt = 0
             try:
-                for attempt in range(1, _REOPEN_ATTEMPTS + 1):
-                    if attempt > 1:
-                        await asyncio.sleep(_REOPEN_DELAY)
+                deadline = loop.time() + _REOPEN_BUDGET
+                while True:
+                    attempt += 1
+                    reason = None
                     try:
                         await asyncio.wait_for(
                             self._reopen_once(init=init),
                             timeout=_REOPEN_ATTEMPT_TIMEOUT,
                         )
                     except asyncio.TimeoutError:
-                        logger.warning(
-                            "Reopen attempt %d/%d for %s did not finish within %.0fs",
-                            attempt, _REOPEN_ATTEMPTS, self._port,
-                            _REOPEN_ATTEMPT_TIMEOUT,
-                        )
-                        continue
+                        # Caught before `OSError` on purpose: since 3.11 this *is* a
+                        # subclass of it.
+                        reason = f"did not finish within {_REOPEN_ATTEMPT_TIMEOUT:.0f}s"
                     except OSError as e:
                         # `FileNotFoundError` while the node is gone, `PermissionError` in
                         # the moment after udev recreates it and before it applies the
@@ -261,27 +270,31 @@ class ATSerial:
                         # ownership only once the rules have run, so the first attempts
                         # after a re-enumeration can fail on permission rather than on
                         # absence — both mean "not back yet", neither means "broken".
-                        logger.warning(
-                            "Reopen attempt %d/%d for %s: %s",
-                            attempt, _REOPEN_ATTEMPTS, self._port, e,
-                        )
-                        continue
+                        reason = str(e)
                     except ModemFailure as e:
-                        # The port opened but would not initialise. A port that accepts
+                        # The port opened but would not initialise — the node can come
+                        # back before the modem behind it will answer. A port that accepts
                         # commands without its URC subscription is the worst outcome
-                        # available here — every health check passes while no delivery
-                        # report and no inbound notification ever arrives — so this counts
+                        # available here: every health check passes while no delivery
+                        # report and no inbound notification ever arrives. So this counts
                         # as a failed attempt, not as a reopen.
-                        logger.warning(
-                            "Reopen attempt %d/%d for %s failed to initialise: %s",
-                            attempt, _REOPEN_ATTEMPTS, self._port, e,
+                        reason = f"failed to initialise: {e}"
+                    if reason is None:
+                        self._reopens += 1
+                        logger.info(
+                            "Reopened %s after %d attempt(s)", self._port, attempt
                         )
-                        continue
-                    self._reopens += 1
-                    logger.info(
-                        "Reopened %s after %d attempt(s)", self._port, attempt
+                        return True
+                    remaining = deadline - loop.time()
+                    # The remaining budget is logged, not just the attempt number: when
+                    # this gives up, the question is always whether it gave up too early.
+                    logger.warning(
+                        "Reopen attempt %d for %s: %s (%.0fs of budget left)",
+                        attempt, self._port, reason, max(remaining, 0.0),
                     )
-                    return True
+                    if remaining <= 0:
+                        break
+                    await asyncio.sleep(min(_REOPEN_DELAY, remaining))
             except BaseException:
                 # Cancellation included, and deliberately: this is the guarantee the
                 # sender relies on when the gate reopens under it.
@@ -292,7 +305,8 @@ class ATSerial:
             # rediscovering what this loop just proved.
             self.link_lost.set()
             logger.error(
-                "Could not reopen %s after %d attempt(s)", self._port, _REOPEN_ATTEMPTS
+                "Could not reopen %s within %.0fs (%d attempt(s))",
+                self._port, _REOPEN_BUDGET, attempt,
             )
             return False
 

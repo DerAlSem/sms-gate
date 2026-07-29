@@ -41,17 +41,34 @@ The codebase already has the convention: `_cmgr_unlocked`, `_cmgl_unlocked`,
 `_set_cmgf_unlocked`, `_abort_prompt_unlocked`. An `_init_unlocked` joins them, and reopen
 holds the lock across close, open and init as one indivisible act.
 
-### The reopen budget is fixed against the recovery timeout, not left open
+### The reopen budget is a deadline, and it is the startup wait
 
-The chain is: `_recover` wraps the remedy in a 300-second timeout, `_await_reattach` adds
+Two constraints, and the first draft got both wrong in the same way — by reasoning about
+the ceiling and never about the floor.
+
+The ceiling: `_recover` wraps the remedy in a 300-second timeout, `_await_reattach` adds
 30 seconds after it, and the sender's own gate wait is 390 seconds. The binding constraint
-is therefore the 300, not the 390 — an earlier draft named the wrong one.
+is the 300, not the 390 — an earlier draft named the wrong one.
 
-Roughly five attempts three seconds apart, plus the init sequence, is about 30 seconds
-worst case: an order of magnitude inside the wrapper, so cancellation is an exception
-rather than the ordinary outcome. Each attempt gets its own timeout too, because
-`wait_closed()` on a vanished device and `open()` on a node udev has not finished can both
-block, and a bound on the number of attempts does not bound the wait.
+The floor is what live verification found, and it matters more. A budget counted in
+attempts — "roughly five attempts three seconds apart, plus the init sequence, about 30
+seconds worst case" — is arithmetically twelve seconds of waiting, and the "30 seconds"
+was the sum of two unrelated things. On 2026-07-29 a device unbound from USB was still
+absent at twelve seconds, so the reopen gave up and the service restarted: the exact
+outcome this change exists to remove, now reached faster and with more steps.
+
+The floor is not a number to tune. `connect()` already waits `_DEVICE_WAIT` (60 s) for
+this same device at startup, for this same reason, with a comment saying a modem takes
+longer to return than a supervisor takes to restart a service. One question with two
+answers drifts, and the smaller answer governed the path that was supposed to make the
+restart unnecessary — so the reopen budget *is* `_DEVICE_WAIT`, expressed as an identity
+in the code and pinned by a test.
+
+Each attempt still gets its own timeout, because a deadline for the whole operation does
+not bound one attempt that never returns: `wait_closed()` on a vanished device and
+`open()` on a node udev has not finished can both block. Worst case is the budget plus one
+attempt, 90 seconds, comfortably inside the 300 — so cancellation stays the exception
+rather than the ordinary outcome.
 
 ### Cancellation safety is a requirement, not an implementation detail
 

@@ -5,11 +5,21 @@
 The gateway SHALL attempt to reopen the serial port it lost, and SHALL restart the service
 only when reopening has failed.
 
-Reopening SHALL be attempted repeatedly with a delay between attempts, up to a bounded
-number, because a re-enumerating device is absent for a period before it returns. Each
-attempt SHALL be bounded in time as well as in count: closing a transport whose device has
-vanished, and opening a node udev is still finishing, can both block indefinitely, and a
-bound on attempts alone does not bound the wait.
+Reopening SHALL be attempted repeatedly with a delay between attempts, until a bounded
+budget of **time** is spent, because what has to be waited out is the device's absence and
+absence is a duration. A budget counted in attempts answers a different question: five
+attempts three seconds apart is twelve seconds, which reads like a budget until it is
+asked what it is a budget for.
+
+That budget SHALL be at least the wait the gateway already applies to the same device at
+startup. Both answer one question — how long can this device take to come back — and two
+answers to one question drift apart, with the smaller one governing the path where it
+matters more.
+
+Each attempt SHALL additionally be bounded in time of its own, because a deadline for the
+whole operation does not bound a single attempt that never returns: closing a transport
+whose device has vanished, and opening a node udev is still finishing, can both block
+indefinitely.
 
 A device node that is absent, or present but not yet permitted to this process, SHALL be
 treated as "not back yet" rather than as an error — a recreated node carries its ownership
@@ -35,8 +45,12 @@ suspends sending and inbound reads during a recovery.
 - **WHEN** closing or opening the port does not return
 - **THEN** the attempt is abandoned at its own bound and another follows
 
+#### Scenario: The device takes longer to return than a few attempts
+- **WHEN** the node is still absent after several attempts but within the budget
+- **THEN** attempts continue, rather than the service being restarted over a device that is merely still coming back
+
 #### Scenario: Reopening never succeeds
-- **WHEN** every attempt fails
+- **WHEN** the budget is spent with the device still gone
 - **THEN** the gateway restarts the service, as it does today
 
 ### Requirement: A reopened link is not in service until its init sequence has completed

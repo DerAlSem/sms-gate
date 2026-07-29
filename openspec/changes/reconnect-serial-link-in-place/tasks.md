@@ -52,6 +52,12 @@
       the restored link with its reopen count and duration, and the rungs that give up stay
       at ERROR. A failed prune of the deduplication keys was demoted too: it costs a table
       that grows, not a message that is lost.
+- [x] 6.7 Budget the reopen in time, not in attempts, and make it the startup wait — found
+      by the first attempt at 6.3, where a USB unbind kept the device away for longer than
+      the twelve seconds five attempts actually buy, so the gateway restarted over a device
+      that was merely still coming back. `connect()` waits 60 s for the same node at
+      startup for the same reason; the reopen now waits the same, as an identity in the
+      code rather than a coincidence between two numbers.
 - [ ] 6.3 Live verification of the case this change is most likely to break: send an SMS to the gateway while the link is down, and confirm it is delivered after the reopen without a restart
 - [ ] 6.4 Ship and verify against prod
 - [ ] 6.5 Archive so the `modem-link` additions land in `openspec/specs/`

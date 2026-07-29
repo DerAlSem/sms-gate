@@ -18,6 +18,11 @@ from app.modem.at_commands import (
     ATSerial, ATCommandError, CNMI_SUBSCRIBE, ModemTransportError,
 )
 
+# Captured at import, before any test patches the pacing down: what is under test is the
+# relationship the shipped constants hold to each other, not the numbers a test runs with.
+_SHIPPED_BUDGET = at._REOPEN_BUDGET
+_SHIPPED_DEVICE_WAIT = at._DEVICE_WAIT
+
 
 class _FakePort:
     """A serial fake that answers every write with OK, and records what it was asked."""
@@ -72,10 +77,24 @@ def _opener(monkeypatch, outcomes):
     return opened
 
 
+def _always_failing_opener(monkeypatch, exc):
+    """An opener for a device that never comes back, however long it is given."""
+    calls = []
+
+    async def fake_open(url, baudrate):
+        calls.append(url)
+        raise exc
+
+    monkeypatch.setattr(at.serial_asyncio, "open_serial_connection", fake_open)
+    return calls
+
+
 @pytest.fixture(autouse=True)
 def _fast_attempts(monkeypatch):
-    """The delay between attempts is production pacing, not the behaviour under test."""
+    """Production pacing, not the behaviour under test — kept in proportion so a test can
+    still tell "gave up too early" from "gave up"."""
     monkeypatch.setattr(at, "_REOPEN_DELAY", 0.01)
+    monkeypatch.setattr(at, "_REOPEN_BUDGET", 1.0)
 
 
 def _serial():
@@ -161,14 +180,61 @@ def test_a_failing_init_makes_the_attempt_fail(monkeypatch):
     assert bad.closed is True, "the port that would not initialise must be let go of"
 
 
-def test_exhausted_attempts_leave_the_link_explicitly_unusable(monkeypatch):
-    _opener(monkeypatch, [FileNotFoundError(2, "gone")] * at._REOPEN_ATTEMPTS)
+def test_the_budget_is_the_same_wait_the_startup_path_gives_the_same_device():
+    """One question — how long can this device take to come back — must have one answer.
+    Two of them is how they drift, and the smaller one wins in the path that matters."""
+    assert _SHIPPED_BUDGET == _SHIPPED_DEVICE_WAIT
+
+
+def test_the_budget_outlasts_a_device_that_takes_its_time(monkeypatch):
+    """The prod 2026-07-29 regression. A five-attempt budget is twelve seconds, which
+    reads like a budget until you notice what it is a budget *for*: the device was merely
+    still absent, and the gateway restarted itself over it — while the startup path would
+    have waited a full minute for that very node."""
+    port = _FakePort()
+    calls = []
+
+    async def fake_open(url, baudrate):
+        calls.append(url)
+        if len(calls) <= 12:
+            raise FileNotFoundError(2, "No such file or directory", url)
+        return port, port
+
+    monkeypatch.setattr(at.serial_asyncio, "open_serial_connection", fake_open)
+    monkeypatch.setattr(at, "_REOPEN_DELAY", 0.02)
+    s = _serial()
+
+    assert asyncio.run(s.reconnect()) is True, "gave up while the device was still coming"
+    assert len(calls) == 13
+    assert port.commands == at.INIT_COMMANDS
+
+
+def test_exhausted_budget_leaves_the_link_explicitly_unusable(monkeypatch):
+    monkeypatch.setattr(at, "_REOPEN_BUDGET", 0.05)
+    calls = _always_failing_opener(monkeypatch, FileNotFoundError(2, "gone"))
     s = _serial()
 
     assert asyncio.run(s.reconnect()) is False
     assert s.usable is False
     assert s.reopens == 0
+    assert len(calls) > 1, "the budget must buy more than a single look"
     assert s.link_lost.is_set(), "whoever escalates should not wait out another interval"
+
+
+def test_giving_up_is_bounded_even_when_the_device_never_returns(monkeypatch):
+    """The budget is a deadline, so a device that stays gone costs that and no more."""
+    monkeypatch.setattr(at, "_REOPEN_BUDGET", 0.2)
+    monkeypatch.setattr(at, "_REOPEN_DELAY", 0.01)
+    _always_failing_opener(monkeypatch, FileNotFoundError(2, "gone"))
+    s = _serial()
+
+    async def run():
+        started = asyncio.get_event_loop().time()
+        assert await s.reconnect() is False
+        return asyncio.get_event_loop().time() - started
+
+    elapsed = asyncio.run(run())
+    assert 0.2 <= elapsed < 1.0, f"gave up after {elapsed:.2f}s, budget was 0.2s"
 
 
 def test_a_cancelled_reopen_leaves_the_link_unusable_and_the_next_send_fails_at_once(

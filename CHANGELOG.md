@@ -13,6 +13,14 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   `init()` goes through `command()`, which takes the same non-reentrant lock, so the naive
   version deadlocks — and wrapped in the recovery timeout that reads as "recovery took
   five minutes and achieved nothing".
+- **The reopen budget is a deadline, and it is the wait the startup path already gives the
+  same device.** Found in live verification: five attempts three seconds apart is twelve
+  seconds, and a modem unbound from USB was still absent at twelve — so the gateway
+  restarted over a device that was merely still coming back, which is the outcome this
+  change exists to remove. `connect()` waits 60 s for that same node at startup, for that
+  same reason; two answers to one question drift, and the smaller one governed the path
+  where it mattered more. The budget is now `_DEVICE_WAIT` by identity, pinned by a test,
+  with each attempt still bounded on its own.
 - **A node that is absent and one that is not yet permitted count alike as "not back
   yet".** A recreated node carries its ownership only once udev has applied its rules, so
   the first attempts after a re-enumeration can fail on permission rather than absence.
