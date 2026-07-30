@@ -1,0 +1,14 @@
+[Unit]
+Description=Is sms.deralsem.ru reachable from outside the house
+# It has to be able to resolve and to reach Telegram, and on this machine the second goes
+# through a tunnel of its own.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/reachability-check
+# A failing probe exits non-zero on purpose, so `systemctl list-units --failed` and
+# `is-failed` agree with reality. It is not OnFailure= that alerts here — the script does,
+# because it knows the difference between one bad check and an outage.
+SuccessExitStatus=0

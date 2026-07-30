@@ -1,0 +1,12 @@
+[Unit]
+Description=Check that sms.deralsem.ru answers, every minute
+
+[Timer]
+# Late enough after boot that the network and the machine's own tunnels are up; a probe that
+# runs before them would report an outage it created itself.
+OnBootSec=120
+OnUnitActiveSec=60
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target
