@@ -474,3 +474,104 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="2c7c", MODE="0660", GROUP="dialout"
 EOF
 sudo udevadm control --reload-rules
 ```
+
+## How the gateway is reached
+
+`sms.deralsem.ru` does not point at the house. It points at `mprz.ru`, which forwards to the
+house over a permanent WireGuard tunnel.
+
+```
+caller ──https──▶ mprz.ru:443 ──http over wg-burns──▶ house 10.67.67.3:80 ──▶ uvicorn 127.0.0.1:30080
+                  (TLS ends here)                      (nginx)
+```
+
+**Why, and not merely how.** The backup uplink is an LTE modem behind carrier-grade NAT: it
+has no address that can be resolved to and no port on it can be opened from outside. So a
+record pointing at the house answers only while the wired link is up, and a wired outage
+takes the gateway with it — modem, SIM and service all healthy, and nobody able to reach
+them. A connection dialled *outward* is the only shape that survives, because its return
+traffic rides a connection the carrier already permitted.
+
+The tunnel is up at all times, not raised on failure. A path used only during an outage is
+first tested by the outage; this one is exercised by every ordinary request, and a failover
+changes no DNS record at all.
+
+**Measured across a failover:** no interrupted request at five-second resolution, in either
+direction. The session survives the address change, so there is no handshake to redo. Plan
+against the uplink's own detection threshold — about ninety seconds — not against the tunnel.
+
+### What sits where
+
+| Machine | Part | File in this repo |
+|---|---|---|
+| `mprz.ru` | TLS, server block for the hostname | `deploy/nginx/mprz-sms.deralsem.ru.conf` |
+| `mprz.ru` | Relay carrying the house's alerts to Telegram | `deploy/nginx/mprz-tg-relay.conf` |
+| `mprz.ru` | Checks the hostname answers, from outside | `deploy/reachability/` |
+| house | Answers on the tunnel address | `deploy/nginx/home-sms-gate-tunnel.conf` |
+| house | Checks the tunnel *carries* | `deploy/wg-watchdog/` |
+
+All of these are installed by hand. A deploy updates this repository on the box and does not
+touch them — which has already produced changes that were committed, deployed and inert at
+the same time. See `openspec/changes/` for the work item.
+
+### Administrative access during an outage
+
+The ordinary route is a port on the wired address and dies with it. During a wired outage,
+reach the house through the far end:
+
+```bash
+ssh -J mprz.ru deralsem@10.67.67.3
+```
+
+Or as a `~/.ssh/config` entry, so it is one command when it is needed:
+
+```
+Host house-tunnel
+    HostName 10.67.67.3
+    User deralsem
+    ProxyJump mprz.ru
+```
+
+Keys only — passwords are refused for the tunnel's addresses, because the far end hosts
+eleven public applications and a compromise of any of them would otherwise become a
+brute-force attempt against the house over a channel nobody watches.
+
+### Rollback
+
+One change: point `sms.deralsem.ru` back at `home.deralsem.ru` (CNAME, DNS only). The house
+still serves the hostname on its own certificate, which renews over DNS and therefore cannot
+expire from being unreachable.
+
+Two things to know before relying on it. It restores a path that works **only over the wired
+link**, so it answers "this topology turned out badly" and never "it is down right now". And
+it propagates on the record's TTL, unlike a failover, which propagates not at all.
+
+### What watches what, and what each is blind to
+
+| Watcher | Runs on | Answers | Blind to |
+|---|---|---|---|
+| `wg-tunnel-check` | house | Is the tunnel carrying? | Whether the far end still publishes the name |
+| `reachability-check` | `mprz.ru` | Does the hostname answer, served by the gateway? | `mprz.ru` itself dying |
+| gateway's own alerting | house | Modem, sends, loops | Anything about being reached |
+
+`reachability-check` requires a marker only the application emits. A front end returns its
+own error page when it cannot reach the origin, and a name that answers with somebody else's
+error is a name that answers — a probe accepting any `200` cannot tell service from outage.
+
+`reachability-check`'s blind spot is deliberate. `mprz.ru` dying takes eleven sites and the
+gateway's own caller with it, so there is nobody left to be affected and no way for it to go
+unnoticed.
+
+### Alerts during a wired outage
+
+The mobile carrier cannot reach `api.telegram.org`. Before this was addressed, an outage
+produced no alert at all and the *restore* alert arrived afterwards — being told an outage
+ended and never that it began.
+
+The house now sends through the relay on `mprz.ru`, over the tunnel, which works on either
+uplink. It is tried **first**, so it is the route ordinary traffic exercises; the direct route
+is the second attempt and covers the relay being down. If neither answers, the alert is held
+on disk and delivered when a route returns, stamped with its age — a late alert read without
+one is read as current.
+
+Set `ALERT_RELAY_BASE` in `.env`; the application picks it up as a setting on first start.

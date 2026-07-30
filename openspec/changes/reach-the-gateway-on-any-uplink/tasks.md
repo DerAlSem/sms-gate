@@ -169,7 +169,11 @@
            the account is key-holding — but the task existed to prevent the ordering, and the
            ordering is what went wrong. -->
 - [x] 7.3 Test: reach the host over the tunnelled route while the wired link is up
-- [ ] 7.4 Document the client-side setup, since the existing command does not keep working
+- [x] 7.4 Document the client-side setup, since the existing command does not keep working
+      <!-- It turned out to be two hops rather than the client-side connector the first draft
+           expected — that requirement belonged to the third-party edge and went with it. A
+           ProxyJump entry makes it one command, which matters because it is needed precisely
+           when nobody is in the mood to reconstruct it. -->
 
 ## 8. Cutover
 
@@ -233,5 +237,5 @@
       both need a decision about the privileges the hook holds, which is why this is named
       rather than quietly patched
 
-- [ ] 11.1 Document the topology, both machines' parts in it, and the rollback
+- [x] 11.1 Document the topology, both machines' parts in it, and the rollback
 - [ ] 11.2 Archive so the `inbound-reachability` requirements land in `openspec/specs/`
