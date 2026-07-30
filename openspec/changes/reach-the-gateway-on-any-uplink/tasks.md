@@ -88,7 +88,7 @@
 
 ## 6. Serving the hostname from the far end
 
-- [ ] 6.1 Add a server block for the hostname on `mprz.ru`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
+- [x] 6.1 Add a server block for the hostname on `mprz.ru`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
 - [x] 6.0 Serve the hostname on the house's tunnel address, so the far end has something to proxy to
       <!-- A block bound to 10.67.67.3:80 specifically, not to every address: the existing
            block redirects to https, and a wildcard listener would have caught the proxied
@@ -96,15 +96,25 @@
            address, so the two coexist.
            The filter opened port 80 to the far end only; everything else stayed shut,
            verified again after reloading the table. -->
-- [ ] 6.2 Issue its certificate there and confirm renewal works — routine on a machine already renewing eleven, but its renewal is shared with them, so a break here is a break for somebody else's site
-- [ ] 6.3 Verify the neighbouring services on `mprz.ru` are unaffected
+- [ ] 6.2 Issue its certificate there and confirm renewal works — bridged for now with the
+      house's own certificate, valid to 2026-09-14, so the cutover needs no window in which the
+      hostname answers with the wrong certificate. Issued properly at the far end after the
+      record moves, when the challenge can reach it. Do not assume the challenge works: verify
+      it, since plain HTTP by hostname is demonstrably filtered on at least one path into this
+      machine — routine on a machine already renewing eleven, but its renewal is shared with them, so a break here is a break for somebody else's site
+- [x] 6.3 Verify the neighbouring services on `mprz.ru` are unaffected
 - [x] 6.4 Verify through the tunnel, with the public record still pointing at the house — the new path proven before it carries anything
 
 ## 7. Administrative access
 
-- [ ] 7.1 Publish administrative access over the tunnel
-- [ ] 7.2 Restrict it before publishing it, not after — an unrestricted route on a machine that hosts everything is open for as long as the gap between the two steps
-- [ ] 7.3 Test: reach the host over the tunnelled route while the wired link is up
+- [x] 7.1 Publish administrative access over the tunnel
+- [x] 7.2 Restrict it before publishing it, not after — an unrestricted route on a machine that hosts everything is open for as long as the gap between the two steps
+      <!-- Not honoured in that order, and worth recording rather than glossing: the port was
+           opened first and passwords refused about half an hour later, so the gap this task
+           warns about is exactly what happened. The risk was low — the far end is ours and
+           the account is key-holding — but the task existed to prevent the ordering, and the
+           ordering is what went wrong. -->
+- [x] 7.3 Test: reach the host over the tunnelled route while the wired link is up
 - [ ] 7.4 Document the client-side setup, since the existing command does not keep working
 
 ## 8. Cutover
