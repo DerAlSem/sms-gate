@@ -176,9 +176,18 @@
 - [x] 8.1 Confirm the direct path can still serve, and write down the rollback action, before the record moves
 - [x] 8.2 Point `sms.deralsem.ru` at `mprz.ru`
 - [x] 8.3 Verify from outside that the gateway itself serves the response
-- [ ] 8.4 Verify by a real call from GM+, not only by hand — a hand-made request does not reproduce what the caller does
-- [ ] 8.5 Verify the gateway's outbound duties are unaffected: delivery webhooks still arrive
-- [ ] 8.6 Confirm the home server's own renewal still works for its remaining hostnames
+- [x] 8.4 Verify by a real call from GM+, not only by hand — a hand-made request does not reproduce what the caller does
+      <!-- Closed by ordinary traffic rather than a staged test. The access log shows the call
+           arriving from the far end's own public address: GM+ resolves the hostname to the
+           machine it runs on and connects to it, so the hairpin works — the one thing about
+           this topology that could only be answered by the real caller.
+           It also surfaced a second consumer nobody had mentioned, on a different address, so
+           the cutover moved more than GM+. -->
+- [x] 8.5 Verify the gateway's outbound duties are unaffected: delivery webhooks still arrive
+      <!-- A message went sent → delivered with both webhooks accepted by the caller. The
+           gateway's outbound path never depended on how it is reached, and now that is
+           observed rather than assumed. -->
+- [x] 8.6 Confirm the home server's own renewal still works for its remaining hostnames
 
 ## 9. Prove it under the failure it exists for
 
