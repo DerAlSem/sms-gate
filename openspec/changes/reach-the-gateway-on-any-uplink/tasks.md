@@ -81,6 +81,16 @@
            rather than dropping the network twice. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
 - [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
+      <!-- No longer a theoretical gap. Observed on 2026-07-30: the failover alert could not be
+           delivered — `api.telegram.org` is unreachable over the mobile carrier, and the
+           uplink script said so in its own log — while the restore alert eight minutes later
+           arrived normally. So the operator is told the outage has ended and never that it
+           began, which is the worst available shape: the one message that matters is the one
+           that is lost.
+           Every alert raised on the house shares this, the tunnel watchdog included. The
+           reachability check does not, because it runs at the far end and reaches Telegram by
+           a path of its own — which is a stronger argument for having built it than the one
+           originally given. -->
 
 ## 4. Watching from outside the failure domain
 
@@ -153,11 +163,25 @@
 
 ## 9. Prove it under the failure it exists for
 
-- [ ] 9.1 Live: pull the wired link, confirm the hostname is still served by the gateway once failover completes
-- [ ] 9.2 Live: measure the re-establishment time from when the backup carries traffic, and record the figure in the spec
-- [ ] 9.3 Live: check how the source-routing rule in `wwan-backup.sh` affects the tunnel's sockets across a failover, and decide what remains of that rule's inbound purpose once the direct path is retired
-- [ ] 9.4 Live: confirm administrative access works while the wired link is down — the half of the remedy easiest to leave untested
-- [ ] 9.5 Live: restore the wired link, confirm traffic returns with nothing switched by hand
+- [x] 9.1 Live: pull the wired link, confirm the hostname is still served by the gateway once failover completes
+      <!-- Not by pulling it: the watchdog decides the wire is dead by pinging through it, so
+           dropping those probes with a rule produced a real failover — the backup taking the
+           preferred metric, traffic genuinely leaving over it — while inbound on the wire
+           stayed as a lifeline. Safer than an outage nobody at the house could undo, and it
+           exercises the same mechanism. Paired with a scheduled undo applied *before* the
+           break, so losing contact could not leave it in place. -->
+- [x] 9.2 Live: measure the re-establishment time from when the backup carries traffic, and record the figure in the spec
+- [x] 9.3 Live: check how the source-routing rule in `wwan-backup.sh` affects the tunnel's sockets across a failover, and decide what remains of that rule's inbound purpose once the direct path is retired
+      <!-- The rule was present throughout and did not pin the tunnel: it matches on the
+           primary interface's source address, and WireGuard's socket is not bound to one, so
+           once the routing table preferred the backup the packets left with the backup's
+           address and the rule stopped matching. The worry was unfounded, which is worth as
+           much as if it had been right.
+           Its inbound purpose is a separate question, still open: it exists so replies to
+           connections arriving on the wire go back out the wire, and that is what the direct
+           path in group 10 is about. -->
+- [x] 9.4 Live: confirm administrative access works while the wired link is down — the half of the remedy easiest to leave untested
+- [x] 9.5 Live: restore the wired link, confirm traffic returns with nothing switched by hand
 - [ ] 9.6 Live: restart the host and confirm the path returns
 - [ ] 9.7 Live: restart the host *while the wired link is down* and confirm the path comes up over the backup — the case that will actually happen
 

@@ -256,6 +256,15 @@ What is recorded SHALL be the time to re-establish, counted from the moment the 
 carrying traffic. The window during which the gateway is unreachable is that figure plus the
 uplink's own detection threshold, which belongs to the uplink.
 
+**Measured on 2026-07-30: under five seconds, and possibly none.** Sampling every five
+seconds across a failover in both directions recorded no interrupted request at all — the
+return to the primary uplink was covered continuously and showed no gap; the departure was
+confirmed carrying within eighteen seconds, that being the resolution of the record rather
+than a delay observed. The mechanism explains it: the session survives an address change, so
+there is no handshake to redo — the far end learns the new endpoint from the first
+authenticated packet. The figure to plan against is therefore the uplink's own detection
+threshold, roughly ninety seconds, and not this.
+
 #### Scenario: The uplink is replaced under an established path
 - **WHEN** traffic fails over while the inbound path is up
 - **THEN** the path re-establishes itself over the new uplink, without intervention, within the recorded time
