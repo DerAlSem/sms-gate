@@ -8,6 +8,7 @@ obvious from the other.
 |---|---|---|
 | `mprz-sms.deralsem.ru.conf` | `mprz.ru` | Terminates TLS, proxies over the tunnel |
 | `home-sms-gate-tunnel.conf` | the house | Answers on the tunnel address, proxies to uvicorn |
+| `mprz-tg-relay.conf` | `mprz.ru` | Carries the house's alerts to Telegram when its own carrier cannot |
 
 ## These are copies, and nothing keeps them in step
 
@@ -31,6 +32,13 @@ sudo nginx -t && sudo systemctl reload nginx
 
 `nginx -t` as its own step, before the reload. On `mprz.ru` a broken configuration takes
 eleven live sites down, not one.
+
+## Why the relay sits on port 80
+
+The tunnel-facing ports permitted on `mprz.ru` are 22, 80 and 443; anything else is dropped
+before nginx sees it, which cost an afternoon to discover because nginx was listening and
+answering locally the whole time. `listen 10.67.67.1:80` is a more specific match than the
+`listen 80` the public sites share, so it takes that address only and leaves them untouched.
 
 ## The caller's address
 
