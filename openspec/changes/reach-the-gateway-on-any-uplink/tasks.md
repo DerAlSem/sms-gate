@@ -77,8 +77,8 @@
 - [x] 3.3 Record why the bound is the number it is, as its neighbour does
 - [ ] 3.4 Test: drop the path once — it is re-established and no alert is raised
       <!-- Exercised against a substitute address and unit, which proves the state machine but
-           not the restart. Owed live: take the interface down and watch the watchdog put it
-           back without saying anything. -->
+           not the restart. Owed live, and deliberately deferred to the live session in group 9
+           rather than dropping the network twice. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
 - [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
 
@@ -94,8 +94,12 @@
 
 ## 5. The gateway records where requests come from
 
-- [ ] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
-- [ ] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
+- [x] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
+      <!-- Through uvicorn's own proxy-header handling rather than a middleware of ours: the
+           access log is the audit trail either way, and code written to duplicate it would
+           only be more to test. Trusted from the loopback alone, which the bind below makes
+           the only place it can arrive from. -->
+- [x] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
 - [ ] 5.3 Test: a request through the tunnel is logged with the caller's address, not the tunnel's
 
 ## 6. Serving the hostname from the far end

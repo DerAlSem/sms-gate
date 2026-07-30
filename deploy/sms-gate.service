@@ -10,7 +10,19 @@ Type=simple
 User=smsgate
 Group=dialout
 WorkingDirectory=/opt/sms-gate
-ExecStart=/opt/sms-gate/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 30080
+# Loopback, not every interface. nginx is the only thing that should reach this, and it
+# reaches it over the loopback — binding wider made the application answerable from the home
+# network directly, and once a tunnel gave the host another address, from the far end of that
+# too. Nothing needed it.
+#
+# `--proxy-headers` with the loopback trusted is what puts the caller's own address into the
+# access log instead of nginx's. Nothing recorded where requests came from before, which was
+# survivable while reaching the gateway meant being on this network; with one public entrance
+# and long-lived tokens behind it, a token used from somewhere it has never been used from
+# would otherwise be indistinguishable from an ordinary call. The header is trusted only from
+# the loopback, which after the bind above is the only place it can arrive from.
+ExecStart=/opt/sms-gate/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 30080 \
+    --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
 # Paired with the 60s the gateway spends waiting for its modem to reappear (see
 # _DEVICE_WAIT). A failed start therefore costs 90s, so five of them span 450s and cannot

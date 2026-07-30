@@ -3,6 +3,32 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **BREAKING for deployment:** `deploy/sms-gate.service` binds uvicorn to the loopback and
+  trusts the forwarding header from it. Requires `systemctl daemon-reload`; a plain restart
+  will not pick it up. It had been answering on every interface, so the application was
+  reachable from the local network directly — and once a tunnel gave the host another address,
+  from the far end of that too. Nothing needed the wider bind.
+- **Requests are logged with the caller's own address** rather than the proxy's. Nothing
+  recorded where a request came from, which was survivable while reaching the gateway meant
+  being on this network. With one public entrance and long-lived tokens behind it, a token
+  used from somewhere it has never been used from would otherwise be indistinguishable from
+  an ordinary call.
+- `HOST` and `PORT` are documented as what they are: unused. The bind has always come from the
+  unit file, while the README promised they controlled it.
+
+### Added
+- `deploy/reachability/` — asks from outside the house whether `sms.deralsem.ru` actually
+  answers, and requires a marker only the application emits: a front end returns its own error
+  page when it cannot reach the origin, and a name that answers with somebody else's error is
+  a name that answers. Also warns before the certificate expires.
+- `deploy/wg-watchdog/` — asks whether the tunnel is *carrying*, not whether its unit is
+  active. WireGuard has no connection to lose, so the unit reports active over a tunnel that
+  moves nothing — the same shape as a data session reporting `connected` over an interface
+  with no address.
+
 ## [0.13.0] - 2026-07-29
 
 ### Changed

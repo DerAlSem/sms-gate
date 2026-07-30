@@ -191,7 +191,7 @@ curl -X POST http://localhost:8000/sms/send \
 |----------|---------|-------|
 | `SERIAL_SEND_PORT` / `SERIAL_READ_PORT` | `/dev/ttyUSB2` / `/dev/ttyUSB3` | Последовательные порты модема |
 | `DB_PATH` | `data/sms.db` | Файл SQLite |
-| `HOST` / `PORT` | `0.0.0.0` / `80` | Привязка uvicorn |
+| `HOST` / `PORT` | — | **Не используются.** Привязку задаёт `ExecStart` в `deploy/sms-gate.service` (loopback: наружу смотрит только nginx) |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | `admin` / `change-me` | **Поменяйте перед публикацией!** |
 
 **Runtime-настройки** — voxlink lookup, оповещения в Telegram, правила передачи входящих
@@ -417,7 +417,7 @@ curl -X POST http://localhost:8000/sms/send \
 |----------|---------|-------|
 | `SERIAL_SEND_PORT` / `SERIAL_READ_PORT` | `/dev/ttyUSB2` / `/dev/ttyUSB3` | Modem serial ports |
 | `DB_PATH` | `data/sms.db` | SQLite file |
-| `HOST` / `PORT` | `0.0.0.0` / `80` | uvicorn bind |
+| `HOST` / `PORT` | — | **Unused.** The bind comes from `ExecStart` in `deploy/sms-gate.service` (loopback: only nginx faces outward) |
 | `ADMIN_USER` / `ADMIN_PASSWORD` | `admin` / `change-me` | **Change before exposing!** |
 
 **Runtime settings** — voxlink lookup, Telegram alerting, inbound-dispatch (`inbound_dispatch`)
