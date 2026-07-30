@@ -100,10 +100,11 @@
            only be more to test. Trusted from the loopback alone, which the bind below makes
            the only place it can arrive from. -->
 - [ ] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
-      <!-- Written, tested, committed and deployed — and NOT in effect: the unit file changed
-           but systemd was never reloaded, so the running process still holds the old
-           ExecStart. Left unchecked on purpose. A deployed change that has not been activated
-           is exactly the false green this capability exists to prevent. -->
+      <!-- Written, tested, committed and deployed — and not in effect, for a reason worth
+           more than the task: `/etc/systemd/system/sms-gate.service` is a *copy*, not a link
+           to the file in the repository. A deploy updates the repository on the box and
+           leaves the unit systemd actually reads untouched, so `daemon-reload` faithfully
+           re-read the old one. Left unchecked until it is running. -->
 - [ ] 5.3 Test: a request through the tunnel is logged with the caller's address, not the tunnel's
 
 ## 6. Serving the hostname from the far end
@@ -166,6 +167,15 @@
 - [ ] 10.6 Record that rollback is now two steps, and that it is not an emergency remedy
 
 ## 11. Ship
+
+- [ ] 11.0 Close the gap this change tripped over: a unit file committed and deployed does not
+      reach systemd, because the installed unit is a copy rather than a link to the repository.
+      Nothing notices the divergence — the deploy reports success, the service restarts, and
+      the change is simply absent. It happened silently for `RestartSec` in 0.12.0 too, where
+      the manual copy was remembered; here it was not. Either link the unit to the deployed
+      tree so content follows a deploy, or teach the deploy hook to install and reload it —
+      both need a decision about the privileges the hook holds, which is why this is named
+      rather than quietly patched
 
 - [ ] 11.1 Document the topology, both machines' parts in it, and the rollback
 - [ ] 11.2 Archive so the `inbound-reachability` requirements land in `openspec/specs/`
