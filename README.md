@@ -67,6 +67,28 @@ POST с номером и текстом; шлюз отправляет сооб
   модема перечитывается: входящие, накопившиеся за время простоя, не теряются, а
   дедупликация по PDU не даёт доставить их дважды. Состояние линка, время последней
   исправности и счётчик переоткрытий видны на странице диагностики
+- **Доступен по любому живому каналу** — резервный канал сидит за CGNAT: у него нет адреса,
+  на который можно указать, и порт на нём открыть нельзя. Раньше падение провода уносило шлюз
+  с собой: модем, SIM и сервис живы, а достучаться нельзя — и войти посмотреть, что случилось,
+  тоже. Теперь наружу торчит не дом, а машина со статическим адресом, и туннель набирается
+  **изнутри**, поэтому серый IP ему безразличен. Туннель поднят **постоянно**, а не открывается
+  по аварии: путь, используемый только во время сбоя, впервые проверяется этим самым сбоем.
+  Постоянный означает, что при переключении канала не меняется ни одна DNS-запись — измерено:
+  на переключении не потеряно ни одного запроса при шаге замера в пять секунд. Туннель при этом
+  соединяет **две точки, а не две сети**, и это отдельное решение: `AllowedIPs` ограничивает
+  маршрутизацию, а не доступ, так что всё, что слушает `0.0.0.0`, отвечает и на адресе туннеля,
+  пока не поставлен фильтр на интерфейсе
+- **Сторожа проверяют работу, а не признаки жизни** — у WireGuard нечего терять: с удалённым
+  интерфейсом `systemctl is-active` по-прежнему отвечает `active`. Поэтому сторож туннеля
+  спрашивает, **везёт ли он**, а сторож снаружи — отвечает ли публичное имя, причём требует в
+  ответе маркер, который может выдать только приложение: край возвращает собственную страницу
+  ошибки, когда не достучался до origin, а имя, ответившее чужой ошибкой, — это имя, которое
+  ответило
+- **Алерт уходит во время той аварии, которую описывает** — мобильный оператор до Telegram не
+  пускает, поэтому раньше сообщение о падении терялось, а приходило только сообщение о
+  восстановлении. Теперь дом шлёт через релей на дальнем конце, и этот путь пробуется **первым**,
+  чтобы обкатываться обычным трафиком. Если не ушло ни одним путём — сообщение придерживается и
+  доставляется позже, с пометкой возраста
 - **Автоматические повторы отправки** — если сообщение не дошло до модема (нет ответа,
   таймаут приглашения, временный отказ сети), шлюз повторяет отправку с нарастающими
   паузами (`send_retry_backoff`, по умолчанию `30,120,300` — четыре попытки примерно за
@@ -295,6 +317,27 @@ supervision. No external broker, no container required.
   deduplication key stops a re-read message being delivered twice. The link's state, when
   it was last known good and how often it has been reopened are shown on the diagnostics
   page
+- **Reachable over whichever uplink is carrying** — the backup uplink sits behind
+  carrier-grade NAT: no address to resolve to, no port that can be opened. A wired outage used
+  to take the gateway with it — modem, SIM and service healthy, nobody able to reach them or to
+  log in and find out why. What faces the world now is a machine with a static address, and the
+  tunnel is dialled **outward**, so the carrier's NAT is irrelevant to it. It is up **at all
+  times** rather than raised on failure: a path used only during an outage is first tested by
+  the outage. Always-on means a failover changes no DNS record at all — measured across one in
+  both directions, with no interrupted request at five-second resolution. The tunnel joins
+  **two endpoints, not two networks**, which is a decision rather than a default: `AllowedIPs`
+  constrains routing and not access, so everything bound to `0.0.0.0` answers on the address
+  the tunnel adds until a filter on the interface says otherwise
+- **The watchdogs test work, not signs of life** — WireGuard has no connection to lose: with
+  the interface deleted, `systemctl is-active` still answers `active`. So one watchdog asks
+  whether the tunnel **carries**, and another, from outside, asks whether the public hostname
+  answers — requiring a marker only the application can produce, because a front end returns
+  its own error page when it cannot reach the origin, and a name that answers with somebody
+  else's error is a name that answers
+- **Alerts get out during the outage they describe** — the mobile carrier cannot reach
+  Telegram, so the alert about a failover used to be lost while the one about recovery arrived.
+  The house now sends through a relay at the far end, tried **first** so that ordinary traffic
+  exercises it. What no route could carry is held and delivered later, stamped with its age
 - **Automatic send retries** — when a message never reached the modem (no response, a
   prompt timeout, a temporary network refusal), the gateway tries again with growing
   delays (`send_retry_backoff`, default `30,120,300` — four attempts inside about eight

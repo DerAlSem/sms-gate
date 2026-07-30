@@ -3,31 +3,76 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.14.0] - 2026-07-30
+
+The gateway stops depending on which uplink is alive.
+
+### Added
+- **Reachable over whichever uplink is carrying traffic.** The backup uplink is an LTE modem
+  behind carrier-grade NAT: no address to resolve to, no port that can be opened. So a wired
+  outage took the gateway with it — modem, SIM and service healthy, and nobody able to reach
+  them, or to log in and see why. A permanent tunnel dialled *outward* to a machine with a
+  static address is the only shape that survives, because its return traffic rides a
+  connection the carrier already permitted.
+- **The tunnel is up at all times, not raised on failure.** A path used only during an outage
+  is first tested by the outage — the same class of fault as a loop that dies in silence or a
+  data session reporting `connected` while carrying nothing, both of which this project has
+  already paid for. Always-on means a failover changes no DNS record at all, so there is no
+  propagation window in either direction and no state machine to get right twice.
+  **Measured across a failover: no interrupted request at five-second resolution, in either
+  direction.** The session outlives the address change, so there is no handshake to redo.
+- **The tunnel joins two endpoints, not two networks.** A tunnel is a route by default, and
+  the constraint that matters is not the one most guides supply: `AllowedIPs` limits routing,
+  not access, so everything bound to `0.0.0.0` still answers on the address the tunnel adds.
+  Closed with a filter on the interface — including a `forward` chain, without which
+  container ports reached by NAT stay open while the check appears to pass.
+- `deploy/wg-watchdog/` — asks whether the tunnel is **carrying**, not whether its unit is
+  active. WireGuard has no connection to lose: with the interface deleted, `systemctl
+  is-active` still answers `active`. Verified live.
+- `deploy/reachability/` — asks from outside whether the public hostname answers, and requires
+  a marker only the application emits. A front end returns its own error page when it cannot
+  reach the origin, and a name that answers with somebody else's error is a name that answers.
+  Also warns before the certificate expires.
+- `deploy/nginx/` — both server blocks and the alert relay, with placeholder values. They had
+  existed only on the machines, which is how three separate changes came to be committed,
+  deployed and inert at the same time.
+- Administrative access survives the loss of the primary uplink, over the same tunnel, keys
+  only — the far end hosts other public applications, and a compromise of any of them would
+  otherwise become a brute-force attempt over a channel nobody watches.
+
+### Fixed
+- **Alerts get out during the outage they describe.** The mobile carrier cannot reach
+  Telegram, so every alert raised while the backup uplink carries was lost. Observed: the
+  failover alert never arrived and the restore alert, eight minutes later, did — being told an
+  outage ended and never that it began. The gateway now sends through a relay at the far end,
+  over the tunnel, which works on either uplink. Tried **first**, so it is the route ordinary
+  traffic exercises; the direct route is the fallback and covers the relay being down.
+- **An alert that no route could carry is held and delivered later**, bounded, and stamped
+  with its age — a late alert read without one is read as current, and sends an operator after
+  a fault that has already ended.
+- **A rejected Telegram token no longer loses every alert in silence.** A non-200 returned
+  `None` from the sender, which the caller reads as delivered-without-an-id.
 
 ### Changed
 - **BREAKING for deployment:** `deploy/sms-gate.service` binds uvicorn to the loopback and
-  trusts the forwarding header from it. Requires `systemctl daemon-reload`; a plain restart
-  will not pick it up. It had been answering on every interface, so the application was
-  reachable from the local network directly — and once a tunnel gave the host another address,
-  from the far end of that too. Nothing needed the wider bind.
+  trusts the forwarding header from it. Requires `systemctl daemon-reload` **and** re-copying
+  the unit — the installed unit is a copy, not a link, so a deploy alone leaves it untouched.
 - **Requests are logged with the caller's own address** rather than the proxy's. Nothing
   recorded where a request came from, which was survivable while reaching the gateway meant
-  being on this network. With one public entrance and long-lived tokens behind it, a token
-  used from somewhere it has never been used from would otherwise be indistinguishable from
-  an ordinary call.
+  being on this network — not with one public entrance and long-lived tokens behind it.
 - `HOST` and `PORT` are documented as what they are: unused. The bind has always come from the
-  unit file, while the README promised they controlled it.
+  unit file while the README promised they controlled it.
+- Configuration files carry placeholder hostnames and addresses. The reasoning generalises;
+  one installation's origin address does not.
 
-### Added
-- `deploy/reachability/` — asks from outside the house whether `gateway.example.com` actually
-  answers, and requires a marker only the application emits: a front end returns its own error
-  page when it cannot reach the origin, and a name that answers with somebody else's error is
-  a name that answers. Also warns before the certificate expires.
-- `deploy/wg-watchdog/` — asks whether the tunnel is *carrying*, not whether its unit is
-  active. WireGuard has no connection to lose, so the unit reports active over a tunnel that
-  moves nothing — the same shape as a data session reporting `connected` over an interface
-  with no address.
+### Notes
+- **Not yet verified: the cold start.** Whether the tunnel comes up after a reboot, and in
+  particular after a reboot while the wired link is already down, is the one path still owed a
+  live test. It is the most likely real scenario and the only one where failure means the
+  machine is unreachable until somebody stands in front of it.
+- The direct path still serves the hostname by address. It is retired after a soak, so that
+  rollback stays real while the new path is unproven.
+- A delivery report arriving during an outage is still unrecoverable, as before.
 
 ## [0.13.0] - 2026-07-29
 
