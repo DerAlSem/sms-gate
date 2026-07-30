@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Does sms.deralsem.ru actually answer, from outside the house?
+# Does gateway.example.com actually answer, from outside the house?
 #
 # Everything else watching this gateway runs on the gateway, which answers "is the process
 # up" and never "can anyone reach it". Those two diverge exactly when it matters: the wired
@@ -8,7 +8,7 @@
 #
 # This runs on the machine that publishes the hostname, which is inside the failure domain
 # for one case only — that machine dying. That case is not a silent failure: it takes the
-# eleven sites it hosts with it, including the application that calls this gateway, so there
+# other sites it hosts with it, including the application that calls this gateway, so there
 # is nobody left to be affected and no way for it to go unnoticed. Every other failure this
 # change introduces is visible from here.
 #
@@ -17,8 +17,8 @@
 # answers. So the body has to carry a marker only the application produces.
 set -u
 
-URL="${URL:-https://sms.deralsem.ru/docs}"
-HOSTNAME_CHECKED="${HOSTNAME_CHECKED:-sms.deralsem.ru}"
+URL="${URL:-https://gateway.example.com/docs}"
+HOSTNAME_CHECKED="${HOSTNAME_CHECKED:-gateway.example.com}"
 # A string the application emits and a front-end error page cannot.
 MARKER="${MARKER:-SMS Gate}"
 ENV_FILE="${ENV_FILE:-/etc/reachability-check.env}"
@@ -35,6 +35,14 @@ CERT_WARN_DAYS="${CERT_WARN_DAYS:-14}"
 TIMEOUT="${TIMEOUT:-15}"
 
 log() { logger -t reachability-check "$*" 2>/dev/null || true; echo "reachability-check: $*" >&2; }
+
+# The values shipped here are placeholders, because this file is published. Left unset, the
+# probe would cheerfully check a domain that is not yours and report it healthy — a monitor
+# that lies in the reassuring direction, which is worse than no monitor. So it refuses.
+if [ "$HOSTNAME_CHECKED" = "gateway.example.com" ] || [ "${URL#*gateway.example.com}" != "$URL" ]; then
+    log "still configured with the example hostname — set URL and HOSTNAME_CHECKED in the unit or $ENV_FILE"
+    exit 2
+fi
 
 read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"

@@ -1,5 +1,5 @@
 [Unit]
-Description=Check the tunnel to mprz.ru every minute
+Description=Check the tunnel to edge.example.com every minute
 
 [Timer]
 # After the modem's own uplink watchdog has had its first pass: a probe that runs while the

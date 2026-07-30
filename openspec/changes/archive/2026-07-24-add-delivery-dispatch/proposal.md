@@ -1,7 +1,7 @@
 ## Why
 
 An application that sends an SMS through the gateway currently learns its fate only by
-polling `GET /sms/{id}`. GM+ (app1_v2) has shipped outbound delivery tracking and polls
+polling `GET /sms/{id}`. the calling application (app1_v2) has shipped outbound delivery tracking and polls
 today; every other consumer must do the same. Polling is correct but slow and wasteful:
 a delivery report arrives at the modem within seconds, and the application finds out on
 its next poll tick.
@@ -24,7 +24,7 @@ status is the missing symmetric half.
   ```
 
   `occurred_at` is always present; `resent_from` only when the message was created by
-  the admin Resend button. Both are additive to the contract GM+ specified — a receiver
+  the admin Resend button. Both are additive to the contract the calling application specified — a receiver
   that ignores unknown fields keeps working unchanged.
 - `pending` is never pushed: `POST /sms/send` already returns it synchronously.
 - Failures reuse the existing `dispatch_error` operator alert and the
@@ -70,5 +70,5 @@ Settled with the owner before implementation; rationale in `design.md`.
 5. **Best-effort delivery, no durable outbox** (D4) — polling is the floor, so a lost
    notification self-heals within one poll interval.
 
-GM+ does not need to change anything to accept this, but should be told the two extra
+the calling application does not need to change anything to accept this, but should be told the two extra
 fields exist (task 1.1) so they can start using them.

@@ -151,10 +151,10 @@ def test_inbound_notifies(monkeypatch):
 
 def test_notify_inbound_html_format(monkeypatch):
     fake = _install(monkeypatch, notify_inbound=True)
-    monkeypatch.setitem(store._cache, "instance_name", "sms.deralsem.ru")
+    monkeypatch.setitem(store._cache, "instance_name", "gateway.example.com")
     notify("inbound", "+79261234567: Привет")
     text, sig = fake.calls[0]
-    assert text.startswith("<b>📨 Inbound · sms.deralsem.ru</b>\n")
+    assert text.startswith("<b>📨 Inbound · gateway.example.com</b>\n")
     assert text.endswith("+79261234567: Привет")
     assert sig is None
 

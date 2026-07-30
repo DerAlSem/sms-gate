@@ -20,7 +20,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   unit file, while the README promised they controlled it.
 
 ### Added
-- `deploy/reachability/` — asks from outside the house whether `sms.deralsem.ru` actually
+- `deploy/reachability/` — asks from outside the house whether `gateway.example.com` actually
   answers, and requires a marker only the application emits: a front end returns its own error
   page when it cannot reach the origin, and a name that answers with somebody else's error is
   a name that answers. Also warns before the certificate expires.
@@ -121,7 +121,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   spends no AT remedy, and its exit is not gated by the hard-reset cooldown — restarting
   is not a reset, so nothing is being hammered.
 - **A message is held, not failed, when the link goes.** It used to be failed at zero
-  attempts with a `failed` webhook — which GM+ answers by SMS-ing an operator — bypassing
+  attempts with a `failed` webhook — which the caller answers by SMS-ing an operator — bypassing
   the whole retry ladder. Holding is allowed only when no byte was written *and* no part
   was accepted; a multipart whose first part is at the SMSC still fails, because a retry
   would transmit it again under the same concatenation reference.
@@ -458,7 +458,7 @@ and that line is a moved attribute's path — not a scenario and not an assertio
 
 ### Added
 - `instance_name` setting (section "Alerting", blank = server hostname) — the
-  label shown in notifications, e.g. `sms.deralsem.ru`.
+  label shown in notifications, e.g. `gateway.example.com`.
 
 ## [0.3.0] - 2026-06-14
 

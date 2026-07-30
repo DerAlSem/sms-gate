@@ -477,11 +477,11 @@ sudo udevadm control --reload-rules
 
 ## How the gateway is reached
 
-`sms.deralsem.ru` does not point at the house. It points at `mprz.ru`, which forwards to the
+`gateway.example.com` does not point at the house. It points at `edge.example.com`, which forwards to the
 house over a permanent WireGuard tunnel.
 
 ```
-caller ──https──▶ mprz.ru:443 ──http over wg-burns──▶ house 10.67.67.3:80 ──▶ uvicorn 127.0.0.1:30080
+caller ──https──▶ edge.example.com:443 ──http over wg-edge──▶ house 10.10.10.3:80 ──▶ uvicorn 127.0.0.1:30080
                   (TLS ends here)                      (nginx)
 ```
 
@@ -504,10 +504,10 @@ against the uplink's own detection threshold — about ninety seconds — not ag
 
 | Machine | Part | File in this repo |
 |---|---|---|
-| `mprz.ru` | TLS, server block for the hostname | `deploy/nginx/mprz-sms.deralsem.ru.conf` |
-| `mprz.ru` | Relay carrying the house's alerts to Telegram | `deploy/nginx/mprz-tg-relay.conf` |
-| `mprz.ru` | Checks the hostname answers, from outside | `deploy/reachability/` |
-| house | Answers on the tunnel address | `deploy/nginx/home-sms-gate-tunnel.conf` |
+| `edge.example.com` | TLS, server block for the hostname | `deploy/nginx/mprz-gateway.example.com.conf` |
+| `edge.example.com` | Relay carrying the house's alerts to Telegram | `deploy/nginx/edge-alert-relay.conf` |
+| `edge.example.com` | Checks the hostname answers, from outside | `deploy/reachability/` |
+| house | Answers on the tunnel address | `deploy/nginx/house-gateway-tunnel.conf` |
 | house | Checks the tunnel *carries* | `deploy/wg-watchdog/` |
 
 All of these are installed by hand. A deploy updates this repository on the box and does not
@@ -520,16 +520,16 @@ The ordinary route is a port on the wired address and dies with it. During a wir
 reach the house through the far end:
 
 ```bash
-ssh -J mprz.ru deralsem@10.67.67.3
+ssh -J edge.example.com deralsem@10.10.10.3
 ```
 
 Or as a `~/.ssh/config` entry, so it is one command when it is needed:
 
 ```
 Host house-tunnel
-    HostName 10.67.67.3
+    HostName 10.10.10.3
     User deralsem
-    ProxyJump mprz.ru
+    ProxyJump edge.example.com
 ```
 
 Keys only — passwords are refused for the tunnel's addresses, because the far end hosts
@@ -538,7 +538,7 @@ brute-force attempt against the house over a channel nobody watches.
 
 ### Rollback
 
-One change: point `sms.deralsem.ru` back at `home.deralsem.ru` (CNAME, DNS only). The house
+One change: point `gateway.example.com` back at `house.example.com` (CNAME, DNS only). The house
 still serves the hostname on its own certificate, which renews over DNS and therefore cannot
 expire from being unreachable.
 
@@ -551,14 +551,14 @@ it propagates on the record's TTL, unlike a failover, which propagates not at al
 | Watcher | Runs on | Answers | Blind to |
 |---|---|---|---|
 | `wg-tunnel-check` | house | Is the tunnel carrying? | Whether the far end still publishes the name |
-| `reachability-check` | `mprz.ru` | Does the hostname answer, served by the gateway? | `mprz.ru` itself dying |
+| `reachability-check` | `edge.example.com` | Does the hostname answer, served by the gateway? | `edge.example.com` itself dying |
 | gateway's own alerting | house | Modem, sends, loops | Anything about being reached |
 
 `reachability-check` requires a marker only the application emits. A front end returns its
 own error page when it cannot reach the origin, and a name that answers with somebody else's
 error is a name that answers — a probe accepting any `200` cannot tell service from outage.
 
-`reachability-check`'s blind spot is deliberate. `mprz.ru` dying takes eleven sites and the
+`reachability-check`'s blind spot is deliberate. `edge.example.com` dying takes eleven sites and the
 gateway's own caller with it, so there is nobody left to be affected and no way for it to go
 unnoticed.
 
@@ -568,7 +568,7 @@ The mobile carrier cannot reach `api.telegram.org`. Before this was addressed, a
 produced no alert at all and the *restore* alert arrived afterwards — being told an outage
 ended and never that it began.
 
-The house now sends through the relay on `mprz.ru`, over the tunnel, which works on either
+The house now sends through the relay on `edge.example.com`, over the tunnel, which works on either
 uplink. It is tried **first**, so it is the route ordinary traffic exercises; the direct route
 is the second attempt and covers the relay being down. If neither answers, the alert is held
 on disk and delivered when a route returns, stamped with its age — a late alert read without

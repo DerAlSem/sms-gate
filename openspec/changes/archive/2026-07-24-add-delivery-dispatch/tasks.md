@@ -1,6 +1,6 @@
 ## 1. Confirm the contract
 
-- [x] 1.1 Tell GM+ that the body carries two fields beyond the agreed
+- [x] 1.1 Tell the calling application that the body carries two fields beyond the agreed
       `{id, status, error}`: `occurred_at` (always) and `resent_from` (re-sends only).
       Both are additive — confirm their receiver ignores unknown fields, and that
       `pending` is never pushed.
@@ -68,10 +68,10 @@
 
 - [x] 6.1 Full suite green; `README` gains a `delivery_dispatch` section next to
       `inbound_dispatch`, documenting the body including both extra fields.
-- [x] 6.2 Configure the GM+ route in prod admin settings, send one real SMS to a test
-      number, and confirm GM+ receives `sent` then `delivered`.
+- [x] 6.2 Configure the the calling application route in prod admin settings, send one real SMS to a test
+      number, and confirm the calling application receives `sent` then `delivered`.
 - [x] 6.3 Verify the re-send path on prod: fail a message, re-send it from the admin,
-      confirm GM+ receives `resent_from` pointing at the original.
+      confirm the calling application receives `resent_from` pointing at the original.
 - [x] 6.4 CHANGELOG entry, minor version bump, tag, `git ship`.
 - [ ] 6.5 Archive this change (`openspec archive add-delivery-dispatch`) so
       `openspec/specs/delivery-dispatch/` becomes the living spec.

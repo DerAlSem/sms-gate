@@ -4,7 +4,7 @@
 
 **Decided: only once the gateway has stopped trying.**
 
-`delivery-dispatch` pushes `failed` to the owning app, and GM+ turns that into an SMS to
+`delivery-dispatch` pushes `failed` to the owning app, and the calling application turns that into an SMS to
 an operator (prod id 977). If every intermediate attempt were pushed, a three-minute
 network blip would produce operator SMS for a message that goes out fine a minute later —
 strictly worse than today.

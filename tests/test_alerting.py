@@ -236,8 +236,8 @@ def test_instance_label_falls_back_to_hostname(monkeypatch):
 
 
 def test_instance_label_uses_setting(monkeypatch):
-    monkeypatch.setitem(_store._cache, "instance_name", "sms.deralsem.ru")
-    assert _instance_label() == "sms.deralsem.ru"
+    monkeypatch.setitem(_store._cache, "instance_name", "gateway.example.com")
+    assert _instance_label() == "gateway.example.com"
 
 
 def test_bounded_short_text_just_escapes():
@@ -429,11 +429,11 @@ def test_record_is_noop_without_loop():
 
 
 def test_handler_format_is_html_with_bold_title(monkeypatch):
-    monkeypatch.setitem(_store._cache, "instance_name", "sms.deralsem.ru")
+    monkeypatch.setitem(_store._cache, "instance_name", "gateway.example.com")
     n = make_notifier()
     h = TelegramAlertHandler(n)
     text = h.format_alert(make_record(name="app.modem.manager", msg="fail %d", args=(7,)))
-    assert text.startswith("<b>🔴 ERROR · sms.deralsem.ru</b>")
+    assert text.startswith("<b>🔴 ERROR · gateway.example.com</b>")
     assert "<code>app.modem.manager</code>" in text
     assert "fail 7" in text
 

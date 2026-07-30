@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Is the tunnel carrying anything?
 #
-# `systemctl is-active wg-quick@wg-burns` answers a question nobody is asking. WireGuard has
+# `systemctl is-active wg-quick@wg-edge` answers a question nobody is asking. WireGuard has
 # no connection to lose: the interface stays up whether or not the peer is there, so the unit
 # reports active over a tunnel that moves nothing. That is the shape that has cost this
 # project two changes already — a data session reporting `connected` over an interface with
@@ -16,8 +16,8 @@
 # age is a proxy for it.
 set -u
 
-PEER_ADDR="${PEER_ADDR:-10.67.67.1}"
-UNIT="${UNIT:-wg-quick@wg-burns}"
+PEER_ADDR="${PEER_ADDR:-10.10.10.1}"
+UNIT="${UNIT:-wg-quick@wg-edge}"
 ENV_FILE="${ENV_FILE:-/opt/sms-gate/.env}"
 STATE_FILE="${STATE_FILE:-/run/wg-tunnel-check.state}"
 # Two minutes of silence before touching anything. A failover is ~90s of detection plus the
@@ -29,6 +29,14 @@ ALERT_AFTER_RESTARTS="${ALERT_AFTER_RESTARTS:-2}"
 PING_TIMEOUT="${PING_TIMEOUT:-5}"
 
 log() { logger -t wg-tunnel-check "$*" 2>/dev/null || true; echo "wg-tunnel-check: $*" >&2; }
+
+# Placeholders, because this file is published. Left unset the watchdog would ping an address
+# nothing answers on, decide the tunnel is broken, and restart it every two minutes for ever —
+# the monitor becoming the outage. So it refuses instead.
+if [ "$PEER_ADDR" = "10.10.10.1" ]; then
+    log "still configured with the example peer address — set PEER_ADDR and UNIT in the unit file"
+    exit 2
+fi
 
 read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"

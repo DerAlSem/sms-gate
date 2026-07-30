@@ -2,27 +2,27 @@
 
 The backup uplink keeps the gateway able to reach the internet. It has never made the
 gateway *reachable*: the carrier puts it behind CGNAT, so no inbound connection arrives over
-it and no record can be pointed at it. When the wired link goes, `sms.deralsem.ru` stops
+it and no record can be pointed at it. When the wired link goes, `gateway.example.com` stops
 answering though the modem, the SIM and the service are all healthy — and the host stops
 being reachable over SSH too, so the outage cannot even be looked at.
 
 A tunnel dialled *outward* is the only shape that survives CGNAT. The far end is already
-paid for and already running: `mprz.ru`, which hosts the applications that call this gateway.
+paid for and already running: `edge.example.com`, which hosts the applications that call this gateway.
 
 ## What Changes
 
-- The gateway is reached through a **permanently established** tunnel to `mprz.ru`, not one
+- The gateway is reached through a **permanently established** tunnel to `edge.example.com`, not one
   raised when the wired link fails. A path used only during an outage is a path first
   exercised by the incident it exists to survive — this project has already been bitten
   twice by exactly that shape, and building a third instance deliberately would be hard to
   defend.
-- **BREAKING for operations:** `sms.deralsem.ru` resolves to `mprz.ru` instead of the house.
+- **BREAKING for operations:** `gateway.example.com` resolves to `edge.example.com` instead of the house.
   TLS is terminated there by a server block of its own, and traffic reaches the gateway over
   the tunnel.
 - Failover stops involving DNS. The record never moves, so there is no propagation window in
   either direction and no state machine that has to be right twice. Which uplink carries the
   tunnel stays the routing question the wwan watchdog already answers.
-- **The tunnel joins two endpoints, not two networks.** Reaching the house from `mprz.ru` —
+- **The tunnel joins two endpoints, not two networks.** Reaching the house from `edge.example.com` —
   the busiest and most exposed machine in the estate — must be limited to the one service
   being published, or an availability change quietly becomes a route into the home network.
 - **Supervision is on carrying traffic, not on the process being alive.** "Alive and moving
@@ -63,19 +63,19 @@ paid for and already running: `mprz.ru`, which hosts the applications that call 
 
 ## Impact
 
-- `deploy/` — a unit for the tunnel, its key material, and the server block on `mprz.ru`.
-- DNS for `sms.deralsem.ru` — target changes; nothing changes at failover thereafter.
-- `mprz.ru` — a new server block and a certificate. It carries every other service in the
+- `deploy/` — a unit for the tunnel, its key material, and the server block on `edge.example.com`.
+- DNS for `gateway.example.com` — target changes; nothing changes at failover thereafter.
+- `edge.example.com` — a new server block and a certificate. It carries every other service in the
   estate, so the change must be additive and contained rather than a rework of its entry
   point.
-- Home nginx — the `sms.deralsem.ru` block eventually binds to the tunnel address instead of
-  the public one. `nas.deralsem.ru` shares that nginx and its renewal, and must be untouched.
+- Home nginx — the `gateway.example.com` block eventually binds to the tunnel address instead of
+  the public one. `neighbour.example.com` shares that nginx and its renewal, and must be untouched.
 - No application code is expected to change, except binding uvicorn to the loopback and
   recording where each request came from.
 
 ## Depends on
 
-- `mprz.ru` being available to host the far end, which it is, and which is also where GM+
+- `edge.example.com` being available to host the far end, which it is, and which is also where the caller
   runs — so its loss takes the gateway's callers with it. That shared fate is what makes it
   acceptable as the single way in: an unreachable gateway with no one left to call it is not
   an outage anyone experiences.

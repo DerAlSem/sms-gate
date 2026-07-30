@@ -73,7 +73,7 @@
       delivered` in 3s, `GET /sms/982` reporting the additive `attempts: 1`. The retry
       path itself is untested on live hardware — it needs a real transient failure.
       Rollback is `send_retry_backoff` = empty.
-- [x] 7.5 GM+ told (2026-07-24). Their operator-notification channel is being
+- [x] 7.5 the calling application told (2026-07-24). Their operator-notification channel is being
       reconsidered separately: an in-panel notification centre rather than an SMS to the
       admin, since the admin works in the panel and an SMS carries no read/resolve state.
 

@@ -20,7 +20,7 @@ falls through three separate places:
 
 2. **The sender burns messages instead of holding them.** A transport failure reaches
    `sender_loop`'s broad `except Exception` and the message is failed at `attempt=0` with
-   `internal error while sending` — no retry, and a `failed` webhook that makes GM+ SMS an
+   `internal error while sending` — no retry, and a `failed` webhook that makes the calling application SMS an
    operator (U1). The entire retry ladder built in 0.9.0–0.11.0 is bypassed because the
    exception is of the wrong class. Nothing was lost this time only because no send was
    attempted during the outage.

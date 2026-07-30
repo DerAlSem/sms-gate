@@ -98,7 +98,7 @@ fixed in `1c95cad`.
 
 ## Resolved decisions
 
-1. **`failed` is pushed only after the budget is exhausted** (D1) — GM+ reacts to
+1. **`failed` is pushed only after the budget is exhausted** (D1) — the calling application reacts to
    `failed` by SMS-ing an operator, so a transient failure must not reach it.
 2. **A retry keeps the message id** (D2).
 3. **Four attempts across roughly eight minutes** (D3).

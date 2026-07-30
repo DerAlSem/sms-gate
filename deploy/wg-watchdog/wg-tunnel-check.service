@@ -1,10 +1,14 @@
 [Unit]
-Description=Is the tunnel to mprz.ru carrying anything
-After=wg-quick@wg-burns.service
-Wants=wg-quick@wg-burns.service
+Description=Is the tunnel to edge.example.com carrying anything
+After=wg-quick@wg-edge.service
+Wants=wg-quick@wg-edge.service
 
 [Service]
 Type=oneshot
+# The peer address and the unit name live on the machine, not here: this file is published,
+# and a default pointing nowhere would make the watchdog restart a healthy tunnel every two
+# minutes — the monitor becoming the outage. The script refuses to run until they are set.
+EnvironmentFile=/etc/wg-tunnel-check.env
 ExecStart=/usr/local/sbin/wg-tunnel-check
 # It restarts the tunnel itself and alerts on its own judgement, because the difference
 # between one silent check and a fault a restart cannot fix is not something OnFailure= can

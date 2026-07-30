@@ -1,14 +1,14 @@
 ## Context
 
-`sms.deralsem.ru` resolves to the house today, unproxied. Requests land on nginx, which
+`gateway.example.com` resolves to the house today, unproxied. Requests land on nginx, which
 terminates TLS with a Let's Encrypt certificate and proxies to `127.0.0.1:30080`. That nginx
-also serves `nas.deralsem.ru` and shares one renewal timer with it.
+also serves `neighbour.example.com` and shares one renewal timer with it.
 
 The backup uplink works and fails over on route metrics after roughly ninety seconds. It is
 behind CGNAT, which is why none of this is solvable by pointing a record anywhere.
 
-`mprz.ru` is a machine on a static address, running nginx, in the same estate — and it hosts
-GM+, the application that calls this gateway.
+`edge.example.com` is a machine on a static address, running nginx, in the same estate — and it hosts
+the application that calls this gateway.
 
 The first draft of this change was written around a third-party tunnel; `critique.md` records
 what two critic passes found in it. Most of those findings are about the shape rather than
@@ -48,7 +48,7 @@ deliberately, would be indefensible.
 Always-on inverts it. The tunnel is exercised by every request, and failover becomes invisible
 at the addressing layer because there is nothing to switch.
 
-### The far end is `mprz.ru`, and the reason is not cost
+### The far end is `edge.example.com`, and the reason is not cost
 
 The first draft chose a third-party edge and recorded the price as "the provider terminates
 TLS and sees PIN codes". The critique found that accounting to be wrong, and wrong in the
@@ -61,28 +61,26 @@ the same estate, the trade disappears rather than being weighed — nothing is s
 who was not already trusted with all of it.
 
 The availability argument then inverts too. A far end that could fail independently would be a
-new single point of failure; this one hosts GM+, so its loss takes the gateway's callers with
+new single point of failure; this one hosts the calling application, so its loss takes the gateway's callers with
 it. An unreachable gateway that no one is left to call is not an outage anyone experiences.
 That shared fate, not the saving, is what makes one way in acceptable.
 
 ### Terminating TLS at the far end, not passing it through
 
 Passing TLS through — forwarding raw TCP into the tunnel and terminating at home — is
-attractive on two counts: nothing, not even `mprz.ru`, sees plaintext, and the certificate
+attractive on two counts: nothing, not even `edge.example.com`, sees plaintext, and the certificate
 story does not change at all, because the existing challenge keeps arriving through the tunnel
 and the home nginx keeps its own configuration.
 
-It is rejected because of what `mprz.ru` is, and the files say so rather than the guess that
-first said it. Its nginx serves eleven hostnames — `gmplus.ru` and its subdomains,
-`propevay.ru`, `romantsova.store`, `turbo01.ru`, three under `mprz.ru` itself — every one of
-them on `listen 443 ssl` in the HTTP context, and there is no stream section at all. Passing
+It is rejected because of what `edge.example.com` is, and the files say so rather than the guess that
+first said it. Its nginx serves a dozen hostnames, every one of them on `listen 443 ssl` in the HTTP context, and there is no stream section at all. Passing
 through by hostname would mean converting that single listener into a stream with SNI
 inspection: touching the entry point of every service in the estate for the sake of one. The
 blast radius of a mistake there is everything, and what is gained is protection from a machine
 we already trust with all our own secrets.
 
 Terminating at the far end is instead a new server block beside the existing ones: additive,
-contained, unremarkable to its neighbours, and a certificate it already issues eleven of.
+contained, unremarkable to its neighbours, and a certificate of the kind it already issues for all of them.
 
 The second half of the original argument turned out to be false and is withdrawn. It said
 renewal at the house would break because the tunnel takes port 80. Renewal there is validated
@@ -103,7 +101,7 @@ rollback is one action, because the new path has proven nothing yet. Afterwards 
 and the claim becomes true.
 
 Retirement is done by binding the hostname's server block to the tunnel address rather than by
-closing ports, because `nas.deralsem.ru` shares that server and needs both ports to keep
+closing ports, because `neighbour.example.com` shares that server and needs both ports to keep
 working. Firewalling would have taken the neighbour down with it.
 
 ### Rollback is a deliberate action, not an emergency remedy
@@ -148,7 +146,7 @@ moment that threshold is tuned.
   carrying traffic rather than liveness, and a check from outside the failure domain is part
   of the change rather than a follow-up. Without the external check, the inside-out
   observability answers a question nobody is asking.
-- **`mprz.ru` becomes load-bearing for this gateway.** → Accepted on shared fate: it hosts the
+- **`edge.example.com` becomes load-bearing for this gateway.** → Accepted on shared fate: it hosts the
   caller. This would not be acceptable if the callers lived elsewhere.
 - **The direct path rots while it is still the rollback.** → Its serving ability is checked
   during the soak rather than assumed, and it is retired afterwards, so the rot has a
@@ -156,7 +154,7 @@ moment that threshold is tuned.
 - **Alerting shares a throttle across senders.** → A flapping uplink and a flapping connector
   would suppress each other exactly when both are failing. Covered by a requirement rather
   than left to be discovered during the first real outage.
-- **Touching `mprz.ru` risks every other service on it.** → The change there is additive: one
+- **Touching `edge.example.com` risks every other service on it.** → The change there is additive: one
   server block, one certificate, no rework of its entry point. This is the reason TLS
   terminates there rather than passing through.
 
@@ -174,13 +172,13 @@ moment that threshold is tuned.
 ## Settled during reconnaissance
 
 - **The certificates are separate, not one covering several.** Read off the wire:
-  `sms.deralsem.ru` is its own certificate with itself as its only subject alternative name.
+  `gateway.example.com` is its own certificate with itself as its only subject alternative name.
   One broken renewal cannot take another with it, so the renewal migration needs no special
   care on that account.
 - **Renewal on the home server is already failing, and was before this change existed.**
-  `nas.deralsem.ru` resolves to a third machine now, so its challenge is delivered somewhere
+  `neighbour.example.com` resolves to a third machine now, so its challenge is delivered somewhere
   else and the timer exits in failure on every run. This is not ours, but it is in our way:
-  moving `sms.deralsem.ru` produces exactly the same symptom, and a new failure hiding behind
+  moving `gateway.example.com` produces exactly the same symptom, and a new failure hiding behind
   an existing one is a failure nobody investigates. It is cleared first so that afterwards a
   red timer means something.
 - **Renewal at the house is validated over DNS, not over an inbound challenge.** The premise
@@ -189,16 +187,16 @@ moment that threshold is tuned.
   change: the credential enabling it can edit the zone that decides where this hostname
   points, so a compromise of the house is already a hijack of the name. That is worth its own
   look at the token's scope, and it is not this change's to fix.
-- **`mprz.ru` already runs WireGuard, and only one of its two interfaces is ours.** `wg0` is
-  how the bots reach Telegram — `mprz.ru` is a *client* on it and its allowed addresses are
-  Telegram's ranges through a foreign endpoint. `wg-burns` is the estate's own, with
-  `mprz.ru` as its server and one peer already on it, confined to a single address. The house
+- **`edge.example.com` already runs WireGuard, and only one of its two interfaces is ours.** `wg0` is
+  how the bots reach Telegram — `edge.example.com` is a *client* on it and its allowed addresses are
+  Telegram's ranges through a foreign endpoint. `wg-edge` is the estate's own, with
+  `edge.example.com` as its server and one peer already on it, confined to a single address. The house
   joins there, which means the constraint this change requires is the convention that
   interface already follows rather than something imposed on it.
 
   The constraint that does *not* come free is on the house's side. A default route into the
   tunnel — the value most guides supply — would send everything the house emits through
-  `mprz.ru`, including the gateway's outbound webhooks and the probes by which the uplink
+  `edge.example.com`, including the gateway's outbound webhooks and the probes by which the uplink
   watchdog decides whether the wired link is alive. Failover would then be reacting to the
   tunnel's health instead of the link's, which inverts the relationship this change is built
   on: the tunnel is supposed to ride whichever uplink is chosen, never to choose it.

@@ -8,7 +8,7 @@ application sent each one (`POST /sms/send` authenticates with a per-app token, 
 data model; only the transport is missing.
 
 Message statuses in the gateway are `pending → sent → delivered | failed | expired`,
-which is already the enum GM+ asked for — no translation layer is needed.
+which is already the enum the calling application asked for — no translation layer is needed.
 
 Multipart messages are assembled below this layer: `message_parts` tracks per-part
 delivery and `messages` only turns `delivered` when *every* part is
@@ -83,7 +83,7 @@ receiver can discard an update older than the one it already applied.
 *Alternative considered:* serialize per message with a queue, guaranteeing order on the
 wire. Rejected: it makes `delivered` wait out the failing `sent`'s full retry ladder,
 which defeats the point of a webhook that exists to be faster than polling.
-*Note:* GM+ says its receiver is order-insensitive today. "Order-insensitive" is usually
+*Note:* the calling application says its receiver is order-insensitive today. "Order-insensitive" is usually
 implemented as "last update wins", which is exactly the case where `sent` overwrites
 `delivered` — hence the field rather than trust.
 

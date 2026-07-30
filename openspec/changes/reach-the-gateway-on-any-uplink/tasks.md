@@ -1,14 +1,14 @@
 ## 1. Establish what the cutover depends on
 
 - [x] 1.1 Confirm nothing that calls this gateway pins an address rather than a hostname — a precondition, not a check to run afterwards, since discovering it later means discovering it broken
-      <!-- GM+ calls the API by hostname. The move is transparent to it. -->
+      <!-- The caller calls the API by hostname. The move is transparent to it. -->
 - [x] 1.2 Establish whether the hostnames on the home server share one certificate or hold separate ones; this decides whether one broken renewal can take a neighbour with it
-      <!-- Separate. Read off the wire: sms.deralsem.ru is CN=sms.deralsem.ru with itself as
+      <!-- Separate. Read off the wire: gateway.example.com is CN=gateway.example.com with itself as
            its only SAN, valid to 2026-09-14. No shared lineage, so one broken renewal cannot
            take the other with it. -->
-- [x] 1.3 Record what `mprz.ru` already serves on port 443, so the addition can be confirmed additive rather than assumed to be
-      <!-- Eleven hostnames: gmplus.ru + demo/parking, propevay.ru, romantsova.store,
-           turbo01.ru, hrm/signage/turbo.mprz.ru, mprz.ru, and a default. All `listen 443 ssl`
+- [x] 1.3 Record what `edge.example.com` already serves on port 443, so the addition can be confirmed additive rather than assumed to be
+      <!-- Eleven hostnames: app.example.net + demo/parking, another.example.net, third.example.net,
+           fourth.example.net, hrm/signage/turbo.edge.example.com, edge.example.com, and a default. All `listen 443 ssl`
            in the HTTP context, certificates issued there already. -->
 - [x] 1.9 Establish how the house validates its certificate, before assuming the tunnel breaks it
       <!-- `authenticator = dns-cloudflare`. Validated over DNS, never over an inbound
@@ -18,24 +18,24 @@
            Separate, pre-existing, not ours: the credential that enables this can edit the zone
            that decides where the hostname points. -->
 - [x] 1.10 Clear the renewal failure that predates this change, so that a red timer afterwards means something
-      <!-- `nas.deralsem.ru` resolves elsewhere now; its renewal config is disabled, a dry run
+      <!-- `neighbour.example.com` resolves elsewhere now; its renewal config is disabled, a dry run
            passes for the remaining hostname, and the unit's failed state is cleared. -->
 - [x] 1.4 Note that nothing in the gateway reads `X-Real-IP`, `X-Forwarded-For` or the client address — verified during review, so the header rename is not a migration; what is missing is recording the address at all, which is task 5
-- [x] 1.6 Establish what the existing WireGuard on `mprz.ru` already carries — so the house is
+- [x] 1.6 Establish what the existing WireGuard on `edge.example.com` already carries — so the house is
       added without colliding with an addressing plan this change did not write
       <!-- `wg0` is not a hub of ours: mprz is a *client* on it, and its allowed ips are
            Telegram's ranges (149.154.160.0/20, 91.108.4.0/22) via a foreign endpoint — it is
            how the bots reach Telegram. Not to be touched.
-           `wg-burns` is ours, mprz is the server at 10.67.67.1/24, one peer at 10.67.67.2/32.
+           `wg-edge` is ours, mprz is the server at 10.10.10.1/24, one peer at 10.10.10.2/32.
            The house joins there as a second peer. -->
 - [x] 1.8 The house's own `AllowedIPs` must name only the far end, not a default route. The
-      usual `0.0.0.0/0` would send everything the house emits through `mprz.ru`, including the
+      usual `0.0.0.0/0` would send everything the house emits through `edge.example.com`, including the
       gateway's outbound webhooks and the probes the uplink watchdog uses to decide whether
       the wired link is alive — which would make failover a decision about the tunnel rather
       than about the link. The far end's side already follows the convention this needs, with
       its existing peer confined to a single address
-      <!-- Done: `AllowedIPs = 10.67.67.1/32`, verified in the running interface. -->
-- [x] 1.7 Check whether `mprz.ru` routes by SNI already; the decision to terminate TLS rather
+      <!-- Done: `AllowedIPs = 10.10.10.1/32`, verified in the running interface. -->
+- [x] 1.7 Check whether `edge.example.com` routes by SNI already; the decision to terminate TLS rather
       than pass it through was argued from its port 443 being ordinary HTTP, and that argument
       should rest on the file rather than on the listener
       <!-- It does not — there is no stream section at all. The earlier reading came from the
@@ -43,11 +43,11 @@
 
 ## 2. The tunnel, constrained at both ends
 
-- [x] 2.1 Bring up the tunnel between the house and `mprz.ru`
-      <!-- The house joins the estate's existing hub as a second peer on 10.67.67.3/32, added
+- [x] 2.1 Bring up the tunnel between the house and `edge.example.com`
+      <!-- The house joins the estate's existing hub as a second peer on 10.10.10.3/32, added
            live with `wg set` so the peer already on it kept its session. Its own AllowedIPs
            name only the far end, never a default route. -->
-- [x] 2.2 Constrain what each end may reach to the published service only, and verify from `mprz.ru` that nothing else on the home network answers — the difference between a published service and a joined network is one line of configuration
+- [x] 2.2 Constrain what each end may reach to the published service only, and verify from `edge.example.com` that nothing else on the home network answers — the difference between a published service and a joined network is one line of configuration
       <!-- `AllowedIPs` alone did nothing for this: it constrains routing, not access, and the
            tunnel simply gives the host another address on which everything bound to 0.0.0.0
            answers. Twenty-odd services did, including file sharing and the gateway's own port.
@@ -142,9 +142,9 @@
 
 ## 6. Serving the hostname from the far end
 
-- [x] 6.1 Add a server block for the hostname on `mprz.ru`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
+- [x] 6.1 Add a server block for the hostname on `edge.example.com`, beside the existing ones rather than reworking its entry point, proxying over the tunnel to the home nginx
 - [x] 6.0 Serve the hostname on the house's tunnel address, so the far end has something to proxy to
-      <!-- A block bound to 10.67.67.3:80 specifically, not to every address: the existing
+      <!-- A block bound to 10.10.10.3:80 specifically, not to every address: the existing
            block redirects to https, and a wildcard listener would have caught the proxied
            request and answered it with a redirect loop. nginx prefers the more specific
            address, so the two coexist.
@@ -156,13 +156,13 @@
       record moves, when the challenge can reach it. Do not assume the challenge works: verify
       it, since plain HTTP by hostname is demonstrably filtered on at least one path into this
       machine — routine on a machine already renewing eleven, but its renewal is shared with them, so a break here is a break for somebody else's site
-- [x] 6.3 Verify the neighbouring services on `mprz.ru` are unaffected
+- [x] 6.3 Verify the neighbouring services on `edge.example.com` are unaffected
 - [x] 6.4 Verify through the tunnel, with the public record still pointing at the house — the new path proven before it carries anything
 
 ## 7. Administrative access
 
 - [x] 7.1 Publish administrative access over the tunnel
-- [x] 7.2 Restrict it before publishing it, not after — an unrestricted route on a machine that hosts everything is open for as long as the gap between the two steps
+- [x] 7.2 Restrict it before publishing it, not after — an unrestricted route on a machine that hosts everything else is open for as long as the gap between the two steps
       <!-- Not honoured in that order, and worth recording rather than glossing: the port was
            opened first and passwords refused about half an hour later, so the gap this task
            warns about is exactly what happened. The risk was low — the far end is ours and
@@ -178,15 +178,15 @@
 ## 8. Cutover
 
 - [x] 8.1 Confirm the direct path can still serve, and write down the rollback action, before the record moves
-- [x] 8.2 Point `sms.deralsem.ru` at `mprz.ru`
+- [x] 8.2 Point `gateway.example.com` at `edge.example.com`
 - [x] 8.3 Verify from outside that the gateway itself serves the response
-- [x] 8.4 Verify by a real call from GM+, not only by hand — a hand-made request does not reproduce what the caller does
+- [x] 8.4 Verify by a real call from the real caller, not only by hand — a hand-made request does not reproduce what the caller does
       <!-- Closed by ordinary traffic rather than a staged test. The access log shows the call
-           arriving from the far end's own public address: GM+ resolves the hostname to the
+           arriving from the far end's own public address: the caller resolves the hostname to the
            machine it runs on and connects to it, so the hairpin works — the one thing about
            this topology that could only be answered by the real caller.
            It also surfaced a second consumer nobody had mentioned, on a different address, so
-           the cutover moved more than GM+. -->
+           the cutover moved more than the one caller anybody had in mind. -->
 - [x] 8.5 Verify the gateway's outbound duties are unaffected: delivery webhooks still arrive
       <!-- A message went sent → delivered with both webhooks accepted by the caller. The
            gateway's outbound path never depended on how it is reached, and now that is
@@ -223,7 +223,7 @@
 - [ ] 10.2 Re-check that the direct path can still serve, so rollback stays real for as long as it is claimed
 - [ ] 10.3 Bind the hostname's home server block to the tunnel address, so it is no longer served over the public one
 - [ ] 10.4 Verify a request to the house's address with this hostname is no longer served
-- [ ] 10.5 Verify `nas.deralsem.ru` still serves and still renews — retirement by binding rather than by firewall exists precisely so this holds
+- [ ] 10.5 Verify `neighbour.example.com` still serves and still renews — retirement by binding rather than by firewall exists precisely so this holds
 - [ ] 10.6 Record that rollback is now two steps, and that it is not an emergency remedy
 
 ## 11. Ship

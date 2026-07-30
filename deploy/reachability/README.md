@@ -1,7 +1,7 @@
 # Reachability check
 
 Answers the one question nothing else on this system answers: **can anyone actually reach
-`sms.deralsem.ru`?**
+`gateway.example.com`?**
 
 Everything else that watches the gateway runs on the gateway. That tells you whether the
 process is up, and it is silent about whether the name resolves, whether the certificate is
@@ -11,10 +11,10 @@ matters.
 
 ## Where it runs, and why that is not a contradiction
 
-On `mprz.ru` — the machine that publishes the hostname. That is inside the failure domain
-for precisely one case: `mprz.ru` itself dying.
+On `edge.example.com` — the machine that publishes the hostname. That is inside the failure domain
+for precisely one case: `edge.example.com` itself dying.
 
-That case is not a silent failure. It takes the eleven sites that machine hosts with it,
+That case is not a silent failure. It takes every other site that machine hosts with it,
 including the application that calls this gateway — so there is nobody left to be affected,
 and no way for it to go unnoticed. Every other failure introduced by moving the hostname
 here is visible from here: a dead tunnel, a dead gateway, a wrong DNS record, an expired
@@ -36,7 +36,13 @@ application produces.
 ```sh
 sudo install -m 755 reachability-check.sh /usr/local/sbin/reachability-check
 sudo install -m 644 reachability-check.service reachability-check.timer /etc/systemd/system/
-printf 'ALERT_BOT_TOKEN=...\nALERT_CHAT_ID=...\n' | sudo tee /etc/reachability-check.env >/dev/null
+sudo tee /etc/reachability-check.env >/dev/null <<'ENVEOF'
+# What to check. Required — the script refuses to run on the published example value.
+URL=https://YOUR-GATEWAY-HOST/docs
+HOSTNAME_CHECKED=YOUR-GATEWAY-HOST
+ALERT_BOT_TOKEN=...
+ALERT_CHAT_ID=...
+ENVEOF
 sudo chmod 600 /etc/reachability-check.env
 sudo systemctl daemon-reload
 sudo systemctl enable --now reachability-check.timer
@@ -46,7 +52,7 @@ Verify by hand before trusting it:
 
 ```sh
 sudo /usr/local/sbin/reachability-check ; echo "exit=$?"
-URL=https://sms.deralsem.ru/nope MARKER=nothing sudo -E /usr/local/sbin/reachability-check ; echo "exit=$?"
+URL=https://gateway.example.com/nope MARKER=nothing sudo -E /usr/local/sbin/reachability-check ; echo "exit=$?"
 ```
 
 The first should exit `0` silently. The second should exit `1` and log a failure — run it

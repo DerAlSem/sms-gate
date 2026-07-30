@@ -34,7 +34,7 @@ SETTINGS_SPEC: list[Spec] = [
     # began is the worst shape available.
     Spec("alert_relay_base", "str", "", "Alerting", False,
          "Base URL of a relay that can reach Telegram when this host cannot "
-         "(e.g. http://10.67.67.1:8443). Tried first; the direct route is the fallback"),
+         "(e.g. a relay on the far end of a tunnel). Tried first; the direct route is the fallback"),
     Spec("notify_system_errors", "bool", True, "Alerting", False,
          "Send ERROR-level log records (crashes, exceptions) to Telegram"),
     Spec("notify_send_errors", "bool", False, "Alerting", False,

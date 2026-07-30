@@ -1,12 +1,12 @@
 # Tunnel watchdog
 
-Runs on the house. Answers whether the tunnel to `mprz.ru` is **carrying anything**, which is
+Runs on the house. Answers whether the tunnel to `edge.example.com` is **carrying anything**, which is
 a different question from whether its unit is active.
 
 ## Why liveness is the wrong test
 
 WireGuard has no connection to lose. The interface stays up whether or not the peer is there,
-so `systemctl is-active wg-quick@wg-burns` reports `active` over a tunnel that moves nothing.
+so `systemctl is-active wg-quick@wg-edge` reports `active` over a tunnel that moves nothing.
 
 That is the shape this project has already paid for twice — a data session reporting
 `connected` over an interface with no address, and a background loop that terminated with its
@@ -42,6 +42,11 @@ forces a fresh handshake from the new source address.
 ```sh
 sudo install -m 755 wg-tunnel-check.sh /usr/local/sbin/wg-tunnel-check
 sudo install -m 644 wg-tunnel-check.service wg-tunnel-check.timer /etc/systemd/system/
+sudo tee /etc/wg-tunnel-check.env >/dev/null <<'ENVEOF'
+# Required — the script refuses to run on the published example address.
+PEER_ADDR=YOUR.TUNNEL.FAR.END
+UNIT=wg-quick@YOUR-INTERFACE
+ENVEOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now wg-tunnel-check.timer
 ```
@@ -53,7 +58,7 @@ Verify:
 
 ```sh
 sudo /usr/local/sbin/wg-tunnel-check ; echo "exit=$?"          # silent, 0
-sudo env PEER_ADDR=10.67.67.99 UNIT=true /usr/local/sbin/wg-tunnel-check ; echo "exit=$?"
+sudo env PEER_ADDR=10.10.10.99 UNIT=true /usr/local/sbin/wg-tunnel-check ; echo "exit=$?"
 ```
 
 The second points at an address that cannot answer and at `true` instead of the real unit, so

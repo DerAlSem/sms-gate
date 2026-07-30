@@ -1,5 +1,5 @@
 [Unit]
-Description=Check that sms.deralsem.ru answers, every minute
+Description=Check that gateway.example.com answers, every minute
 
 [Timer]
 # Late enough after boot that the network and the machine's own tunnels are up; a probe that
