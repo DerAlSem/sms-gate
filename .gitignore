@@ -6,6 +6,9 @@ data/sms.db*
 # `_hard_reset_on_cooldown()`, so a timestamp committed from someone's test run and then
 # deployed would silently suppress a legitimate hard reset for half an hour.
 data/modem_hard_reset_at
+# Undelivered alerts waiting for a route out. Runtime state; a spool committed from one
+# machine would replay its alerts on another.
+data/alert_spool.jsonl
 .env
 venv/
 *.mo

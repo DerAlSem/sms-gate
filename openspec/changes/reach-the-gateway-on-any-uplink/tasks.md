@@ -83,7 +83,18 @@
            an incident. The filter came back with the interface, which is why it hangs off the
            interface rather than off boot. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
-- [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
+- [x] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
+      <!-- Solved at the root rather than as retention alone, once the owner pointed out that
+           the far end already reaches Telegram: the house now sends through a relay there,
+           over the tunnel, which works on either uplink. Retention stays as the second half,
+           for the case where neither route answers — held on disk, bounded, flushed when a
+           route returns, and stamped with its age, because a late alert read without one is
+           read as current and sends the operator after a fault that has ended.
+           Retention also fixed a defect it uncovered: a non-200 used to return `None`, which
+           the caller reads as "delivered, no id", so a rejected token lost every alert in
+           silence.
+           The shared throttle cannot collide: the two watchdogs keep their own state and do
+           not go through the unit notifier. -->
       <!-- No longer a theoretical gap. Observed on 2026-07-30: the failover alert could not be
            delivered — `api.telegram.org` is unreachable over the mobile carrier, and the
            uplink script said so in its own log — while the restore alert eight minutes later

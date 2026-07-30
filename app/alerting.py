@@ -8,7 +8,18 @@ import time
 
 import httpx
 
-_TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
+_TELEGRAM_DIRECT = "https://api.telegram.org"
+_SEND_PATH = "/bot{token}/sendMessage"
+# Kept for the tests and callers that formatted the whole URL themselves.
+_TELEGRAM_API = _TELEGRAM_DIRECT + _SEND_PATH
+
+# Where an alert waits when no route could carry it. The loudest failure is the one that
+# silences its own reporting, and this is the only reason the operator hears about it at all.
+# Bounded, because a spool that grows without limit is a second fault: on a long outage the
+# useful lines are the first few and the last few, not two thousand in between.
+_SPOOL_MAX = 40
+# Delivered late is worth having; delivered a week late is noise wearing an alert's clothes.
+_SPOOL_MAX_AGE = 24 * 3600
 # WARNING-level only from this module's own failure paths: the alert handler listens at
 # ERROR, so logging an alerting failure at ERROR would re-enter it and recurse.
 logger = logging.getLogger(__name__)
@@ -59,10 +70,14 @@ class TelegramNotifier:
         time_fn=time.monotonic,
         queue_maxsize: int = 100,
         start_worker: bool = True,
+        relay_base: str = "",
+        spool_path=None,
     ) -> None:
         self._token = token
         self._chat_id = chat_id
         self._dedup_window = dedup_window
+        self._relay_base = relay_base
+        self._spool_path = spool_path
         self._time = time_fn
         self._last_sent: dict = {}
         self._suppressed: dict = {}
@@ -147,6 +162,10 @@ class TelegramNotifier:
             message_id = self._sender(text)
             if phone is not None:
                 self._record(message_id, phone)
+            # A route exists again, so whatever was held while none did can go now. After
+            # the live send, not before: flushing first would spend the working route on
+            # backlog and risk losing the message that proved it works.
+            self._flush_spool()
         except Exception as e:
             # WARNING, never ERROR: the alert handler listens at ERROR and would
             # re-enter this path and recurse. Silence here is what made an alerting
@@ -155,9 +174,66 @@ class TelegramNotifier:
             logger.warning(
                 "Could not deliver a notification (%d so far): %s", self.undelivered, e
             )
+            self._spool(text)
         finally:
             self._queue.task_done()
         return True
+
+    # ------------------------------------------------------------------ spool
+    # The loudest failure is the one that silences its own reporting: with no route out,
+    # the alert saying so takes the route that is gone. Holding it on disk is what turns
+    # "you were never told" into "you were told late".
+
+    def _spool(self, text: str) -> None:
+        if self._spool_path is None:
+            return
+        try:
+            import json
+            from pathlib import Path
+            p = Path(self._spool_path)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            lines = p.read_text(encoding="utf-8").splitlines() if p.exists() else []
+            lines.append(json.dumps({"at": time.time(), "text": text}, ensure_ascii=False))
+            # Oldest go first when it overflows. On a long outage the opening lines are the
+            # ones that say what happened; the middle is repetition.
+            if len(lines) > _SPOOL_MAX:
+                lines = lines[-_SPOOL_MAX:]
+            p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except Exception as e:
+            logger.warning("Could not hold an undelivered notification: %s", e)
+
+    def _flush_spool(self) -> None:
+        if self._spool_path is None:
+            return
+        try:
+            import json
+            from pathlib import Path
+            p = Path(self._spool_path)
+            if not p.exists():
+                return
+            held = [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+            p.unlink()
+        except Exception as e:
+            logger.warning("Could not read held notifications: %s", e)
+            return
+        now = time.time()
+        for line in held:
+            try:
+                item = json.loads(line)
+                age = now - float(item.get("at", now))
+                if age > _SPOOL_MAX_AGE:
+                    continue
+                # Stamped with its age, because an alert read without one is read as now —
+                # and an alert about a failover that ended hours ago, presented as current,
+                # sends the operator looking for a fault that is not there.
+                self._sender(
+                    f"(held {int(age // 60)} min — no route out at the time)\n{item['text']}"
+                )
+            except Exception as e:
+                logger.warning("Could not deliver a held notification: %s", e)
+                # Put the rest back rather than losing them to one bad send.
+                self._spool(item.get("text", line) if isinstance(item, dict) else line)
+                return
 
     def _worker(self) -> None:
         while self._drain_once():
@@ -175,17 +251,47 @@ class TelegramNotifier:
         except queue.Full:
             pass
 
-    def _http_send(self, text: str):
-        url = _TELEGRAM_API.format(token=self._token)
+    def _bases(self) -> list:
+        """Routes to try, in order. The relay first, deliberately.
+
+        The relay is the route that works during the outage this exists for, so it is the one
+        that must be exercised by ordinary traffic — a path used only when things are broken
+        is first tested by the breakage. The direct route stays as the fallback, which also
+        covers the relay itself being down.
+        """
+        bases = []
+        relay = (self._relay_base or "").strip().rstrip("/")
+        if relay:
+            bases.append(relay)
+        bases.append(_TELEGRAM_DIRECT)
+        return bases
+
+    def _post_to(self, base: str, text: str):
+        url = base + _SEND_PATH.format(token=self._token)
         with httpx.Client(timeout=10.0) as client:
             resp = client.post(url, json={"chat_id": self._chat_id, "text": text,
                                           "parse_mode": "HTML"})
         if resp.status_code != 200:
-            return None
+            raise RuntimeError(f"{base} answered {resp.status_code}")
         try:
             return resp.json()["result"]["message_id"]
         except (ValueError, KeyError, TypeError):
             return None
+
+    def _http_send(self, text: str):
+        """Deliver by the first route that works, raising only if none did.
+
+        A non-200 from one route is not a delivery failure while another route is untried —
+        the previous version returned `None` on any bad status, which reads as "delivered, no
+        id" to the caller and loses the message silently.
+        """
+        errors = []
+        for base in self._bases():
+            try:
+                return self._post_to(base, text)
+            except Exception as e:
+                errors.append(f"{base}: {type(e).__name__}: {e}")
+        raise RuntimeError("; ".join(errors))
 
 
 class TelegramAlertHandler(logging.Handler):
@@ -234,10 +340,16 @@ def setup_telegram_alerts(source) -> "TelegramAlertHandler | None":
         _notifier = None
         _handler = None
         return None
+    from app.config import settings as _settings
+    from pathlib import Path as _Path
     _notifier = TelegramNotifier(
         source.alert_bot_token,
         source.alert_chat_id,
         dedup_window=source.alert_dedup_window,
+        relay_base=getattr(source, "alert_relay_base", "") or "",
+        # Beside the database, like the other runtime state, and gitignored for the same
+        # reason: a spool committed from someone's machine would deliver their alerts here.
+        spool_path=_Path(_settings.db_path).parent / "alert_spool.jsonl",
     )
     if getattr(source, "notify_system_errors", True):
         _handler = TelegramAlertHandler(_notifier)

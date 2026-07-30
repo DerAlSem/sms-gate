@@ -18,6 +18,12 @@ read_env() {
 }
 TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
 CHAT="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
+# A route that can reach Telegram when this host cannot. The mobile carrier the backup
+# uplink runs on cannot, so during a wired outage every alert raised here is lost — which is
+# how the failover alert of 2026-07-29 never arrived while the restore alert did. Tried
+# first, so it is the route ordinary traffic exercises rather than one first tested by the
+# outage; the direct route stays as the fallback.
+RELAY="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
 
 # No creds -> nothing to do.
 [ -n "$TOKEN" ] && [ -n "$CHAT" ] || exit 0
@@ -59,9 +65,19 @@ if [ -f "$THROTTLE_FILE" ]; then
 fi
 
 touch "$THROTTLE_FILE" 2>/dev/null || true
-curl -sS --max-time 15 \
-    "https://api.telegram.org/bot${TOKEN}/sendMessage" \
-    --data-urlencode "chat_id=${CHAT}" \
-    --data-urlencode "text=${TEXT}" \
-    >/dev/null 2>&1 || true
+
+send_via() {
+    curl -sS --max-time 15 "${1}/bot${TOKEN}/sendMessage" \
+        --data-urlencode "chat_id=${CHAT}" \
+        --data-urlencode "text=${TEXT}" >/dev/null 2>&1
+}
+
+# Both routes are attempted before giving up. `|| true` on a single route made a lost alert
+# indistinguishable from a delivered one, which is the failure this script exists to prevent
+# applied to the script itself.
+if [ -n "$RELAY" ] && send_via "${RELAY%/}"; then
+    exit 0
+fi
+send_via "https://api.telegram.org" || logger -t notify-telegram \
+    "no route delivered the alert for ${UNIT}" 2>/dev/null || true
 exit 0

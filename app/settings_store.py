@@ -27,6 +27,14 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("alert_bot_token", "str", "", "Alerting", True, "Telegram bot token (blank = disabled)"),
     Spec("alert_chat_id", "str", "", "Alerting", False, "Telegram chat id"),
     Spec("alert_dedup_window", "float", 300.0, "Alerting", False, "Suppress identical alerts for N seconds"),
+    # Tried before the direct route, not instead of it. The mobile carrier the backup uplink
+    # runs on cannot reach Telegram at all, so during a wired outage every alert raised on
+    # this host is lost — observed on 2026-07-29, where the failover alert never arrived and
+    # the restore alert eight minutes later did. Being told an outage ended and never that it
+    # began is the worst shape available.
+    Spec("alert_relay_base", "str", "", "Alerting", False,
+         "Base URL of a relay that can reach Telegram when this host cannot "
+         "(e.g. http://10.67.67.1:8443). Tried first; the direct route is the fallback"),
     Spec("notify_system_errors", "bool", True, "Alerting", False,
          "Send ERROR-level log records (crashes, exceptions) to Telegram"),
     Spec("notify_send_errors", "bool", False, "Alerting", False,

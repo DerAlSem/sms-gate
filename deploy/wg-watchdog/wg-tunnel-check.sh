@@ -34,12 +34,22 @@ read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
 CHAT="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
 
+# A route that can reach Telegram when this host cannot — which is the case whenever the
+# backup uplink is carrying, since the carrier blocks it. Without this, the watchdog that
+# exists to report an unreachable tunnel is silent in exactly the situation it was built for.
+RELAY="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
+
 notify() {
-    local text="$1"
+    local text="$1" base
     [ -n "$TOKEN" ] && [ -n "$CHAT" ] || { log "no alert credentials; would have said: $text"; return 0; }
-    curl -sS --max-time 15 "https://api.telegram.org/bot${TOKEN}/sendMessage" \
-        --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${text}" >/dev/null 2>&1 \
-        || log "could not deliver the alert"
+    for base in "${RELAY%/}" "https://api.telegram.org"; do
+        [ -n "$base" ] || continue
+        if curl -sS --max-time 15 "${base}/bot${TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${text}" >/dev/null 2>&1; then
+            return 0
+        fi
+    done
+    log "no route delivered the alert"
 }
 
 fails=0

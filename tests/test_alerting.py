@@ -1,6 +1,8 @@
 import logging
 import queue
 import sys
+
+import pytest
 from types import SimpleNamespace
 
 from app.alerting import (
@@ -280,7 +282,10 @@ def test_http_send_sets_parse_mode_and_returns_message_id(monkeypatch):
     assert mid == 42
 
 
-def test_http_send_returns_none_on_error_status(monkeypatch):
+def test_http_send_raises_when_no_route_delivered(monkeypatch):
+    """It used to return None on any bad status, which the caller reads as "delivered, no
+    id" — so a rejected token lost every alert in silence. Not delivered and delivered
+    without an id are different facts, and only one of them may be quiet."""
     class FakeResp:
         status_code = 400
         def json(self):
@@ -295,7 +300,114 @@ def test_http_send_returns_none_on_error_status(monkeypatch):
     import app.alerting as alerting
     monkeypatch.setattr(alerting.httpx, "Client", lambda *a, **k: FakeClient())
     n = make_notifier()
-    assert n._http_send("hi") is None
+    with pytest.raises(Exception):
+        n._http_send("hi")
+
+
+# --- the relay, and the alert that could not get out ---
+
+def _routes(monkeypatch, outcomes):
+    """Fake httpx where `outcomes[base_prefix]` decides what each route does."""
+    tried = []
+
+    class FakeResp:
+        def __init__(self, code): self.status_code = code
+        def json(self): return {"ok": True, "result": {"message_id": 7}}
+
+    class FakeClient:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def post(self, url, json=None):
+            for prefix, outcome in outcomes.items():
+                if url.startswith(prefix):
+                    tried.append(prefix)
+                    if isinstance(outcome, Exception):
+                        raise outcome
+                    return FakeResp(outcome)
+            raise AssertionError(f"unexpected route: {url}")
+
+    import app.alerting as alerting
+    monkeypatch.setattr(alerting.httpx, "Client", lambda *a, **k: FakeClient())
+    return tried
+
+
+def test_the_relay_is_tried_before_the_direct_route(monkeypatch):
+    """Deliberately first: the relay is the route that works during the outage this exists
+    for, so it has to be the one ordinary traffic exercises. A path used only when things
+    are broken is first tested by the breakage."""
+    tried = _routes(monkeypatch, {"http://relay": 200, "https://api.telegram.org": 200})
+    n = make_notifier(relay_base="http://relay")
+    assert n._http_send("hi") == 7
+    assert tried == ["http://relay"]
+
+
+def test_the_direct_route_covers_the_relay_being_down(monkeypatch):
+    tried = _routes(monkeypatch, {"http://relay": RuntimeError("no"),
+                                  "https://api.telegram.org": 200})
+    n = make_notifier(relay_base="http://relay")
+    assert n._http_send("hi") == 7
+    assert tried == ["http://relay", "https://api.telegram.org"]
+
+
+def test_an_alert_with_no_route_out_is_held(tmp_path, monkeypatch):
+    """The loudest failure silences its own reporting: with nothing able to carry it, the
+    alert saying so takes the route that is gone."""
+    spool = tmp_path / "spool.jsonl"
+
+    def dead(text):
+        raise RuntimeError("no route")
+
+    n = make_notifier(sender=dead, spool_path=spool)
+    n.maybe_send("the wire is down")
+    n._drain_once()
+
+    assert spool.exists()
+    assert "the wire is down" in spool.read_text(encoding="utf-8")
+    assert n.undelivered == 1
+
+
+def test_what_was_held_goes_out_once_a_route_returns(tmp_path):
+    spool = tmp_path / "spool.jsonl"
+    sent = []
+    state = {"up": False}
+
+    def flaky(text):
+        if not state["up"]:
+            raise RuntimeError("no route")
+        sent.append(text)
+        return 1
+
+    n = make_notifier(sender=flaky, spool_path=spool)
+    n.maybe_send("the wire is down")
+    n._drain_once()
+    assert sent == []
+
+    state["up"] = True
+    n.maybe_send("the wire is back")
+    n._drain_once()
+
+    assert any("the wire is back" in s for s in sent)
+    held = [s for s in sent if "the wire is down" in s]
+    assert held, f"the held alert never went out: {sent}"
+    assert "held" in held[0], "a late alert read without its age is read as now"
+    assert not spool.exists(), "the spool must be cleared once it has gone out"
+
+
+def test_the_spool_is_bounded(tmp_path):
+    import app.alerting as alerting
+    spool = tmp_path / "spool.jsonl"
+
+    def dead(text):
+        raise RuntimeError("no route")
+
+    n = make_notifier(sender=dead, spool_path=spool)
+    for i in range(alerting._SPOOL_MAX + 15):
+        n.maybe_send(f"line {i}")
+        n._drain_once()
+
+    lines = [l for l in spool.read_text(encoding="utf-8").splitlines() if l.strip()]
+    assert len(lines) == alerting._SPOOL_MAX
+    assert "line 0" not in lines[0], "the oldest should go first when it overflows"
 
 
 def test_maybe_send_with_phone_enqueues_tuple():

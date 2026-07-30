@@ -10,7 +10,8 @@ def test_spec_has_all_soft_keys():
     keys = {s.key for s in SETTINGS_SPEC}
     assert keys == {
         "voxlink_enabled", "voxlink_url", "voxlink_timeout", "voxlink_cache_ttl_days",
-        "alert_bot_token", "alert_chat_id", "alert_dedup_window", "instance_name",
+        "alert_bot_token", "alert_chat_id", "alert_dedup_window", "alert_relay_base",
+        "instance_name",
         "notify_system_errors", "notify_send_errors",
         "notify_delivery_errors", "notify_inbound", "notify_dispatch_errors",
         "telegram_replies_enabled",
