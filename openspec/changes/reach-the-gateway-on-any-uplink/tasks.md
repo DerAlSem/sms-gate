@@ -94,18 +94,22 @@
 
 ## 5. The gateway records where requests come from
 
-- [ ] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
+- [x] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
       <!-- Through uvicorn's own proxy-header handling rather than a middleware of ours: the
            access log is the audit trail either way, and code written to duplicate it would
            only be more to test. Trusted from the loopback alone, which the bind below makes
            the only place it can arrive from. -->
-- [ ] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
-      <!-- Written, tested, committed and deployed — and not in effect, for a reason worth
-           more than the task: `/etc/systemd/system/sms-gate.service` is a *copy*, not a link
-           to the file in the repository. A deploy updates the repository on the box and
-           leaves the unit systemd actually reads untouched, so `daemon-reload` faithfully
-           re-read the old one. Left unchecked until it is running. -->
-- [ ] 5.3 Test: a request through the tunnel is logged with the caller's address, not the tunnel's
+- [x] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
+      <!-- In effect now, after the installed unit was replaced by hand. It is a *copy*, not a
+           link to the file in the repository, so a deploy left the unit systemd reads
+           untouched and `daemon-reload` faithfully re-read the old one. The same zero-effect
+           deploy happened three times in one session — this unit, and both nginx blocks. See
+           11.0: three misses in a day is a property of the process, not inattention. -->
+- [x] 5.3 Test: a request through the tunnel is logged with the caller's address, not the tunnel's
+      <!-- Caught the first version being wrong: the house appended to the header rather than
+           passing it through, and uvicorn reads the last entry, so the log carried the far
+           end's tunnel address — identical on every request. A log that looks populated and
+           says nothing is worse than an empty one, because nobody goes looking. -->
 
 ## 6. Serving the hostname from the far end
 
@@ -140,9 +144,9 @@
 
 ## 8. Cutover
 
-- [ ] 8.1 Confirm the direct path can still serve, and write down the rollback action, before the record moves
-- [ ] 8.2 Point `sms.deralsem.ru` at `mprz.ru`
-- [ ] 8.3 Verify from outside that the gateway itself serves the response
+- [x] 8.1 Confirm the direct path can still serve, and write down the rollback action, before the record moves
+- [x] 8.2 Point `sms.deralsem.ru` at `mprz.ru`
+- [x] 8.3 Verify from outside that the gateway itself serves the response
 - [ ] 8.4 Verify by a real call from GM+, not only by hand — a hand-made request does not reproduce what the caller does
 - [ ] 8.5 Verify the gateway's outbound duties are unaffected: delivery webhooks still arrive
 - [ ] 8.6 Confirm the home server's own renewal still works for its remaining hostnames
