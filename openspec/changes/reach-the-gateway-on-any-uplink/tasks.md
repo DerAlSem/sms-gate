@@ -94,7 +94,12 @@
            the caller reads as "delivered, no id", so a rejected token lost every alert in
            silence.
            The shared throttle cannot collide: the two watchdogs keep their own state and do
-           not go through the unit notifier. -->
+           not go through the unit notifier.
+           Verified end to end: the alert appeared in the far end's access log arriving from
+           the house and in the operator's chat one second apart. That same log line was the
+           finding — the Bot API carries the token in the path, so every alert was writing a
+           live credential into a web server log on the busiest machine, to survive there in
+           rotation and in backups. Logging is off for that block now. -->
       <!-- No longer a theoretical gap. Observed on 2026-07-30: the failover alert could not be
            delivered — `api.telegram.org` is unreachable over the mobile carrier, and the
            uplink script said so in its own log — while the restore alert eight minutes later
