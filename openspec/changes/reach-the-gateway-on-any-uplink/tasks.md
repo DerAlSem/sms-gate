@@ -94,12 +94,16 @@
 
 ## 5. The gateway records where requests come from
 
-- [x] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
+- [ ] 5.1 Record the originating address from the forwarding header on every request; the connection the gateway sees is the tunnel's
       <!-- Through uvicorn's own proxy-header handling rather than a middleware of ours: the
            access log is the audit trail either way, and code written to duplicate it would
            only be more to test. Trusted from the loopback alone, which the bind below makes
            the only place it can arrive from. -->
-- [x] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
+- [ ] 5.2 Bind uvicorn to the loopback — it listens on all interfaces today, so the application is reachable from the home network regardless of any of this
+      <!-- Written, tested, committed and deployed — and NOT in effect: the unit file changed
+           but systemd was never reloaded, so the running process still holds the old
+           ExecStart. Left unchecked on purpose. A deployed change that has not been activated
+           is exactly the false green this capability exists to prevent. -->
 - [ ] 5.3 Test: a request through the tunnel is logged with the caller's address, not the tunnel's
 
 ## 6. Serving the hostname from the far end
