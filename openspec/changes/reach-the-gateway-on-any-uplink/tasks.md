@@ -75,10 +75,13 @@
            from a fault a restart cannot fix. The bound therefore lives in the probe, which
            does know: restart after two silent checks, speak after two fruitless restarts. -->
 - [x] 3.3 Record why the bound is the number it is, as its neighbour does
-- [ ] 3.4 Test: drop the path once — it is re-established and no alert is raised
-      <!-- Exercised against a substitute address and unit, which proves the state machine but
-           not the restart. Owed live, and deliberately deferred to the live session in group 9
-           rather than dropping the network twice. -->
+- [x] 3.4 Test: drop the path once — it is re-established and no alert is raised
+      <!-- Done live, and it handed over the premise of the requirement as evidence: with the
+           interface deleted, `systemctl is-active` still answered `active`. Supervision on
+           liveness would have seen health. Two silent checks, one restart, carrying again
+           after two minutes, and nothing said to the operator — a repair that worked is not
+           an incident. The filter came back with the interface, which is why it hangs off the
+           interface rather than off boot. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
 - [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
       <!-- No longer a theoretical gap. Observed on 2026-07-30: the failover alert could not be
