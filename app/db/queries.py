@@ -52,7 +52,7 @@ async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
     async with db.execute(
         """
         SELECT id, phone, text, status, created_at, sent_at, delivered_at, error,
-               attempts
+               attempts, delivery_inferred
         FROM messages
         WHERE id = ? AND app_id = ?
         """,
@@ -441,6 +441,51 @@ async def daily_counts(days: int) -> list[aiosqlite.Row]:
         (f"-{days}",),
     ) as cursor:
         return list(await cursor.fetchall())
+
+
+async def complete_partly_reported_messages(timeout_seconds: int) -> list[int]:
+    """Complete timed-out messages the network partly confirmed; return the ids affected.
+
+    Runs *before* the expiry sweep, and that ordering is the whole mechanism: this moves
+    them out of `sent`, so the sweep below never sees them and needs no change of its own.
+
+    The condition is deliberately narrow. At least one part reported delivered, and no part
+    reported failed. A message with nothing confirmed is not touched — silence about
+    everything is absence of evidence, and turning it into a delivery would trade a wrong
+    `expired` for a wrong `delivered`, which is the worse direction. A message with a failed
+    part is not touched either; that path already has an answer and is not a timeout
+    question.
+
+    What justifies it is the asymmetry between the two silences. A network that reported one
+    segment took the message and handed part of it over. Saying nothing about the rest is
+    what this network does about the rest — a failure it would report. So the timeout is
+    evidence that the remaining reports are not coming, not evidence that the message was
+    not delivered.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        UPDATE messages
+        SET status = 'delivered',
+            delivered_at = CURRENT_TIMESTAMP,
+            delivery_inferred = 1
+        WHERE status = 'sent'
+          AND sent_at < datetime('now', ? || ' seconds')
+          AND EXISTS (
+                SELECT 1 FROM message_parts p
+                WHERE p.message_id = messages.id AND p.status = 'delivered'
+          )
+          AND NOT EXISTS (
+                SELECT 1 FROM message_parts p
+                WHERE p.message_id = messages.id AND p.status = 'failed'
+          )
+        RETURNING id
+        """,
+        (f"-{timeout_seconds}",),
+    ) as cursor:
+        ids = [row[0] for row in await cursor.fetchall()]
+    await db.commit()
+    return ids
 
 
 async def expire_stale_messages(timeout_seconds: int) -> list[int]:

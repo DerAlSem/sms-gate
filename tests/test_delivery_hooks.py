@@ -32,6 +32,10 @@ KNOWN_STATUS_WRITERS = {
     "set_message_delivered": "delivered",
     "set_message_delivery_failed": "failed",
     "expire_stale_messages": "expired",
+    # Completes what the network partly confirmed, rather than expiring it. It writes
+    # `delivered`, and its call site notifies that and nothing else: the application is owed
+    # the conclusion, not the reasoning that reached it.
+    "complete_partly_reported_messages": "delivered",
 }
 
 

@@ -3,6 +3,29 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Messages were reported as failures while arriving whole.** The gateway called a
+  multipart message delivered only once every part had been reported, and one network on
+  this SIM reports the final segment and no more. Those messages never completed, sat until
+  the timeout, and were swept to `expired` — a status the owning application was then told
+  over the webhook. Twenty-two of them in the existing record: twenty-two deliveries
+  reported as failures.
+  On that operator, single-part messages were 180 delivered and 0 expired while two-part
+  messages were 1 delivered and 21 expired; every other operator was unremarkable. Four test
+  messages to a consenting recipient reproduced it exactly, and the recipient confirmed all
+  four arrived.
+  At the timeout — and only there — a message with at least one part confirmed and none
+  failed is now completed as `delivered` rather than expired. Until the timeout fires there
+  is no evidence the remaining reports are not coming, so the ordinary path is untouched. A
+  message with nothing confirmed still expires: silence about everything is absence of
+  evidence, and inventing a delivery from it would trade a wrong `expired` for a wrong
+  `delivered`.
+  The conclusion is recorded as one. A delivery the gateway worked out is distinguishable
+  from a delivery the network reported, because the first question on a complaint is which
+  of the two you are reading.
+
 ## [0.14.0] - 2026-07-30
 
 The gateway stops depending on which uplink is alive.

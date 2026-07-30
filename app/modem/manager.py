@@ -1005,11 +1005,27 @@ class ModemManager:
         logger.info("Expire loop started")
         while True:
             await asyncio.sleep(60)
-            # Bulk writer: one sweep can expire many messages, and each owes its app a
-            # notification — hence the returned ids rather than a bare UPDATE.
-            for message_id in await queries.expire_stale_messages(
-                store.delivery_timeout_seconds
-            ):
-                spawn_delivery_dispatch(message_id, "expired")
+            await self._expire_step()
+
+    async def _expire_step(self) -> None:
+        """One sweep. Split out of the loop above so it can be driven by a test — the
+        ordering inside it is the whole mechanism and deserves to be pinned."""
+        timeout = store.delivery_timeout_seconds
+        # First, and the order is the mechanism: a message the network partly confirmed is
+        # completed here, which takes it out of `sent`, so the sweep below never sees it.
+        # Twenty-one such messages had been reported to their owner as failures while
+        # arriving whole.
+        #
+        # The application is told the conclusion, not the reasoning: one `delivered`, and no
+        # `expired` before it. Sending both would be honest about the sequence and harmful
+        # in practice — a receiver that acts on `expired` has already acted by the time a
+        # correction lands, and in this estate a failure webhook is answered by messaging a
+        # person.
+        for message_id in await queries.complete_partly_reported_messages(timeout):
+            spawn_delivery_dispatch(message_id, "delivered")
+        # Bulk writer: one sweep can expire many messages, and each owes its app a
+        # notification — hence the returned ids rather than a bare UPDATE.
+        for message_id in await queries.expire_stale_messages(timeout):
+            spawn_delivery_dispatch(message_id, "expired")
 
 

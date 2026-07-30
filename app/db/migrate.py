@@ -148,6 +148,17 @@ async def run_migrations() -> None:
     # reading `error != null` see failures that never happened.
     await _add_column_if_missing(db, "messages", "last_attempt_error", "TEXT")
 
+    # Whether `delivered` was reported or concluded. Some networks send a status report for
+    # one segment of a multipart message and none for the others, so waiting for every part
+    # means waiting for something that never comes — and the expiry sweep then reports a
+    # delivery as a failure. The sweep completes those, and this records that it did.
+    #
+    # Kept apart from the status rather than folded into it: an operator meeting "the
+    # customer says they never got it" needs to know whether the network said so or the
+    # gateway worked it out. A record that cannot answer that is confidently wrong, which is
+    # worse than the `expired` it replaces — nobody trusted `expired`.
+    await _add_column_if_missing(db, "messages", "delivery_inferred", "INTEGER NOT NULL DEFAULT 0")
+
     await db.execute(
         """
         INSERT OR IGNORE INTO apps (id, token, description, is_active)
