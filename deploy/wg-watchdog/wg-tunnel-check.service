@@ -1,0 +1,11 @@
+[Unit]
+Description=Is the tunnel to mprz.ru carrying anything
+After=wg-quick@wg-burns.service
+Wants=wg-quick@wg-burns.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wg-tunnel-check
+# It restarts the tunnel itself and alerts on its own judgement, because the difference
+# between one silent check and a fault a restart cannot fix is not something OnFailure= can
+# tell. A non-zero exit is the honest report of a silent tunnel, not a reason to shout.

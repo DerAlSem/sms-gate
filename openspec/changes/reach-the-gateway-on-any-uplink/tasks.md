@@ -67,18 +67,30 @@
 
 ## 3. Supervision that tests traffic, and an alert that can fire
 
-- [ ] 3.1 Supervise on the path being established, not on the process being alive — the failure that has cost this project two changes is "alive and moving nothing"
-- [ ] 3.2 Give the unit an explicit restart bound and an `OnFailure=` handler following the pattern already in `deploy/sms-gate.service`; without a bound the unit restarts for ever, never enters failure, and the alert never fires
-- [ ] 3.3 Record why the bound is the number it is, as its neighbour does
+- [x] 3.1 Supervise on the path being established, not on the process being alive — the failure that has cost this project two changes is "alive and moving nothing"
+- [x] 3.2 Give the unit an explicit restart bound and an `OnFailure=` handler following the pattern already in `deploy/sms-gate.service`; without a bound the unit restarts for ever, never enters failure, and the alert never fires
+      <!-- Solved, but not by that pattern, and the departure is deliberate. `OnFailure=` fires
+           on a unit entering failure, which a timer-driven probe never does — it exits
+           non-zero once per silent check and systemd has no way to tell a two-minute failover
+           from a fault a restart cannot fix. The bound therefore lives in the probe, which
+           does know: restart after two silent checks, speak after two fruitless restarts. -->
+- [x] 3.3 Record why the bound is the number it is, as its neighbour does
 - [ ] 3.4 Test: drop the path once — it is re-established and no alert is raised
-- [ ] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
+      <!-- Exercised against a substitute address and unit, which proves the state machine but
+           not the restart. Owed live: take the interface down and watch the watchdog put it
+           back without saying anything. -->
+- [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
 - [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
 
 ## 4. Watching from outside the failure domain
 
-- [ ] 4.1 Add a check of the public hostname from outside the house that asserts the gateway served the response, not merely that the name answered
-- [ ] 4.2 Route its alert somewhere that does not depend on the gateway being reachable
-- [ ] 4.3 Test: stop the far end serving the hostname while the gateway is healthy, and confirm the operator is told
+- [x] 4.1 Add a check of the public hostname from outside the house that asserts the gateway served the response, not merely that the name answered
+- [x] 4.2 Route its alert somewhere that does not depend on the gateway being reachable
+- [x] 4.3 Test: stop the far end serving the hostname while the gateway is healthy, and confirm the operator is told
+      <!-- Triggered by pointing the probe at a path the gateway does not serve rather than by
+           breaking the live front end, so what is proven is detection and delivery — one alert
+           on the third failure, none before. The branch that matters most, a 200 carrying
+           somebody else's body, was exercised separately against a neighbouring site. -->
 
 ## 5. The gateway records where requests come from
 

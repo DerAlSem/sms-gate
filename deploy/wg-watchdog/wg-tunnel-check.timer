@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the tunnel to mprz.ru every minute
+
+[Timer]
+# After the modem's own uplink watchdog has had its first pass: a probe that runs while the
+# uplink is still being chosen reports an outage it is standing in the middle of.
+OnBootSec=150
+OnUnitActiveSec=60
+AccuracySec=5
+
+[Install]
+WantedBy=timers.target
