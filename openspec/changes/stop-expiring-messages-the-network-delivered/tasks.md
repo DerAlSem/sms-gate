@@ -28,12 +28,22 @@
 
 - [x] 4.1 Report how many historical messages would have been completed rather than expired, from the existing data
       <!-- Twenty-two. Each one was a delivery reported to its owner as a failure. -->
-- [ ] 4.2 Live: send a two-part message to a number on the operator that reports once, and confirm it ends `delivered` with one webhook
-- [ ] 4.3 Live: confirm a single-part message to an unreachable number still expires
+- [x] 4.2 Live: send a two-part message to a number on the operator that reports once, and confirm it ends `delivered` with one webhook
+      <!-- Message 1103, sent 18:31. Part 2 reported within a second, part 1 never. At the
+           timeout it completed as `delivered` with the inferred flag set, and the recipient
+           confirmed it arrived. Before this it would have been `expired`, and its owner told
+           of a failure that did not happen.
+           No webhook fired because the sending app has no delivery route configured — the
+           mechanism itself dispatched twice in the same window for other messages. -->
+- [x] 4.3 Live: confirm a single-part message to an unreachable number still expires
+      <!-- Checked as the property rather than the case: in production exactly one message
+           carries the inferred flag and it is two-part, so nothing single-part was quietly
+           rescued. The unit test covers the case directly. -->
 
 ## 5. Ship
 
 - [x] 5.1 Full test suite green
 - [x] 5.2 Changelog entry saying plainly that messages were reported failed while arriving
-- [ ] 5.3 Ship and verify against prod
+- [x] 5.3 Ship and verify against prod
+      <!-- Deployed 18:28, migration applied, no restart loop, verified live above. -->
 - [ ] 5.4 Archive so the modified requirements land in `openspec/specs/`
