@@ -69,7 +69,27 @@ install_one() {
     fi
 }
 
-echo "installing units from $(git -C /opt/sms-gate rev-parse --short HEAD 2>/dev/null || echo 'unknown commit')"
+# The deployed tree is checked out from the bare repository and has no `.git` of its own, so
+# the commit has to be read from there — `git -C /opt/sms-gate` answers "not a git repository"
+# and the honest-looking "unknown commit" that produced was the very ambiguity this line
+# exists to remove. safe.directory because the installer runs as root against a tree owned by
+# the deploying account.
+BARE=/opt/sms-gate.git
+git_bare() { git -c safe.directory="$BARE" --git-dir="$BARE" "$@" 2>/dev/null; }
+
+commit=$(git_bare rev-parse --short HEAD) || commit=""
+if [ -n "$commit" ]; then
+    echo "installing units from $commit"
+    # The commit alone would still not say whether the tree *matches* it. It can fail to: a
+    # push whose checkout did not complete, or a file edited in place on the server, both
+    # leave a tree that the hash misdescribes — and being misdescribed confidently is worse
+    # than being unknown.
+    if [ -n "$(git_bare --work-tree=/opt/sms-gate status --porcelain --untracked-files=no)" ]; then
+        echo "  WARNING: the deployed tree differs from $commit — installing what is on disk" >&2
+    fi
+else
+    echo "installing units — could not read the deployed commit from $BARE" >&2
+fi
 
 install_one 644 "$SRC/sms-gate.service"                    /etc/systemd/system/sms-gate.service
 install_one 644 "$SRC/sms-gate-notify@.service"            /etc/systemd/system/sms-gate-notify@.service
