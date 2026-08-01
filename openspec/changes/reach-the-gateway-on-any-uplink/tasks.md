@@ -83,7 +83,7 @@
            an incident. The filter came back with the interface, which is why it hangs off the
            interface rather than off boot. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
-- [ ] 3.7 Write down the coupling 9.7 exposed, and decide whether to enforce it. On a cold
+- [x] 3.7 Write down the coupling 9.7 exposed, and decide whether to enforce it. On a cold
       start with the uplink already dead, the tunnel comes up only because `wg-quick` blocks
       retrying name resolution until failover switches DNS — measured at 143 seconds of
       retrying against a resolution that succeeded 10 seconds after failover. The deadline it
@@ -95,6 +95,27 @@
       watchdog and costs minutes rather than seconds. Either make the boot path not depend on
       the margin, or state the margin as a constraint that a change to either number must
       respect
+      <!-- Decided: stated as a constraint, and the margin widened rather than left as found.
+           Removing the dependency was considered and rejected on its merits, not skipped. It
+           would mean either configuring the tunnel endpoint by address — which trades this
+           risk for a worse one, since the far end's address changing would then need a
+           watchdog restart to notice — or making the backup's resolvers usable before the
+           failover, which is the actual root cause but reaches into how DNS is chosen on this
+           host and is not this change's business. Both are larger than the risk.
+           What was wrong and could be fixed: `OnBootSec=90` on the uplink watchdog guarded a
+           case the script already handles. A check that runs before the modem is ready finds
+           no gateway in state, refuses the failover, says so, and retries 30 seconds later —
+           so the delay bought nothing. Measured the same day on two restarts, the data session
+           was up one second after its unit started. Lowered to 30, which moves the earliest
+           possible failover from 150 seconds after boot to 90 and roughly doubles what the
+           tunnel's retry loop has to outlive.
+           A third number turned up during this and is now named as derived rather than
+           independent: `wg-tunnel-check.timer` carries `OnBootSec=150`, chosen to sit after
+           the uplink watchdog's first pass. Its comment already gestured at the coupling — the
+           coupling was half-written down in a file nobody would think to consult when editing
+           the other one, which is a fair description of how it stayed invisible.
+           The constraint now lives in three places that a person changing either number will
+           actually see: beside both timers, and as a requirement in the spec. -->
 - [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
       <!-- Solved at the root rather than as retention alone, once the owner pointed out that
            the far end already reaches Telegram: the house now sends through a relay there,

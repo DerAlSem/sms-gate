@@ -253,6 +253,38 @@ which is why it is named as work rather than recorded as a property.
 - **WHEN** the host restarts while traffic is on the backup uplink
 - **THEN** the inbound path is established over it
 
+### Requirement: The restart path does not rest on an undocumented margin
+
+The moment the backup uplink can first take over after a restart SHALL be stated where it is
+configured, and every other boot-time delay that assumes it SHALL be derived from it rather
+than chosen independently.
+
+On a restart with the primary uplink already dead there is no DNS: the backup's resolvers are
+activated only on failover, so nothing can resolve a name until the uplink switches. The
+tunnel is configured by hostname, and what carries it across that gap is not anything this
+project built — the tunnel tool does not fail on an unresolvable endpoint, it blocks in its
+own retry loop. Measured on 2026-08-01 it retried for 143 seconds and succeeded 10 seconds
+after the failover freed DNS.
+
+That margin is the whole of the cold-start path, and neither side knows about the other. The
+retry budget belongs to a third-party tool, is not documented, and can change with a package
+upgrade. The failover floor is the sum of two numbers in a timer that reads like a local
+tuning decision. Raise either, or meet a build that gives up sooner, and the tunnel unit fails
+instead of waiting — after which recovery falls to the tunnel watchdog and costs minutes
+rather than seconds, with the host unreachable throughout.
+
+Stating it is what can honestly be done: the dependency cannot be removed while the endpoint is
+a name and DNS waits on failover, and both of those are wanted for other reasons. What must not
+happen is that the margin is shortened by someone who had no way to know it existed.
+
+#### Scenario: The uplink's failover timing is changed
+- **WHEN** the first-check delay or the failure threshold of the uplink watchdog is changed
+- **THEN** the derived boot-time delays that assume the old figure are changed with it
+
+#### Scenario: A restart with no uplink but the backup
+- **WHEN** the host restarts with the primary uplink dead
+- **THEN** the tunnel is carrying without intervention, and without the operator having had to start it
+
 ### Requirement: The inbound path re-establishes itself when its uplink is replaced
 
 The inbound path SHALL re-establish itself when the uplink carrying it changes, and the time

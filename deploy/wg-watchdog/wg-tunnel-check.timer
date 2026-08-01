@@ -2,8 +2,11 @@
 Description=Check the tunnel every minute
 
 [Timer]
-# After the modem's own uplink watchdog has had its first pass: a probe that runs while the
-# uplink is still being chosen reports an outage it is standing in the middle of.
+# After the uplink watchdog can have finished choosing: a probe that runs while the uplink is
+# still being chosen reports an outage it is standing in the middle of. That moment is
+# OnBootSec + 2 x OnUnitActiveSec in `wwan-watchdog.timer`, which is 90 seconds — this is a
+# derived number, not an independent one, and it must stay behind that sum if either half of
+# it changes.
 OnBootSec=150
 OnUnitActiveSec=60
 AccuracySec=5

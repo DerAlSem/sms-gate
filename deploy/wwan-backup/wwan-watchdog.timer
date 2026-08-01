@@ -2,7 +2,24 @@
 Description=Run wwan watchdog every 30s
 
 [Timer]
-OnBootSec=90
+# These two numbers decide the earliest moment a failover can happen after a restart:
+# OnBootSec + (FAIL_THRESHOLD - 1) x OnUnitActiveSec, so 30 + 2 x 30 = 90 seconds. That floor
+# is not local. On a restart with the wire already dead it is also the moment DNS becomes
+# usable, because the backup's resolvers are only activated on failover — and until then
+# `wg-quick` is blocked retrying the tunnel endpoint's name. Measured 2026-08-01 with the old
+# 90: failover at 154s, the name resolved at 164s, and the tunnel survived on ten seconds of
+# margin against a retry budget that belongs to `wg` and is not documented anywhere.
+#
+# So anyone raising either number is not tuning a watchdog, they are shortening the time an
+# unrelated retry loop has to outlive. Lower them and the margin grows; raise them and the
+# tunnel starts failing to come up after a power cut. See the `wg-tunnel-check.timer`, whose
+# own OnBootSec is derived from this one.
+#
+# 90 -> 30 because the fear it guarded is handled elsewhere: a check that runs before the
+# modem is ready finds no gateway in state, refuses the failover, says so, and retries on the
+# next tick. Measured on two restarts the same day, the data session was up one second after
+# its unit started. Ninety seconds was headroom for a case the script already covers.
+OnBootSec=30
 OnUnitActiveSec=30
 AccuracySec=5
 
