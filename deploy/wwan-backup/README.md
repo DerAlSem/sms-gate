@@ -41,12 +41,23 @@ the *relay* carried it rather than the direct route, blackhole the direct one fo
 duration — the message still arriving is the whole claim:
 
 ```bash
-ip route add blackhole 149.154.160.0/20     # Telegram's ranges, the same two the
-ip route add blackhole 91.108.4.0/22        # tunnel config already names
+tg=$(getent ahosts api.telegram.org | awk '{print $1}' | head -1)
+ip route add blackhole "$tg"
 wwan-backup test-alert
-ip route del blackhole 149.154.160.0/20
-ip route del blackhole 91.108.4.0/22
+ip route del blackhole "$tg"
 ```
+
+**Blackhole what the name resolves to here, not Telegram's published ranges.** On this house
+`api.telegram.org` answers as `198.18.11.187` — a reserved RFC 2544 address, substituted by a
+bypass on the router. Blackholing `149.154.160.0/20` therefore blocks nothing and the test
+passes while proving nothing, which is exactly what happened on 2026-08-01: two alerts were
+declared "delivered by the relay, the direct route could not have carried it" when the direct
+route had been open the whole time.
+
+Both are true at once, incidentally, and either alone would sink the direct route during an
+outage: the carrier really does block Telegram — its real addresses time out over `wwan0`
+while an ordinary host answers — *and* the substituted address is a LAN-local fiction that
+means nothing once traffic leaves by the backup.
 
 Alerts go to the relay at the far end first and fall back to `api.telegram.org`. The order is
 deliberate: the carrier this uplink runs on blocks Telegram, so the direct route is dead at
