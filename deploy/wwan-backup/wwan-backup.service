@@ -9,7 +9,10 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/wwan-backup up
 ExecStop=/usr/local/sbin/wwan-backup down
-# modem after reboot may come up slower than the server
+# The modem can come up slower than the server, so a first attempt that finds no device is
+# expected rather than a fault. Measured on 2026-08-01 across two restarts: the session was up
+# one second after the unit started, both times — so the retry is headroom for a case that has
+# not yet been observed, not a delay anybody waits through.
 Restart=on-failure
 RestartSec=30
 
