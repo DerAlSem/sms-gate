@@ -166,15 +166,20 @@ Authorization: Bearer abc123def456
 
 | Path | Description |
 |------|-------------|
-| `/admin/messages` | Постраничный список всех сообщений с фильтрами по статусу и номеру |
-| `/admin/blacklist` | Автоматически наполняемый список плохих номеров с ручной разблокировкой |
-| `/admin/stats` | Подсчёты по статусам + разбивка за 14 дней |
+| `/admin/messages` | Вкладка «СМС»: исходящие и входящие одним потоком за выбранный период, с фильтрами по номеру, статусу и направлению. Строка раскрывается в переписку с этим номером — там же ответ, переотправка, удаление и чёрный список |
+| `/admin/inbound`, `/admin/dialogs`, `/admin/dialogs/{phone}` | Редиректы на вкладку «СМС» (были отдельными вкладками) |
+| `/admin/blacklist` | Список плохих номеров: автоматический и ручной, с разблокировкой |
+| `/admin/stats` | Подсчёты по статусам и входящим за выбранный период + разбивка по часам, дням или месяцам |
 | `/admin/apps` | Управление клиентскими приложениями и их Bearer-токенами |
 | `/admin/settings` | Настройки времени выполнения (например, `phone_region` для валидации номера) |
 
 ### Blacklist policy
 
-Номер добавляется в чёрный список после **5 постоянных ошибок доставки** (TP-Status `0x40-0x5F` по GSM 03.40) **и** ноля успешных доставок. Успешная предыдущая доставка — постоянная защита: такой номер уже никогда не попадёт в чёрный список. Ручная разблокировка через админ-интерфейс полностью удаляет строку (счётчик сбрасывается).
+Номер добавляется в чёрный список автоматически — после **5 постоянных ошибок доставки** (TP-Status `0x40-0x5F` по GSM 03.40) **и** ноля успешных доставок. Успешная предыдущая доставка — постоянная защита: такой номер уже никогда не попадёт в чёрный список автоматически.
+
+Оператор может заблокировать номер вручную — прямо из переписки на вкладке «СМС». Ручная блокировка не трогает счётчик ошибок: это не ошибка доставки. Разблокировка снимает блокировку, **сохраняя** накопленную историю отказов, — иначе номер, заслуженно набравший порог, получал бы полный новый бюджет ошибок при каждой разблокировке.
+
+Блокировка действует на всех путях создания сообщений, включая ответ через Telegram.
 
 ---
 
@@ -345,12 +350,17 @@ Browser-only admin at `/admin/...`, protected by HTTP Basic auth (credentials in
 
 | Path | Description |
 |------|-------------|
-| `/admin/messages` | Paginated list of all messages with status & phone filters |
-| `/admin/blacklist` | Auto-populated bad-numbers list with manual unblock |
-| `/admin/stats` | Status counts + 14-day breakdown |
+| `/admin/messages` | The SMS tab: outbound and inbound in one stream over the selected period, filtered by number, status and direction. A row expands into the conversation with that number — reply, re-send, delete and blacklist live there |
+| `/admin/inbound`, `/admin/dialogs`, `/admin/dialogs/{phone}` | Redirects to the SMS tab (they used to be tabs of their own) |
+| `/admin/blacklist` | Bad-numbers list, automatic and manual, with unblock |
+| `/admin/stats` | Status and inbound counts for the selected period + an hourly, daily or monthly breakdown |
 | `/admin/apps` | Manage client apps and their Bearer tokens |
 | `/admin/settings` | Runtime settings (e.g. `phone_region` for phone validation) |
 
 ### Blacklist policy
 
-A phone is added to the blacklist after **5 permanent delivery failures** (TP-Status `0x40-0x5F` per GSM 03.40) **and** zero successful deliveries. Successful prior delivery is a permanent shield — that phone never gets blacklisted. Manual unblock via admin UI deletes the row entirely (counter resets).
+A phone is blacklisted automatically after **5 permanent delivery failures** (TP-Status `0x40-0x5F` per GSM 03.40) **and** zero successful deliveries. Successful prior delivery is a permanent shield — that phone is never blacklisted automatically.
+
+An operator can also block a number by hand, from its conversation on the SMS tab. A manual block leaves the failure counter alone — it is not a delivery failure. Unblocking lifts the block while **keeping** the recorded failure history; deleting the row would hand a number that earned its threshold a fresh budget of failures on every unblock.
+
+A block applies on every path that creates a message, including a reply arriving through Telegram.

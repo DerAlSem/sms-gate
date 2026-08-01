@@ -105,17 +105,23 @@ def test_resend_unknown_id_returns_404():
         _run(close_db)
 
 
-def test_resend_button_shown_only_for_failed_rows():
+def test_resend_offered_only_for_failed_messages_in_the_conversation():
+    """The action moved into the expanded conversation, so the table itself carries no
+    resend form — only the opened thread does, and only for the message that can."""
     mid = _seed_failed()
     try:
         async def add_delivered():
-            ok = await queries.create_message("gm", "+79995550022", "ok")
+            ok = await queries.create_message("gm", "+79995550011", "ok")
             await queries.set_message_delivered(ok)
-        _run(add_delivered)
+            return ok
+        delivered_id = _run(add_delivered)
 
-        html = _client().get("/admin/messages", headers=_AUTH).text
-        assert f"/admin/messages/{mid}/resend" in html
-        assert "+79995550022" in html            # the delivered row IS rendered…
-        assert html.count("/resend") == 1        # …but carries no resend form
+        collapsed = _client().get("/admin/messages", headers=_AUTH).text
+        assert "/resend" not in collapsed, "no action buttons until a row is opened"
+
+        opened = _client().get(f"/admin/messages?open=out-{mid}", headers=_AUTH).text
+        assert f"/admin/messages/{mid}/resend" in opened
+        assert f"/admin/messages/{delivered_id}/resend" not in opened
+        assert opened.count("/resend") == 1
     finally:
         _run(close_db)

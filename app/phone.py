@@ -22,6 +22,23 @@ def validate_and_normalize(phone: str, region: str, *, restrict_region: bool = T
     return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
 
 
+def is_dialable(value: str, region: str) -> bool:
+    """Whether `value` is something we could actually send to.
+
+    An inbound sender is stored as the network delivered it and need not be a number
+    at all — a service sender arrives as a name like `Tinkoff`. Offering a reply or a
+    blacklist entry for one of those would fail at send time, or write a non-number
+    into the blacklist.
+    """
+    if not value:
+        return False
+    try:
+        validate_and_normalize(value, region, restrict_region=False)
+    except ValueError:
+        return False
+    return True
+
+
 def country_choices(locale: str) -> list[tuple[str, str]]:
     """(code, "Localized Name (CODE)") for every phonenumbers region, sorted by label.
     Names are localized to `locale` (the admin UI language); unknown codes/locales

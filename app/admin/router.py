@@ -7,8 +7,9 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
+from app import periods
 from app.admin.i18n import render, resolve_locale, SUPPORTED
-from app.phone import country_choices
+from app.phone import country_choices, is_dialable
 from app.config import settings
 from app.db import queries
 from app.settings_store import store, SETTINGS_SPEC, SPEC_BY_KEY, validate_raw
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 _basic = HTTPBasic()
 
 PAGE_SIZE = 50
+DIALOG_LIMIT = 100
 
 
 def admin_auth(credentials: HTTPBasicCredentials = Depends(_basic)) -> str:
@@ -37,6 +39,68 @@ def admin_auth(credentials: HTTPBasicCredentials = Depends(_basic)) -> str:
     return credentials.username
 
 
+def same_origin(request: Request) -> None:
+    """Refuse a destructive POST that came from another site.
+
+    The console authenticates with HTTP Basic and carries no per-request token, so a
+    browser will attach cached credentials to a cross-site form post — and this
+    change introduces the first irreversible action reachable that way. A request
+    with neither header is allowed through, so curl and the tests keep working: this
+    is a cheap guard against a browser-driven post, not a CSRF token scheme.
+    """
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    if not origin:
+        return
+    ours = (request.headers.get("host") or "").split(":")[0]
+    theirs = urlparse(origin).hostname or ""
+    if ours and theirs and theirs != ours:
+        logger.warning("cross-site %s refused: origin=%s host=%s",
+                       request.url.path, theirs, ours)
+        raise HTTPException(status_code=403, detail="Cross-site request refused")
+
+
+def _view_query(
+    period: str = "",
+    phone: str = "",
+    status: str = "",
+    direction: str = "",
+    page: int = 1,
+    open: str = "",
+) -> str:
+    """The query string that reproduces the current view.
+
+    Every action redirects through this, which is what makes "return to the same
+    period, filters, page and expanded conversation" a property of the URL rather
+    than a mechanism of its own. urlencode is not optional: a number in E.164 form
+    starts with `+`, which decodes to a space.
+    """
+    params = [
+        (key, value)
+        for key, value in (
+            ("period", period if period and period != periods.DEFAULT else ""),
+            ("phone", phone),
+            ("status", status),
+            ("direction", direction),
+            ("page", str(page) if page > 1 else ""),
+            ("open", open),
+        )
+        if value
+    ]
+    return ("?" + urlencode(params)) if params else ""
+
+
+def _parse_open(key: str | None) -> tuple[str, int] | None:
+    """`out-1154` / `in-88` -> ("out", 1154). Expansion is addressed by the row, not
+    by its number: a number can hold many rows in the window, and matching on the
+    number would render its conversation under every one of them."""
+    if not key or "-" not in key:
+        return None
+    direction, _, raw_id = key.partition("-")
+    if direction not in ("in", "out") or not raw_id.isdigit():
+        return None
+    return direction, int(raw_id)
+
+
 @router.get("/")
 async def admin_root(_: str = Depends(admin_auth)) -> RedirectResponse:
     return RedirectResponse(url="/admin/messages", status_code=302)
@@ -45,38 +109,100 @@ async def admin_root(_: str = Depends(admin_auth)) -> RedirectResponse:
 @router.get("/messages")
 async def admin_messages(
     request: Request,
+    period: str | None = None,
     status: str | None = None,
     phone: str | None = None,
+    direction: str | None = None,
     page: int = 1,
+    open: str | None = None,
     _: str = Depends(admin_auth),
 ):
+    """The SMS view: both directions in one stream, one row expandable in place."""
+    period = periods.resolve(period)
+    status, direction = queries.normalize_filters(status, direction)
     page = max(page, 1)
     offset = (page - 1) * PAGE_SIZE
-    rows = await queries.list_messages(status, phone, PAGE_SIZE, offset)
-    total = await queries.count_messages(status, phone)
+
+    rows = await queries.list_thread_page(
+        period, phone, status, direction, PAGE_SIZE, offset
+    )
+    total = await queries.count_thread_page(period, phone, status, direction)
     pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+
+    # Expansion is resolved from the row the key names, and rendered under that row
+    # only — never under every row that happens to share its number.
+    open_key, dialog, dialog_total, open_phone = "", [], 0, ""
+    parsed = _parse_open(open)
+    if parsed is not None:
+        row = await queries.get_thread_row(*parsed)
+        if row is not None:
+            open_key = f"{parsed[0]}-{parsed[1]}"
+            open_phone = row["phone"]
+            dialog = await queries.dialog_for(open_phone, limit=DIALOG_LIMIT)
+            dialog_total = await queries.dialog_total(open_phone)
+
     return render(
         "messages.html",
         request,
         {
             "messages": rows,
-            "status": status or "",
+            "period": period,
+            "periods": periods.PERIODS,
+            # Built here, not in the template: this is where urlencode lives, and a
+            # `+`-prefixed number pasted into a query decodes to a space.
+            "period_links": {
+                p: "/admin/messages"
+                + _view_query(period=p, phone=phone or "", status=status,
+                              direction=direction)
+                for p in periods.PERIODS
+            },
+            "status": status,
             "phone": phone or "",
+            "direction": direction,
             "page": page,
             "pages": pages,
             "total": total,
+            "open_key": open_key,
+            "open_phone": open_phone,
+            "open_dialable": is_dialable(open_phone, store.phone_region),
+            "open_blocked": (
+                await queries.is_phone_blocked(open_phone) if open_phone else False
+            ),
+            "dialog": dialog,
+            "dialog_total": dialog_total,
+            "dialog_limit": DIALOG_LIMIT,
+            "error": request.query_params.get("error"),
             "active": "messages",
         },
     )
+
+
+def _back_to_view(
+    period: str = "",
+    phone: str = "",
+    status: str = "",
+    direction: str = "",
+    page: int = 1,
+    open: str = "",
+    error: str = "",
+) -> RedirectResponse:
+    query = _view_query(period, phone, status, direction, page, open)
+    if error:
+        joiner = "&" if query else "?"
+        query = f"{query}{joiner}error={error}"
+    return RedirectResponse(url=f"/admin/messages{query}", status_code=303)
 
 
 @router.post("/messages/{message_id}/resend")
 async def admin_message_resend(
     request: Request,
     message_id: int,
+    period: str = Form(""),
     page: int = Form(1),
     status: str = Form(""),
     phone: str = Form(""),
+    direction: str = Form(""),
+    open: str = Form(""),
     _: str = Depends(admin_auth),
 ) -> RedirectResponse:
     """Queue a fresh copy of a failed/expired message.
@@ -104,12 +230,97 @@ async def admin_message_resend(
     logger.info(
         "admin resend: source=%d new=%d phone=%s", message_id, new_id, row["phone"]
     )
+    return _back_to_view(period, phone, status, direction, page, open)
 
-    params = {k: v for k, v in (("status", status), ("phone", phone)) if v}
-    if page > 1:
-        params["page"] = str(page)
-    query = ("?" + urlencode(params)) if params else ""
-    return RedirectResponse(url=f"/admin/messages{query}", status_code=303)
+
+@router.post("/messages/reply")
+async def admin_reply(
+    request: Request,
+    to: str = Form(...),
+    # No upper bound: long texts are split into parts by the sender (UCS2 for
+    # Cyrillic, 70 chars per part), so 160 was an artificial GSM-7 single-part cap.
+    text: str = Form(..., min_length=1),
+    period: str = Form(""),
+    page: int = Form(1),
+    status: str = Form(""),
+    phone: str = Form(""),
+    direction: str = Form(""),
+    open: str = Form(""),
+    _: str = Depends(admin_auth),
+) -> RedirectResponse:
+    from app.lookup.operator import record_operator
+    from app.phone import validate_and_normalize
+
+    try:
+        to = validate_and_normalize(to, store.phone_region, restrict_region=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if await queries.is_phone_blocked(to):
+        raise HTTPException(status_code=422, detail="Number is blacklisted")
+    await record_operator(to)
+    message_id = await queries.create_message("admin", to, text)
+    await request.app.state.modem.enqueue(message_id, to, text, "admin")
+    return _back_to_view(period, phone, status, direction, page, open)
+
+
+@router.post("/messages/delete")
+async def admin_message_delete(
+    id: int = Form(...),
+    row_direction: str = Form(...),
+    period: str = Form(""),
+    page: int = Form(1),
+    status: str = Form(""),
+    phone: str = Form(""),
+    direction: str = Form(""),
+    open: str = Form(""),
+    _: str = Depends(admin_auth),
+    __: None = Depends(same_origin),
+) -> RedirectResponse:
+    """Remove a message. Irreversible — there is no soft delete, so the log line is
+    the only trace that survives."""
+    if row_direction == "in":
+        row = await queries.get_thread_row("in", id)
+        if row is None:
+            return _back_to_view(period, phone, status, direction, page, open,
+                                 error="not_found")
+        await queries.delete_inbound(id)
+        logger.info("admin delete: inbound id=%d phone=%s", id, row["phone"])
+        return _back_to_view(period, phone, status, direction, page, open)
+
+    row = await queries.get_message_any(id)
+    reason = await queries.delete_outbound(id)
+    if reason is not None:
+        return _back_to_view(period, phone, status, direction, page, open, error=reason)
+    logger.info(
+        "admin delete: outbound id=%d phone=%s text=%.40r",
+        id, row["phone"] if row else "?", row["text"] if row else "",
+    )
+    return _back_to_view(period, phone, status, direction, page, open)
+
+
+@router.post("/messages/block")
+async def admin_message_block(
+    to: str = Form(...),
+    action: str = Form(...),
+    period: str = Form(""),
+    page: int = Form(1),
+    status: str = Form(""),
+    phone: str = Form(""),
+    direction: str = Form(""),
+    open: str = Form(""),
+    _: str = Depends(admin_auth),
+    __: None = Depends(same_origin),
+) -> RedirectResponse:
+    if not is_dialable(to, store.phone_region):
+        return _back_to_view(period, phone, status, direction, page, open,
+                             error="not_dialable")
+    if action == "block":
+        await queries.block_phone(to)
+        logger.info("admin block: phone=%s", to)
+    else:
+        await queries.unblock_phone(to)
+        logger.info("admin unblock: phone=%s", to)
+    return _back_to_view(period, phone, status, direction, page, open)
 
 
 @router.get("/blacklist")
@@ -130,84 +341,34 @@ async def admin_unblock(
     return RedirectResponse(url="/admin/blacklist", status_code=303)
 
 
+# The Inbound and Dialogs tabs are gone — their content is the SMS view now. The
+# paths stay answerable because they are in bookmarks and in the deep links Telegram
+# alerts have already sent.
+
+
 @router.get("/inbound")
-async def admin_inbound(
-    request: Request,
-    phone: str | None = None,
-    page: int = 1,
-    _: str = Depends(admin_auth),
-):
-    page = max(page, 1)
-    offset = (page - 1) * PAGE_SIZE
-    rows = await queries.list_inbound(phone, PAGE_SIZE, offset)
-    total = await queries.count_inbound(phone)
-    pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-    return render(
-        "inbound.html",
-        request,
-        {
-            "rows": rows,
-            "phone": phone or "",
-            "page": page,
-            "pages": pages,
-            "total": total,
-            "active": "inbound",
-        },
-    )
-
-
-@router.post("/inbound/delete")
-async def admin_inbound_delete(
-    id: int = Form(...),
-    _: str = Depends(admin_auth),
-) -> RedirectResponse:
-    await queries.delete_inbound(id)
-    return RedirectResponse(url="/admin/inbound", status_code=303)
+async def admin_inbound(_: str = Depends(admin_auth)) -> RedirectResponse:
+    return RedirectResponse(url="/admin/messages?direction=in", status_code=303)
 
 
 @router.get("/dialogs")
-async def admin_dialogs(
-    request: Request,
-    _: str = Depends(admin_auth),
-):
-    rows = await queries.dialog_phones(limit=200)
-    return render("dialogs.html", request, {"rows": rows, "active": "dialogs"})
+async def admin_dialogs(_: str = Depends(admin_auth)) -> RedirectResponse:
+    return RedirectResponse(url="/admin/messages", status_code=303)
 
 
 @router.get("/dialogs/{phone}")
-async def admin_dialog_detail(
-    request: Request,
-    phone: str,
-    _: str = Depends(admin_auth),
-):
-    rows = await queries.dialog_for(phone)
-    return render("dialog.html", request, {"phone": phone, "rows": rows, "active": "dialogs"})
+async def admin_dialog_detail(phone: str, _: str = Depends(admin_auth)) -> RedirectResponse:
+    """A deep link names a conversation, so it lands with that conversation open.
 
-
-@router.post("/dialogs/{phone}/reply")
-async def admin_dialog_reply(
-    request: Request,
-    phone: str,
-    # No upper bound: long texts are split into parts by the sender (UCS2 for
-    # Cyrillic, 70 chars per part), so 160 was an artificial GSM-7 single-part cap.
-    text: str = Form(..., min_length=1),
-    _: str = Depends(admin_auth),
-) -> RedirectResponse:
-    from app.lookup.operator import record_operator
-    from app.phone import validate_and_normalize
-    from app.settings_store import store
-
-    try:
-        phone = validate_and_normalize(phone, store.phone_region, restrict_region=False)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if await queries.is_phone_blocked(phone):
-        raise HTTPException(status_code=422, detail="Number is blacklisted")
-    await record_operator(phone)
-    message_id = await queries.create_message("admin", phone, text)
-    modem = request.app.state.modem
-    await modem.enqueue(message_id, phone, text, "admin")
-    return RedirectResponse(url=f"/admin/dialogs/{phone}", status_code=303)
+    Over all time on purpose: 30-day bounding could land the link on an empty table
+    with nothing to expand.
+    """
+    rows = await queries.list_thread_page("all", phone, None, None, 1, 0)
+    open_key = f"{rows[0]['direction']}-{rows[0]['id']}" if rows else ""
+    return RedirectResponse(
+        url=f"/admin/messages{_view_query(period='all', phone=phone, open=open_key)}",
+        status_code=303,
+    )
 
 
 @router.get("/ranges")
@@ -233,19 +394,27 @@ async def admin_ranges_backfill(
 @router.get("/stats")
 async def admin_stats(
     request: Request,
+    period: str | None = None,
     _: str = Depends(admin_auth),
 ):
-    counts = await queries.status_counts()
-    daily = await queries.daily_counts(days=14)
-    by_day: dict[str, dict[str, int]] = {}
-    for row in daily:
-        by_day.setdefault(row["day"], {})[row["status"]] = int(row["n"])
+    period = periods.resolve(period)
+    counts = await queries.status_counts(period)
+    buckets = await queries.period_buckets(period)
+    by_bucket: dict[str, dict[str, int]] = {}
+    for row in buckets:
+        by_bucket.setdefault(row["bucket"], {})[row["status"]] = int(row["n"])
     return render(
         "stats.html",
         request,
         {
             "counts": counts,
-            "by_day": sorted(by_day.items(), reverse=True),
+            "inbound_total": await queries.inbound_count(period),
+            "by_bucket": sorted(by_bucket.items(), reverse=True),
+            "period": period,
+            "periods": periods.PERIODS,
+            "period_links": {
+                p: "/admin/stats" + _view_query(period=p) for p in periods.PERIODS
+            },
             "active": "stats",
         },
     )

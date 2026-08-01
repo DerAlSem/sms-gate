@@ -68,7 +68,7 @@ Creating a new message linked by `resent_from` SHALL remain reserved for the ope
 explicit admin resend, which is a decision taken *after* a message has finally failed.
 
 [normative · evidence: app/modem/manager.py:139-171, app/db/queries.py:108-152,
-app/admin/router.py:73-105 · conf: high · resolves U3]
+app/admin/router.py:196-233 · conf: high · resolves U3]
 
 #### Scenario: An automatic attempt follows a transient failure
 - **WHEN** the gateway re-attempts a message after a transient failure

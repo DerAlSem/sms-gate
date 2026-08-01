@@ -22,15 +22,14 @@ sms-gate/
 │   │   ├── timefmt.py          # Locale-aware time formatting helpers
 │   │   ├── templates/          # Jinja2 HTML templates
 │   │   │   ├── base.html
-│   │   │   ├── messages.html
+│   │   │   ├── messages.html    # the SMS tab: both directions + the expanded conversation
+│   │   │   ├── _period.html     # period selector, shared with stats.html
+│   │   │   ├── _view_state.html # current view as hidden fields, for every action form
 │   │   │   ├── apps.html
 │   │   │   ├── settings.html
 │   │   │   ├── blacklist.html
-│   │   │   ├── inbound.html
 │   │   │   ├── stats.html
-│   │   │   ├── ranges.html
-│   │   │   ├── dialog.html
-│   │   │   └── dialogs.html
+│   │   │   └── ranges.html
 │   │   └── translations/       # gettext catalogs
 │   │       ├── ru/LC_MESSAGES/messages.po
 │   │       └── en/LC_MESSAGES/messages.po

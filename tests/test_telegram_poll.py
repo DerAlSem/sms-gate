@@ -101,3 +101,25 @@ def test_drain_backlog_empty_returns_zero(monkeypatch):
         return []
     monkeypatch.setattr(tp, "_get_updates", fake_get_updates)
     assert asyncio.run(tp._drain_backlog("tok")) == 0
+
+
+def test_reply_to_a_blacklisted_number_is_ignored():
+    """Blocking has to mean the same thing on every path that creates a message.
+
+    This one had no check — survivable while blocking meant a trip to its own tab,
+    but it is now one click inside any conversation, so "blocked, and it replied
+    anyway" was a click away.
+    """
+    async def run():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.add_notify_ref(100, "+79991234567")
+        await queries.block_phone("+79991234567")
+        modem = FakeModem()
+        await tp._handle_update(_reply_update(1, -100123, 100, "ответ"), -100123, modem)
+        rows = await queries.list_thread_page("all", None, None, "out", 10, 0)
+        await close_db()
+        return modem.enqueued, rows
+    enqueued, rows = asyncio.run(run())
+    assert enqueued == []
+    assert rows == [], "and nothing was persisted either"

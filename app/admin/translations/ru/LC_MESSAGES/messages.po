@@ -3,17 +3,37 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-24 18:47+0300\n"
+"POT-Creation-Date: 2026-08-01 14:56+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
 "Language-Team: ru <LL@li.org>\n"
-"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && "
-"n%10<=4 && (n%100<12 || n%100>14) ? 1 : 2);\n"
+"Plural-Forms: nplurals=3; plural=(n%10==1 && n%100!=11 ? 0 : n%10>=2 && n%10<=4 && "
+"(n%100<12 || n%100>14) ? 1 : 2);\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+
+#: app/admin/templates/_period.html:7
+msgid "24 hours"
+msgstr "24 часа"
+
+#: app/admin/templates/_period.html:8
+msgid "7 days"
+msgstr "7 дней"
+
+#: app/admin/templates/_period.html:9
+msgid "30 days"
+msgstr "30 дней"
+
+#: app/admin/templates/_period.html:10
+msgid "Year"
+msgstr "Год"
+
+#: app/admin/templates/_period.html:11
+msgid "All time"
+msgstr "Всё время"
 
 #: app/admin/templates/apps.html:3
 msgid "Client apps"
@@ -76,8 +96,7 @@ msgstr "Активировать"
 msgid "Delete app"
 msgstr "Удалить приложение"
 
-#: app/admin/templates/apps.html:44 app/admin/templates/inbound.html:26
-#: app/admin/templates/inbound.html:28
+#: app/admin/templates/apps.html:44 app/admin/templates/messages.html:123
 msgid "Delete"
 msgstr "Удалить"
 
@@ -85,45 +104,36 @@ msgstr "Удалить"
 msgid "internal"
 msgstr "внутреннее"
 
-#: app/admin/templates/base.html:64 app/admin/templates/dialogs.html:8
-msgid "Outbound"
-msgstr "Исходящие"
+#: app/admin/templates/base.html:87
+msgid "SMS"
+msgstr "СМС"
 
-#: app/admin/templates/base.html:65 app/admin/templates/dialogs.html:7
-msgid "Inbound"
-msgstr "Входящие"
-
-#: app/admin/templates/base.html:66
-msgid "Dialogs"
-msgstr "Диалоги"
-
-#: app/admin/templates/base.html:67
+#: app/admin/templates/base.html:88
 msgid "Blacklist"
 msgstr "Чёрный список"
 
-#: app/admin/templates/base.html:68
+#: app/admin/templates/base.html:89
 msgid "Prefixes"
 msgstr "Префиксы"
 
-#: app/admin/templates/base.html:69
+#: app/admin/templates/base.html:90
 msgid "Statistics"
 msgstr "Статистика"
 
-#: app/admin/templates/base.html:70
+#: app/admin/templates/base.html:91
 msgid "Apps"
 msgstr "Приложения"
 
-#: app/admin/templates/base.html:71 app/admin/templates/settings.html:3
+#: app/admin/templates/base.html:92 app/admin/templates/settings.html:3
 msgid "Settings"
 msgstr "Настройки"
 
-#: app/admin/templates/base.html:72
+#: app/admin/templates/base.html:93
 msgid "Modem"
 msgstr "Модем"
 
-#: app/admin/templates/blacklist.html:6 app/admin/templates/dialogs.html:6
-#: app/admin/templates/inbound.html:4 app/admin/templates/inbound.html:12
-#: app/admin/templates/messages.html:4 app/admin/templates/messages.html:18
+#: app/admin/templates/blacklist.html:6 app/admin/templates/messages.html:27
+#: app/admin/templates/messages.html:52
 msgid "Phone"
 msgstr "Телефон"
 
@@ -155,108 +165,145 @@ msgstr "Разблокировать"
 msgid "List is empty"
 msgstr "Список пуст"
 
-#: app/admin/templates/dialog.html:4
-msgid "All dialogs"
-msgstr "Все диалоги"
+#: app/admin/templates/messages.html:14
+msgid "Still in flight — an unsent or expired message can still get a delivery report."
+msgstr "Сообщение ещё в пути: неотправленное или просроченное может получить отчёт о доставке."
 
-#: app/admin/templates/dialog.html:28
-msgid "No messages"
-msgstr "Нет сообщений"
+#: app/admin/templates/messages.html:15
+msgid "Too recent to delete: the owning application can still poll for its status."
+msgstr "Слишком свежее, чтобы удалять: приложение ещё может запросить его статус."
 
-#: app/admin/templates/dialog.html:33
-msgid "Reply"
-msgstr "Ответ"
+#: app/admin/templates/messages.html:16
+msgid "A re-send of this message is still in flight and refers back to it."
+msgstr "Переотправка этого сообщения ещё в пути и ссылается на него."
 
-#: app/admin/templates/dialog.html:34
-msgid "Send"
-msgstr "Отправить"
+#: app/admin/templates/messages.html:17
+msgid "That message is gone already."
+msgstr "Этого сообщения уже нет."
 
-#: app/admin/templates/dialogs.html:9
-msgid "Last activity"
-msgstr "Последняя активность"
+#: app/admin/templates/messages.html:18
+msgid "That sender is not a phone number."
+msgstr "Это не телефонный номер."
 
-#: app/admin/templates/dialogs.html:20
-msgid "open →"
-msgstr "открыть →"
+#: app/admin/templates/messages.html:20
+msgid "Action refused."
+msgstr "Действие отклонено."
 
-#: app/admin/templates/dialogs.html:23
-msgid "No dialogs"
-msgstr "Нет диалогов"
+#: app/admin/templates/messages.html:29
+msgid "— any status —"
+msgstr "— любой статус —"
 
-#: app/admin/templates/inbound.html:5 app/admin/templates/messages.html:11
+#: app/admin/templates/messages.html:34
 msgid "Filter"
 msgstr "Фильтр"
 
-#: app/admin/templates/inbound.html:6 app/admin/templates/messages.html:12
+#: app/admin/templates/messages.html:40
+msgid "All"
+msgstr "Все"
+
+#: app/admin/templates/messages.html:42 app/admin/templates/messages.html:63
+msgid "Outbound"
+msgstr "Исходящие"
+
+#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:63
+msgid "Inbound"
+msgstr "Входящие"
+
+#: app/admin/templates/messages.html:46
 #, python-format
 msgid "%(count)s records"
 msgstr "%(count)s записей"
 
-#: app/admin/templates/inbound.html:12 app/admin/templates/messages.html:18
-msgid "Text"
-msgstr "Текст"
-
-#: app/admin/templates/inbound.html:12
-msgid "Received"
-msgstr "Получено"
-
-#: app/admin/templates/inbound.html:21
-msgid "dialog →"
-msgstr "диалог →"
-
-#: app/admin/templates/inbound.html:33 app/admin/templates/messages.html:54
-msgid "No records"
-msgstr "Нет записей"
-
-#: app/admin/templates/inbound.html:40 app/admin/templates/messages.html:61
-msgid "‹ Back"
-msgstr "‹ Назад"
-
-#: app/admin/templates/inbound.html:42 app/admin/templates/messages.html:63
-#, python-format
-msgid "Page %(page)s of %(pages)s"
-msgstr "Стр. %(page)s из %(pages)s"
-
-#: app/admin/templates/inbound.html:44 app/admin/templates/messages.html:65
-msgid "Forward ›"
-msgstr "Вперёд ›"
-
-#: app/admin/templates/messages.html:6
-msgid "— any status —"
-msgstr "— любой статус —"
-
-#: app/admin/templates/messages.html:18 app/admin/templates/ranges.html:9
+#: app/admin/templates/messages.html:52 app/admin/templates/ranges.html:9
 msgid "Operator"
 msgstr "Оператор"
 
-#: app/admin/templates/messages.html:18
+#: app/admin/templates/messages.html:53
+msgid "Text"
+msgstr "Текст"
+
+#: app/admin/templates/messages.html:53
 msgid "Status"
 msgstr "Статус"
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:54
 msgid "Created"
 msgstr "Создано"
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:54
 msgid "Sent"
 msgstr "Отправлено"
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:55
 msgid "Delivered"
 msgstr "Доставлено"
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:55
 msgid "Error"
 msgstr "Ошибка"
 
-#: app/admin/templates/messages.html:35
+#: app/admin/templates/messages.html:80
 #, python-format
 msgid "retry %(n)s"
 msgstr "попытка %(n)s"
 
-#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:48
+#: app/admin/templates/messages.html:95
+#, python-format
+msgid "last %(shown)s of %(total)s"
+msgstr "последние %(shown)s из %(total)s"
+
+#: app/admin/templates/messages.html:98
+msgid "collapse"
+msgstr "свернуть"
+
+#: app/admin/templates/messages.html:112 app/admin/templates/messages.html:114
 msgid "Resend"
 msgstr "Повторить"
+
+#: app/admin/templates/messages.html:119
+msgid "Delete this message? This cannot be undone."
+msgstr "Удалить сообщение? Отменить будет нельзя."
+
+#: app/admin/templates/messages.html:128
+msgid "No messages in this conversation"
+msgstr "В этой переписке пока пусто"
+
+#: app/admin/templates/messages.html:139
+msgid "Reply"
+msgstr "Ответ"
+
+#: app/admin/templates/messages.html:140
+msgid "Send"
+msgstr "Отправить"
+
+#: app/admin/templates/messages.html:148
+msgid "Remove from blacklist"
+msgstr "Убрать из чёрного списка"
+
+#: app/admin/templates/messages.html:149
+msgid "Add to blacklist"
+msgstr "В чёрный список"
+
+#: app/admin/templates/messages.html:155
+msgid "This sender is not a phone number — no reply, no blacklist."
+msgstr "Отправитель — не телефонный номер: ответить и заблокировать нельзя."
+
+#: app/admin/templates/messages.html:161
+msgid "No records"
+msgstr "Нет записей"
+
+#: app/admin/templates/messages.html:168
+msgid "‹ Back"
+msgstr "‹ Назад"
+
+#: app/admin/templates/messages.html:170
+#, python-format
+msgid "Page %(page)s of %(pages)s"
+msgstr "Стр. %(page)s из %(pages)s"
+
+#: app/admin/templates/messages.html:172
+msgid "Forward ›"
+msgstr "Вперёд ›"
 
 #: app/admin/templates/modem.html:3
 msgid "Modem diagnostics"
@@ -314,19 +361,55 @@ msgstr "ошибка"
 msgid "Save"
 msgstr "Сохранить"
 
-#: app/admin/templates/stats.html:12
-msgid "Last 14 days"
-msgstr "За 14 дней"
-
-#: app/admin/templates/stats.html:16
-msgid "Day"
-msgstr "День"
+#: app/admin/templates/stats.html:14
+msgid "received"
+msgstr "входящих"
 
 #: app/admin/templates/stats.html:20
+msgid "By hour"
+msgstr "По часам"
+
+#: app/admin/templates/stats.html:21
+msgid "By day"
+msgstr "По дням"
+
+#: app/admin/templates/stats.html:22
+msgid "By month"
+msgstr "По месяцам"
+
+#: app/admin/templates/stats.html:27
+msgid "Period"
+msgstr "Период"
+
+#: app/admin/templates/stats.html:31
 msgid "Total"
 msgstr "Всего"
 
-#: app/admin/templates/stats.html:34
+#: app/admin/templates/stats.html:45
 msgid "No data"
 msgstr "Нет данных"
+
+#~ msgid "Dialogs"
+#~ msgstr "Диалоги"
+
+#~ msgid "All dialogs"
+#~ msgstr "Все диалоги"
+
+#~ msgid "No messages"
+#~ msgstr "Нет сообщений"
+
+#~ msgid "Last activity"
+#~ msgstr "Последняя активность"
+
+#~ msgid "open →"
+#~ msgstr "открыть →"
+
+#~ msgid "No dialogs"
+#~ msgstr "Нет диалогов"
+
+#~ msgid "dialog →"
+#~ msgstr "диалог →"
+
+#~ msgid "Last 14 days"
+#~ msgstr "За 14 дней"
 

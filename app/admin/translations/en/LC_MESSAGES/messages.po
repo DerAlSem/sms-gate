@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-07-24 18:47+0300\n"
+"POT-Creation-Date: 2026-08-01 14:56+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -13,6 +13,26 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+
+#: app/admin/templates/_period.html:7
+msgid "24 hours"
+msgstr ""
+
+#: app/admin/templates/_period.html:8
+msgid "7 days"
+msgstr ""
+
+#: app/admin/templates/_period.html:9
+msgid "30 days"
+msgstr ""
+
+#: app/admin/templates/_period.html:10
+msgid "Year"
+msgstr ""
+
+#: app/admin/templates/_period.html:11
+msgid "All time"
+msgstr ""
 
 #: app/admin/templates/apps.html:3
 msgid "Client apps"
@@ -75,8 +95,7 @@ msgstr ""
 msgid "Delete app"
 msgstr ""
 
-#: app/admin/templates/apps.html:44 app/admin/templates/inbound.html:26
-#: app/admin/templates/inbound.html:28
+#: app/admin/templates/apps.html:44 app/admin/templates/messages.html:123
 msgid "Delete"
 msgstr ""
 
@@ -84,45 +103,36 @@ msgstr ""
 msgid "internal"
 msgstr ""
 
-#: app/admin/templates/base.html:64 app/admin/templates/dialogs.html:8
-msgid "Outbound"
+#: app/admin/templates/base.html:87
+msgid "SMS"
 msgstr ""
 
-#: app/admin/templates/base.html:65 app/admin/templates/dialogs.html:7
-msgid "Inbound"
-msgstr ""
-
-#: app/admin/templates/base.html:66
-msgid "Dialogs"
-msgstr ""
-
-#: app/admin/templates/base.html:67
+#: app/admin/templates/base.html:88
 msgid "Blacklist"
 msgstr ""
 
-#: app/admin/templates/base.html:68
+#: app/admin/templates/base.html:89
 msgid "Prefixes"
 msgstr ""
 
-#: app/admin/templates/base.html:69
+#: app/admin/templates/base.html:90
 msgid "Statistics"
 msgstr ""
 
-#: app/admin/templates/base.html:70
+#: app/admin/templates/base.html:91
 msgid "Apps"
 msgstr ""
 
-#: app/admin/templates/base.html:71 app/admin/templates/settings.html:3
+#: app/admin/templates/base.html:92 app/admin/templates/settings.html:3
 msgid "Settings"
 msgstr ""
 
-#: app/admin/templates/base.html:72
+#: app/admin/templates/base.html:93
 msgid "Modem"
 msgstr ""
 
-#: app/admin/templates/blacklist.html:6 app/admin/templates/dialogs.html:6
-#: app/admin/templates/inbound.html:4 app/admin/templates/inbound.html:12
-#: app/admin/templates/messages.html:4 app/admin/templates/messages.html:18
+#: app/admin/templates/blacklist.html:6 app/admin/templates/messages.html:27
+#: app/admin/templates/messages.html:52
 msgid "Phone"
 msgstr ""
 
@@ -154,107 +164,144 @@ msgstr ""
 msgid "List is empty"
 msgstr ""
 
-#: app/admin/templates/dialog.html:4
-msgid "All dialogs"
+#: app/admin/templates/messages.html:14
+msgid "Still in flight — an unsent or expired message can still get a delivery report."
 msgstr ""
 
-#: app/admin/templates/dialog.html:28
-msgid "No messages"
+#: app/admin/templates/messages.html:15
+msgid "Too recent to delete: the owning application can still poll for its status."
 msgstr ""
 
-#: app/admin/templates/dialog.html:33
-msgid "Reply"
+#: app/admin/templates/messages.html:16
+msgid "A re-send of this message is still in flight and refers back to it."
 msgstr ""
 
-#: app/admin/templates/dialog.html:34
-msgid "Send"
+#: app/admin/templates/messages.html:17
+msgid "That message is gone already."
 msgstr ""
 
-#: app/admin/templates/dialogs.html:9
-msgid "Last activity"
+#: app/admin/templates/messages.html:18
+msgid "That sender is not a phone number."
 msgstr ""
 
-#: app/admin/templates/dialogs.html:20
-msgid "open →"
+#: app/admin/templates/messages.html:20
+msgid "Action refused."
 msgstr ""
 
-#: app/admin/templates/dialogs.html:23
-msgid "No dialogs"
+#: app/admin/templates/messages.html:29
+msgid "— any status —"
 msgstr ""
 
-#: app/admin/templates/inbound.html:5 app/admin/templates/messages.html:11
+#: app/admin/templates/messages.html:34
 msgid "Filter"
 msgstr ""
 
-#: app/admin/templates/inbound.html:6 app/admin/templates/messages.html:12
+#: app/admin/templates/messages.html:40
+msgid "All"
+msgstr ""
+
+#: app/admin/templates/messages.html:42 app/admin/templates/messages.html:63
+msgid "Outbound"
+msgstr ""
+
+#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:63
+msgid "Inbound"
+msgstr ""
+
+#: app/admin/templates/messages.html:46
 #, python-format
 msgid "%(count)s records"
 msgstr ""
 
-#: app/admin/templates/inbound.html:12 app/admin/templates/messages.html:18
-msgid "Text"
-msgstr ""
-
-#: app/admin/templates/inbound.html:12
-msgid "Received"
-msgstr ""
-
-#: app/admin/templates/inbound.html:21
-msgid "dialog →"
-msgstr ""
-
-#: app/admin/templates/inbound.html:33 app/admin/templates/messages.html:54
-msgid "No records"
-msgstr ""
-
-#: app/admin/templates/inbound.html:40 app/admin/templates/messages.html:61
-msgid "‹ Back"
-msgstr ""
-
-#: app/admin/templates/inbound.html:42 app/admin/templates/messages.html:63
-#, python-format
-msgid "Page %(page)s of %(pages)s"
-msgstr ""
-
-#: app/admin/templates/inbound.html:44 app/admin/templates/messages.html:65
-msgid "Forward ›"
-msgstr ""
-
-#: app/admin/templates/messages.html:6
-msgid "— any status —"
-msgstr ""
-
-#: app/admin/templates/messages.html:18 app/admin/templates/ranges.html:9
+#: app/admin/templates/messages.html:52 app/admin/templates/ranges.html:9
 msgid "Operator"
 msgstr ""
 
-#: app/admin/templates/messages.html:18
+#: app/admin/templates/messages.html:53
+msgid "Text"
+msgstr ""
+
+#: app/admin/templates/messages.html:53
 msgid "Status"
 msgstr ""
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:54
 msgid "Created"
 msgstr ""
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:54
 msgid "Sent"
 msgstr ""
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:55
 msgid "Delivered"
 msgstr ""
 
-#: app/admin/templates/messages.html:19
+#: app/admin/templates/messages.html:55
 msgid "Error"
 msgstr ""
 
-#: app/admin/templates/messages.html:35
+#: app/admin/templates/messages.html:80
 #, python-format
 msgid "retry %(n)s"
 msgstr "retry %(n)s"
 
-#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:48
+#: app/admin/templates/messages.html:95
+#, python-format
+msgid "last %(shown)s of %(total)s"
+msgstr ""
+
+#: app/admin/templates/messages.html:98
+msgid "collapse"
+msgstr ""
+
+#: app/admin/templates/messages.html:112 app/admin/templates/messages.html:114
 msgid "Resend"
+msgstr ""
+
+#: app/admin/templates/messages.html:119
+msgid "Delete this message? This cannot be undone."
+msgstr ""
+
+#: app/admin/templates/messages.html:128
+msgid "No messages in this conversation"
+msgstr ""
+
+#: app/admin/templates/messages.html:139
+msgid "Reply"
+msgstr ""
+
+#: app/admin/templates/messages.html:140
+msgid "Send"
+msgstr ""
+
+#: app/admin/templates/messages.html:148
+msgid "Remove from blacklist"
+msgstr ""
+
+#: app/admin/templates/messages.html:149
+msgid "Add to blacklist"
+msgstr ""
+
+#: app/admin/templates/messages.html:155
+msgid "This sender is not a phone number — no reply, no blacklist."
+msgstr ""
+
+#: app/admin/templates/messages.html:161
+msgid "No records"
+msgstr ""
+
+#: app/admin/templates/messages.html:168
+msgid "‹ Back"
+msgstr ""
+
+#: app/admin/templates/messages.html:170
+#, python-format
+msgid "Page %(page)s of %(pages)s"
+msgstr ""
+
+#: app/admin/templates/messages.html:172
+msgid "Forward ›"
 msgstr ""
 
 #: app/admin/templates/modem.html:3
@@ -313,19 +360,61 @@ msgstr ""
 msgid "Save"
 msgstr ""
 
-#: app/admin/templates/stats.html:12
-msgid "Last 14 days"
-msgstr ""
-
-#: app/admin/templates/stats.html:16
-msgid "Day"
+#: app/admin/templates/stats.html:14
+msgid "received"
 msgstr ""
 
 #: app/admin/templates/stats.html:20
+msgid "By hour"
+msgstr ""
+
+#: app/admin/templates/stats.html:21
+msgid "By day"
+msgstr ""
+
+#: app/admin/templates/stats.html:22
+msgid "By month"
+msgstr ""
+
+#: app/admin/templates/stats.html:27
+msgid "Period"
+msgstr ""
+
+#: app/admin/templates/stats.html:31
 msgid "Total"
 msgstr ""
 
-#: app/admin/templates/stats.html:34
+#: app/admin/templates/stats.html:45
 msgid "No data"
 msgstr ""
+
+#~ msgid "Dialogs"
+#~ msgstr ""
+
+#~ msgid "All dialogs"
+#~ msgstr ""
+
+#~ msgid "No messages"
+#~ msgstr ""
+
+#~ msgid "Last activity"
+#~ msgstr ""
+
+#~ msgid "open →"
+#~ msgstr ""
+
+#~ msgid "No dialogs"
+#~ msgstr ""
+
+#~ msgid "Received"
+#~ msgstr ""
+
+#~ msgid "dialog →"
+#~ msgstr ""
+
+#~ msgid "Last 14 days"
+#~ msgstr ""
+
+#~ msgid "Day"
+#~ msgstr ""
 

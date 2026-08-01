@@ -59,6 +59,13 @@ async def _handle_update(update: dict, chat_id, modem) -> None:
     text = post.get("text")
     if not text:
         return
+    # Blocking has to mean the same thing on every path that creates a message. This
+    # one had no check, which was survivable while blocking meant a trip to its own
+    # tab; it is now one click inside any conversation, so "blocked, and it replied
+    # anyway" is a click away.
+    if await queries.is_phone_blocked(phone):
+        logger.info("Telegram reply to blacklisted %s, ignored", phone)
+        return
     message_id = await queries.create_message("telegram", phone, text)
     await modem.enqueue(message_id, phone, text, "telegram")
     logger.info("Telegram reply -> SMS id=%d to=%s", message_id, phone)

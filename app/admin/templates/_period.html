@@ -1,0 +1,17 @@
+{# Period selector, shared by the SMS and statistics views.
+
+   The options are named after the window they actually apply. A control labelled
+   "month" over a rolling 30 days would answer a different question from the one it
+   appears to answer — see app/periods.py. #}
+{% set period_labels = {
+  '24h': _('24 hours'),
+  '7d':  _('7 days'),
+  '30d': _('30 days'),
+  '1y':  _('Year'),
+  'all': _('All time'),
+} %}
+<div class="periods">
+  {% for p in periods %}
+    <a href="{{ period_links[p] }}" class="{% if p == period %}on{% endif %}">{{ period_labels[p] }}</a>
+  {% endfor %}
+</div>

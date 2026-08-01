@@ -1,6 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
+
+{# Query fragment that reproduces the current view, for links that change one thing.
+   The phone is urlencoded: an E.164 number starts with `+`, which decodes to a
+   space in a query string. #}
+{% set keep = (('&phone=' ~ phone|urlencode) if phone else '')
+             ~ (('&status=' ~ status) if status else '')
+             ~ (('&period=' ~ period) if period != '30d' else '')
+             ~ (('&direction=' ~ direction) if direction else '') %}
+
+{% if error %}
+  {% set reasons = {
+    'not_terminal': _('Still in flight — an unsent or expired message can still get a delivery report.'),
+    'too_young': _('Too recent to delete: the owning application can still poll for its status.'),
+    'resend_in_flight': _('A re-send of this message is still in flight and refers back to it.'),
+    'not_found': _('That message is gone already.'),
+    'not_dialable': _('That sender is not a phone number.'),
+  } %}
+  <div class="banner">{{ reasons.get(error, _('Action refused.')) }}</div>
+{% endif %}
+
+{% include "_period.html" %}
+
 <form class="filters" method="get">
+  <input type="hidden" name="period" value="{{ period }}">
   <input type="text" name="phone" placeholder="{{ _('Phone') }}" value="{{ phone }}">
   <select name="status">
     <option value="">{{ _('— any status —') }}</option>
@@ -9,60 +32,146 @@
     {% endfor %}
   </select>
   <button type="submit">{% trans %}Filter{% endtrans %}</button>
+  {# Direction is links rather than a second select: the inbound one has to drop the
+     status filter as it navigates, and a form submitting both cannot say which of
+     the two the operator just changed. #}
+  <span class="dirs">
+    <a href="?period={{ period }}{% if phone %}&phone={{ phone|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}"
+       class="{% if not direction %}on{% endif %}">{% trans %}All{% endtrans %}</a>
+    <a href="?period={{ period }}{% if phone %}&phone={{ phone|urlencode }}{% endif %}{% if status %}&status={{ status }}{% endif %}&direction=out"
+       class="{% if direction == 'out' %}on{% endif %}">{% trans %}Outbound{% endtrans %}</a>
+    <a href="?period={{ period }}{% if phone %}&phone={{ phone|urlencode }}{% endif %}&direction=in"
+       class="{% if direction == 'in' %}on{% endif %}">{% trans %}Inbound{% endtrans %}</a>
+  </span>
   <span class="info">{% trans count=total %}{{ count }} records{% endtrans %}</span>
 </form>
 
+<div class="table-wrap">
 <table>
   <thead>
     <tr>
-      <th>ID</th><th>{% trans %}Phone{% endtrans %}</th><th>{% trans %}Operator{% endtrans %}</th><th>{% trans %}Text{% endtrans %}</th><th>{% trans %}Status{% endtrans %}</th>
-      <th>{% trans %}Created{% endtrans %}</th><th>{% trans %}Sent{% endtrans %}</th><th>{% trans %}Delivered{% endtrans %}</th><th>{% trans %}Error{% endtrans %}</th>
-      <th></th>
+      <th>ID</th><th></th><th>{% trans %}Phone{% endtrans %}</th><th>{% trans %}Operator{% endtrans %}</th>
+      <th>{% trans %}Text{% endtrans %}</th><th>{% trans %}Status{% endtrans %}</th>
+      <th>{% trans %}Created{% endtrans %}</th><th>{% trans %}Sent{% endtrans %}</th>
+      <th>{% trans %}Delivered{% endtrans %}</th><th>{% trans %}Error{% endtrans %}</th>
     </tr>
   </thead>
   <tbody>
   {% for m in messages %}
-    <tr>
+    {% set key = m.direction ~ '-' ~ m.id %}
+    <tr id="row-{{ key }}" class="{% if key == open_key %}row-open{% endif %}">
       <td>{{ m.id }}</td>
-      <td><code>{{ m.phone }}</code></td>
+      <td class="dir dir-{{ m.direction }}" title="{% if m.direction == 'in' %}{{ _('Inbound') }}{% else %}{{ _('Outbound') }}{% endif %}">
+        {% if m.direction == 'in' %}↓{% else %}↑{% endif %}
+      </td>
+      <td>
+        {# The row link is what expands it. The key names the row, so a number holding
+           many rows still renders its conversation exactly once. #}
+        <a href="?page={{ page }}&open={{ key }}{{ keep }}#row-{{ key }}"><code>{{ m.phone }}</code></a>
+      </td>
       <td class="muted" style="font-size:11px;">
         {% if m.operator %}{{ m.operator }}<br>{{ m.region }}{% else %}—{% endif %}
       </td>
       <td class="text-truncate" title="{{ m.text }}">{{ m.text }}</td>
-      <td><span class="status status-{{ m.status }}">{{ m.status }}</span>
+      <td>
+        {% if m.direction == 'out' %}
+          <span class="status status-{{ m.status }}">{{ m.status }}</span>
           {% if m.status == 'pending' and m.attempts %}
             <br><span class="muted" style="font-size:11px;"
                      title="{{ m.last_attempt_error or '' }}">{% trans n=m.attempts %}retry {{ n }}{% endtrans %}</span>
-          {% endif %}</td>
-      <td>{{ m.created_at | msk }}</td>
+          {% endif %}
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td>{{ m.ts | msk }}</td>
       <td>{{ m.sent_at | msk }}</td>
       <td>{{ m.delivered_at | msk }}</td>
       <td class="text-truncate muted" title="{{ m.error or m.last_attempt_error or '' }}">{{ m.error or m.last_attempt_error or '' }}</td>
-      <td>
-        {% if m.status in ['failed', 'expired'] %}
-          <form method="post" action="/admin/messages/{{ m.id }}/resend"
-                onsubmit="return confirm('{{ _('Resend') }} #{{ m.id }} → {{ m.phone }}?');">
-            <input type="hidden" name="page" value="{{ page }}">
-            <input type="hidden" name="status" value="{{ status }}">
-            <input type="hidden" name="phone" value="{{ phone }}">
-            <button type="submit">{% trans %}Resend{% endtrans %}</button>
-          </form>
-        {% endif %}
-      </td>
     </tr>
+    {% if key == open_key %}
+    <tr><td class="thread" colspan="10">
+      <div class="thread-head">
+        <strong><code>{{ open_phone }}</code></strong>
+        {% if dialog_total > dialog_limit %}
+          <span class="muted" style="font-size:12px;">
+            {% trans shown=dialog_limit, total=dialog_total %}last {{ shown }} of {{ total }}{% endtrans %}
+          </span>
+        {% endif %}
+        <a class="close" href="?page={{ page }}{{ keep }}">{% trans %}collapse{% endtrans %}</a>
+      </div>
+
+      <div class="timeline">
+      {% for r in dialog %}
+        <div class="bubble {% if r.direction == 'in' %}in{% else %}out {{ r.status }}{% endif %}">
+          {{ r.text }}
+          <div class="meta">
+            {{ r.ts | msk }}
+            {% if r.direction == 'out' %}
+              · <span class="status status-{{ r.status }}">{{ r.status }}</span>
+              {% if r.error %} · <span class="muted">{{ r.error }}</span>{% endif %}
+              {% if r.status in ['failed', 'expired'] %}
+                <form method="post" action="/admin/messages/{{ r.id }}/resend"
+                      onsubmit="return confirm('{{ _('Resend') }} #{{ r.id }}?');">
+                  {% include "_view_state.html" %}
+                  <button type="submit" class="act">{% trans %}Resend{% endtrans %}</button>
+                </form>
+              {% endif %}
+            {% endif %}
+            <form method="post" action="/admin/messages/delete"
+                  onsubmit="return confirm('{{ _('Delete this message? This cannot be undone.') }}');">
+              <input type="hidden" name="id" value="{{ r.id }}">
+              <input type="hidden" name="row_direction" value="{{ r.direction }}">
+              {% include "_view_state.html" %}
+              <button type="submit" class="act">{% trans %}Delete{% endtrans %}</button>
+            </form>
+          </div>
+        </div>
+      {% else %}
+        <div class="muted" style="text-align:center;">{% trans %}No messages in this conversation{% endtrans %}</div>
+      {% endfor %}
+      </div>
+
+      {# Reply and block are offered only for a counterparty we could actually send
+         to. A service sender arrives as a name (`Tinkoff`): a reply to it would fail
+         validation, and a block would write a non-number into the blacklist. #}
+      {% if open_dialable %}
+        <form class="reply-form" method="post" action="/admin/messages/reply">
+          <input type="hidden" name="to" value="{{ open_phone }}">
+          {% include "_view_state.html" %}
+          <input type="text" name="text" required placeholder="{{ _('Reply') }}">
+          <button type="submit">{% trans %}Send{% endtrans %}</button>
+        </form>
+        <div class="thread-actions">
+          <form method="post" action="/admin/messages/block">
+            <input type="hidden" name="to" value="{{ open_phone }}">
+            <input type="hidden" name="action" value="{{ 'unblock' if open_blocked else 'block' }}">
+            {% include "_view_state.html" %}
+            <button type="submit" class="{% if not open_blocked %}danger{% endif %}">
+              {% if open_blocked %}{% trans %}Remove from blacklist{% endtrans %}
+              {% else %}{% trans %}Add to blacklist{% endtrans %}{% endif %}
+            </button>
+          </form>
+        </div>
+      {% else %}
+        <div class="thread-actions muted" style="font-size:12px;">
+          {% trans %}This sender is not a phone number — no reply, no blacklist.{% endtrans %}
+        </div>
+      {% endif %}
+    </td></tr>
+    {% endif %}
   {% else %}
     <tr><td colspan="10" class="muted">{% trans %}No records{% endtrans %}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 
 <div class="pager">
   {% if page > 1 %}
-    <a href="?page={{ page - 1 }}{% if status %}&status={{ status }}{% endif %}{% if phone %}&phone={{ phone }}{% endif %}">{% trans %}‹ Back{% endtrans %}</a>
+    <a href="?page={{ page - 1 }}{{ keep }}{% if open_key %}&open={{ open_key }}{% endif %}">{% trans %}‹ Back{% endtrans %}</a>
   {% endif %}
   <span class="info">{% trans page=page, pages=pages or 1 %}Page {{ page }} of {{ pages }}{% endtrans %}</span>
   {% if page < pages %}
-    <a href="?page={{ page + 1 }}{% if status %}&status={{ status }}{% endif %}{% if phone %}&phone={{ phone }}{% endif %}">{% trans %}Forward ›{% endtrans %}</a>
+    <a href="?page={{ page + 1 }}{{ keep }}{% if open_key %}&open={{ open_key }}{% endif %}">{% trans %}Forward ›{% endtrans %}</a>
   {% endif %}
 </div>
 {% endblock %}

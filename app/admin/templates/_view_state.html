@@ -1,0 +1,11 @@
+{# The current view, as hidden fields.
+
+   Every action posts these and every action redirects through them, which is what
+   makes "return to the same period, filters, page and expanded conversation" a
+   property of the URL rather than a mechanism of its own. #}
+<input type="hidden" name="period" value="{{ period }}">
+<input type="hidden" name="page" value="{{ page }}">
+<input type="hidden" name="status" value="{{ status }}">
+<input type="hidden" name="phone" value="{{ phone }}">
+<input type="hidden" name="direction" value="{{ direction }}">
+<input type="hidden" name="open" value="{{ open_key }}">

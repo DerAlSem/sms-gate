@@ -125,9 +125,9 @@ POST с номером и текстом; шлюз отправляет сооб
 
 Интерфейс администратора двуязычный (русский по умолчанию, английский переключается). _(Ниже — демонстрационные данные.)_
 
-| Outbound messages | Dialog (chat) view |
+| SMS tab (both directions, period) | A row expanded into its conversation |
 |---|---|
-| ![Outbound messages](docs/img/messages.png) | ![Dialog view](docs/img/dialog.png) |
+| ![SMS tab](docs/img/messages.png) | ![Expanded conversation](docs/img/dialog.png) |
 
 | Runtime settings (country picker, no `.env` edits) | Client app tokens |
 |---|---|
@@ -361,9 +361,11 @@ supervision. No external broker, no container required.
   numbers). Non-`+7` numbers are sent normally but get no operator/region data;
   PRs adding best-effort enrichment for other countries (e.g. via
   `phonenumbers.carrier` / `phonenumbers.geocoder`) are welcome
-- **Bilingual admin UI** (Russian default + English, switchable) — messages, dialogs,
-  inbound, blacklist, number ranges, daily stats, runtime **settings**, and client
-  **token management**
+- **Bilingual admin UI** (Russian default + English, switchable) — one **SMS** tab
+  carrying outbound and inbound in a single stream over a selectable period, where a
+  row expands in place into the conversation with that number (reply, re-send, delete,
+  blacklist); plus blacklist, number ranges, period statistics, runtime **settings**,
+  and client **token management**
 - **Telegram notifications** — per-type, each toggled in the admin UI: system errors (ERROR logs), outbound send failures, delivery failures / blacklisting, and inbound SMS; all to one chat with windowed dedup and a configurable instance label
 - **Tests** — `pytest` suite covering PDU parsing, assembly, alerting, lookup, stats,
   settings, phone validation, and the admin pages
@@ -372,9 +374,9 @@ supervision. No external broker, no container required.
 
 The admin UI is bilingual (Russian default, English switchable). _(Sample data below.)_
 
-| Outbound messages | Dialog (chat) view |
+| SMS tab (both directions, period) | A row expanded into its conversation |
 |---|---|
-| ![Outbound messages](docs/img/messages.png) | ![Dialog view](docs/img/dialog.png) |
+| ![SMS tab](docs/img/messages.png) | ![Expanded conversation](docs/img/dialog.png) |
 
 | Runtime settings (country picker, no `.env` edits) | Client app tokens |
 |---|---|

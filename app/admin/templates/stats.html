@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
+{% include "_period.html" %}
+
 <div class="cards">
   {% for s in ['pending','sent','delivered','failed','expired'] %}
     <div class="card">
@@ -7,13 +9,23 @@
       <div class="value">{{ counts.get(s, 0) }}</div>
     </div>
   {% endfor %}
+  {# With the Inbound tab gone, nothing else reports how much arrived. #}
+  <div class="card">
+    <div class="label">{% trans %}received{% endtrans %}</div>
+    <div class="value">{{ inbound_total }}</div>
+  </div>
 </div>
 
-<h3 style="margin-top: 24px; font-size: 14px; text-transform: uppercase; color: #6b7280;">{% trans %}Last 14 days{% endtrans %}</h3>
+<h3 style="margin-top: 24px; font-size: 14px; text-transform: uppercase; color: #6b7280;">
+  {% if period == '24h' %}{% trans %}By hour{% endtrans %}
+  {% elif period in ['7d', '30d'] %}{% trans %}By day{% endtrans %}
+  {% else %}{% trans %}By month{% endtrans %}{% endif %}
+</h3>
+<div class="table-wrap">
 <table>
   <thead>
     <tr>
-      <th>{% trans %}Day{% endtrans %}</th>
+      <th>{% trans %}Period{% endtrans %}</th>
       {% for s in ['pending','sent','delivered','failed','expired'] %}
         <th>{{ s }}</th>
       {% endfor %}
@@ -21,18 +33,19 @@
     </tr>
   </thead>
   <tbody>
-  {% for day, statuses in by_day %}
-    {% set total_for_day = statuses.values() | sum %}
+  {% for bucket, statuses in by_bucket %}
+    {% set total_for_bucket = statuses.values() | sum %}
     <tr>
-      <td>{{ day }}</td>
+      <td>{{ bucket }}</td>
       {% for s in ['pending','sent','delivered','failed','expired'] %}
         <td>{{ statuses.get(s, 0) }}</td>
       {% endfor %}
-      <td><strong>{{ total_for_day }}</strong></td>
+      <td><strong>{{ total_for_bucket }}</strong></td>
     </tr>
   {% else %}
     <tr><td colspan="7" class="muted">{% trans %}No data{% endtrans %}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+</div>
 {% endblock %}

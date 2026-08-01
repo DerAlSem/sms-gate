@@ -1,6 +1,12 @@
 from typing import Any
 import aiosqlite
+from app import periods
 from app.db.connection import get_db
+
+# Statuses that owe nothing further. `expired` is deliberately absent: a report can
+# still arrive for it and correct it to `delivered` (see find_message_by_part_ref),
+# which is why it is not deletable either.
+TERMINAL_STATUSES = ("delivered", "failed")
 
 
 async def add_notify_ref(message_id: int, phone: str) -> None:
@@ -362,83 +368,224 @@ async def list_bad_numbers() -> list[aiosqlite.Row]:
         return list(await cursor.fetchall())
 
 
-async def unblock_phone(phone: str) -> None:
+async def block_phone(phone: str) -> None:
+    """Block a number by hand.
+
+    Separate from `record_permanent_fail` on purpose: that one blocks as a side
+    effect of counting failures, and a manual block is not a failure. `fail_count`
+    is left alone.
+    """
     db = await get_db()
-    await db.execute("DELETE FROM bad_numbers WHERE phone = ?", (phone,))
+    await db.execute(
+        """
+        INSERT INTO bad_numbers (phone, blocked_at) VALUES (?, CURRENT_TIMESTAMP)
+        ON CONFLICT(phone) DO UPDATE SET blocked_at = CURRENT_TIMESTAMP
+        """,
+        (phone,),
+    )
     await db.commit()
 
 
-async def list_messages(
-    status: str | None,
+async def unblock_phone(phone: str) -> None:
+    """Lift a block, keeping the failure history.
+
+    This used to DELETE the row, which was tolerable while unblocking meant a trip to
+    its own tab. It is now one click inside any conversation, and deleting the row
+    would hand a number that earned its threshold a fresh budget of failures.
+    `is_phone_blocked` keys on `blocked_at IS NOT NULL`, so clearing it is a complete
+    unblock.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE bad_numbers SET blocked_at = NULL WHERE phone = ?", (phone,)
+    )
+    await db.commit()
+
+
+
+
+# --- the merged two-direction listing -----------------------------------------
+#
+# Outbound and inbound live in separate tables with separate id sequences, so the
+# SMS view unions them into one shape and orders by the message's own timestamp:
+# `created_at` for outbound, `received_at` for inbound. That same column is what the
+# period bounds, so ordering, filtering and the statistics all agree on when a
+# message happened.
+
+_THREAD_OUT = """
+    SELECT 'out' AS direction, m.id AS id, m.phone AS phone, m.text AS text,
+           m.status AS status, m.created_at AS ts, m.sent_at AS sent_at,
+           m.delivered_at AS delivered_at, m.error AS error, m.attempts AS attempts,
+           m.last_attempt_error AS last_attempt_error, m.app_id AS app_id,
+           o.operator AS operator, o.region AS region
+      FROM messages m
+      LEFT JOIN number_operators o ON o.phone = m.phone
+"""
+
+_THREAD_IN = """
+    SELECT 'in' AS direction, i.id AS id, i.phone AS phone, i.text AS text,
+           NULL AS status, i.received_at AS ts, NULL AS sent_at,
+           NULL AS delivered_at, NULL AS error, NULL AS attempts,
+           NULL AS last_attempt_error, NULL AS app_id,
+           o.operator AS operator, o.region AS region
+      FROM inbound_messages i
+      LEFT JOIN number_operators o ON o.phone = i.phone
+"""
+
+
+def normalize_filters(status: str | None, direction: str | None) -> tuple[str, str]:
+    """Reconcile the status and direction filters.
+
+    Status belongs to outbound messages only, so an active one forces the outbound
+    direction. The rule runs one way only: both controls submit on every request, so
+    a server that also let direction clear status could not tell which the operator
+    just changed. The control offering the inbound direction drops the status as it
+    navigates instead.
+    """
+    status = status or ""
+    direction = direction if direction in ("in", "out") else ""
+    if status:
+        direction = "out"
+    return status, direction
+
+
+def _thread_query(
+    period: str,
     phone: str | None,
+    status: str | None,
+    direction: str | None,
+) -> tuple[str, list[Any]]:
+    """(sql, params) for the union of the branches this filter set selects."""
+    status, direction = normalize_filters(status, direction)
+    lower = periods.bound(period)
+
+    branches: list[str] = []
+    params: list[Any] = []
+
+    def branch(sql: str, ts_column: str, status_column: str | None) -> None:
+        where: list[str] = []
+        if lower is not None:
+            where.append(f"{ts_column} > datetime('now', ?)")
+            params.append(lower)
+        if phone:
+            where.append(f"{ts_column.split('.')[0]}.phone LIKE ?")
+            params.append(f"%{phone}%")
+        if status and status_column:
+            where.append(f"{status_column} = ?")
+            params.append(status)
+        branches.append(sql + (("WHERE " + " AND ".join(where)) if where else ""))
+
+    if direction != "in":
+        branch(_THREAD_OUT, "m.created_at", "m.status")
+    if direction != "out":
+        branch(_THREAD_IN, "i.received_at", None)
+
+    if not branches:                       # unreachable: direction is one of "", in, out
+        return "SELECT NULL WHERE 0", []
+    return "\nUNION ALL\n".join(branches), params
+
+
+async def list_thread_page(
+    period: str,
+    phone: str | None,
+    status: str | None,
+    direction: str | None,
     limit: int,
     offset: int,
 ) -> list[aiosqlite.Row]:
-    where: list[str] = []
-    params: list[Any] = []
-    if status:
-        where.append("m.status = ?")
-        params.append(status)
-    if phone:
-        where.append("m.phone LIKE ?")
-        params.append(f"%{phone}%")
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
-    params.extend([limit, offset])
+    """One page of the merged stream, newest first.
+
+    The tie-break is load-bearing: CURRENT_TIMESTAMP has one-second resolution, and
+    multipart bursts, reconcile sweeps and test runs all produce equal timestamps.
+    Ordering on `ts` alone under LIMIT/OFFSET lets sqlite return a row on two pages
+    or on neither.
+    """
+    sql, params = _thread_query(period, phone, status, direction)
     db = await get_db()
     async with db.execute(
-        f"""
-        SELECT m.id, m.app_id, m.phone, m.text, m.status, m.modem_ref,
-               m.created_at, m.sent_at, m.delivered_at, m.error,
-               m.attempts, m.last_attempt_error, m.next_attempt_at,
-               o.operator, o.region
-        FROM messages m
-        LEFT JOIN number_operators o ON o.phone = m.phone
-        {where_sql}
-        ORDER BY m.id DESC
-        LIMIT ? OFFSET ?
-        """,
-        params,
+        f"SELECT * FROM (\n{sql}\n) ORDER BY ts DESC, direction DESC, id DESC LIMIT ? OFFSET ?",
+        [*params, limit, offset],
     ) as cursor:
         return list(await cursor.fetchall())
 
 
-async def count_messages(status: str | None, phone: str | None) -> int:
-    where: list[str] = []
-    params: list[Any] = []
-    if status:
-        where.append("status = ?")
-        params.append(status)
-    if phone:
-        where.append("phone LIKE ?")
-        params.append(f"%{phone}%")
-    where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+async def count_thread_page(
+    period: str,
+    phone: str | None,
+    status: str | None,
+    direction: str | None,
+) -> int:
+    sql, params = _thread_query(period, phone, status, direction)
+    db = await get_db()
+    async with db.execute(f"SELECT COUNT(*) FROM (\n{sql}\n)", params) as cursor:
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+async def get_thread_row(direction: str, row_id: int) -> aiosqlite.Row | None:
+    """The counterparty of a single row, for resolving an `open=<direction>-<id>` key.
+
+    Expansion is addressed by the row, not by the number: a number can hold many rows
+    in the window, and matching on the number would render its conversation under
+    every one of them.
+    """
+    table = "messages" if direction == "out" else "inbound_messages"
     db = await get_db()
     async with db.execute(
-        f"SELECT COUNT(*) FROM messages {where_sql}", params
+        f"SELECT id, phone FROM {table} WHERE id = ?", (row_id,)
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def status_counts(period: str = "all") -> dict[str, int]:
+    """Outbound counts per status within the period.
+
+    A message belongs to the period by when it was created, and is counted under its
+    *current* status — the only definition that stays stable as statuses keep moving
+    after the fact, and the one that makes the cards agree with the table about which
+    messages exist.
+    """
+    lower = periods.bound(period)
+    where, params = ("WHERE created_at > datetime('now', ?)", [lower]) if lower else ("", [])
+    db = await get_db()
+    async with db.execute(
+        f"SELECT status, COUNT(*) FROM messages {where} GROUP BY status", params
+    ) as cursor:
+        return {row[0]: int(row[1]) for row in await cursor.fetchall()}
+
+
+async def inbound_count(period: str = "all") -> int:
+    """How many messages arrived in the period. With the Inbound tab gone, nothing
+    else reports this."""
+    lower = periods.bound(period)
+    where, params = ("WHERE received_at > datetime('now', ?)", [lower]) if lower else ("", [])
+    db = await get_db()
+    async with db.execute(
+        f"SELECT COUNT(*) FROM inbound_messages {where}", params
     ) as cursor:
         row = await cursor.fetchone()
         return int(row[0]) if row else 0
 
 
-async def status_counts() -> dict[str, int]:
+async def period_buckets(period: str) -> list[aiosqlite.Row]:
+    """Outbound counts per (time bucket, status) for the statistics breakdown.
+
+    Bucket size follows the period — hourly over a day, daily over a week or month,
+    monthly over a year — because a 365-row daily table is not a breakdown anyone
+    reads.
+    """
+    bucket = periods.bucket_expr("created_at", period)
+    lower = periods.bound(period)
+    where, params = ("WHERE created_at > datetime('now', ?)", [lower]) if lower else ("", [])
     db = await get_db()
     async with db.execute(
-        "SELECT status, COUNT(*) FROM messages GROUP BY status"
-    ) as cursor:
-        return {row[0]: int(row[1]) for row in await cursor.fetchall()}
-
-
-async def daily_counts(days: int) -> list[aiosqlite.Row]:
-    db = await get_db()
-    async with db.execute(
-        """
-        SELECT DATE(created_at, '+3 hours') AS day, status, COUNT(*) AS n
-        FROM messages
-        WHERE created_at > datetime('now', ? || ' days')
-        GROUP BY day, status
-        ORDER BY day DESC
+        f"""
+        SELECT {bucket} AS bucket, status, COUNT(*) AS n
+        FROM messages {where}
+        GROUP BY bucket, status
+        ORDER BY bucket DESC
         """,
-        (f"-{days}",),
+        params,
     ) as cursor:
         return list(await cursor.fetchall())
 
@@ -578,16 +725,6 @@ async def list_inbound(
         return list(await cursor.fetchall())
 
 
-async def count_inbound(phone: str | None) -> int:
-    where_sql = "WHERE phone LIKE ?" if phone else ""
-    params = [f"%{phone}%"] if phone else []
-    db = await get_db()
-    async with db.execute(
-        f"SELECT COUNT(*) FROM inbound_messages {where_sql}", params
-    ) as cursor:
-        row = await cursor.fetchone()
-        return int(row[0]) if row else 0
-
 
 async def delete_inbound(message_id: int) -> None:
     db = await get_db()
@@ -595,24 +732,89 @@ async def delete_inbound(message_id: int) -> None:
     await db.commit()
 
 
-async def dialog_phones(limit: int = 100) -> list[aiosqlite.Row]:
-    """List of phones with last activity (in or out), sorted by recency."""
+# How long a delivered/failed message stays undeletable. `GET /sms/{id}` is the
+# authoritative status source an application polls to recover a dropped webhook, and
+# a deleted row answers 404 — indistinguishable from "no such message". A day is
+# comfortably past the webhook retry ladder and any plausible poll interval.
+DELETE_MIN_AGE = "-1 day"
+
+
+async def delete_outbound(message_id: int) -> str | None:
+    """Delete an outbound message. Returns None on success, else a refusal reason.
+
+    Three conditions, all necessary, and each one protects a promise made elsewhere:
+
+    - status is `delivered` or `failed` — an `expired` message still accepts a late
+      delivery report that corrects it to `delivered` (`find_message_by_part_ref`
+      matches `expired` for exactly that reason);
+    - no re-sent copy is still in flight — `resent_from` is read at notification
+      time, so clearing it under a live copy would strip the field the consumer uses
+      to attribute the outcome;
+    - the message is at least a day old (see DELETE_MIN_AGE).
+
+    The status and age gates are applied *inside* the DELETE and decided on rowcount,
+    not by a separate SELECT: a concurrent delivery report can move the status
+    between a check and a write. A refusal rolls back, so the part records survive it.
+    """
+    db = await get_db()
+
+    async with db.execute(
+        f"""
+        SELECT COUNT(*) FROM messages
+        WHERE resent_from = ?
+          AND status NOT IN ({','.join('?' * len(TERMINAL_STATUSES))})
+        """,
+        (message_id, *TERMINAL_STATUSES),
+    ) as cursor:
+        row = await cursor.fetchone()
+        if row and int(row[0]):
+            return "resend_in_flight"
+
+    try:
+        await db.execute(
+            "DELETE FROM message_parts WHERE message_id = ?", (message_id,)
+        )
+        await db.execute(
+            "UPDATE messages SET resent_from = NULL WHERE resent_from = ?",
+            (message_id,),
+        )
+        cursor = await db.execute(
+            f"""
+            DELETE FROM messages
+            WHERE id = ?
+              AND status IN ({','.join('?' * len(TERMINAL_STATUSES))})
+              AND created_at <= datetime('now', ?)
+            """,
+            (message_id, *TERMINAL_STATUSES, DELETE_MIN_AGE),
+        )
+        if cursor.rowcount != 1:
+            await db.rollback()
+            return await _delete_refusal_reason(message_id)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return None
+
+
+async def _delete_refusal_reason(message_id: int) -> str:
+    """Why the gated DELETE matched nothing — so the operator is told, not just
+    refused."""
     db = await get_db()
     async with db.execute(
-        """
-        SELECT phone, MAX(ts) AS last_ts, SUM(in_n) AS in_n, SUM(out_n) AS out_n FROM (
-            SELECT phone, COALESCE(received_at, '') AS ts, 1 AS in_n, 0 AS out_n
-              FROM inbound_messages
-            UNION ALL
-            SELECT phone, COALESCE(sent_at, created_at) AS ts, 0 AS in_n, 1 AS out_n
-              FROM messages
-        ) GROUP BY phone
-        ORDER BY last_ts DESC
-        LIMIT ?
-        """,
-        (limit,),
+        "SELECT status, created_at <= datetime('now', ?) AS old_enough "
+        "FROM messages WHERE id = ?",
+        (DELETE_MIN_AGE, message_id),
     ) as cursor:
-        return list(await cursor.fetchall())
+        row = await cursor.fetchone()
+    if row is None:
+        return "not_found"
+    if row["status"] not in TERMINAL_STATUSES:
+        return "not_terminal"
+    if not row["old_enough"]:
+        return "too_young"
+    return "refused"
+
 
 
 async def get_number_operator(phone: str) -> aiosqlite.Row | None:
@@ -678,23 +880,51 @@ async def list_number_operators() -> list[aiosqlite.Row]:
         return list(await cursor.fetchall())
 
 
-async def dialog_for(phone: str) -> list[aiosqlite.Row]:
-    """Combined timeline of inbound + outbound for a phone, oldest first."""
+_DIALOG_UNION = """
+    SELECT 'in' AS direction, id, text, received_at AS ts,
+           NULL AS status, NULL AS error
+      FROM inbound_messages WHERE phone = ?
+    UNION ALL
+    SELECT 'out' AS direction, id, text, created_at AS ts,
+           status, error
+      FROM messages WHERE phone = ?
+"""
+
+
+async def dialog_for(phone: str, limit: int = 100) -> list[aiosqlite.Row]:
+    """Combined timeline of inbound + outbound for a phone, oldest first.
+
+    Outbound is ordered by `created_at`, not `COALESCE(sent_at, created_at)` as it
+    once was, so the panel and the table directly above it order the same two
+    messages the same way.
+
+    Capped: the panel is rendered inside the list page and re-rendered after every
+    action, so a number on the receiving end of a daily notification would otherwise
+    make every redirect more expensive. The newest `limit` are kept, then flipped
+    back into reading order.
+    """
     db = await get_db()
     async with db.execute(
-        """
-        SELECT 'in' AS direction, id, text, received_at AS ts,
-               NULL AS status, NULL AS error
-          FROM inbound_messages WHERE phone = ?
-        UNION ALL
-        SELECT 'out' AS direction, id, text, COALESCE(sent_at, created_at) AS ts,
-               status, error
-          FROM messages WHERE phone = ?
-        ORDER BY ts ASC, id ASC
+        f"""
+        SELECT * FROM (
+            SELECT * FROM ({_DIALOG_UNION})
+            ORDER BY ts DESC, direction DESC, id DESC
+            LIMIT ?
+        ) ORDER BY ts ASC, direction ASC, id ASC
         """,
-        (phone, phone),
+        (phone, phone, limit),
     ) as cursor:
         return list(await cursor.fetchall())
+
+
+async def dialog_total(phone: str) -> int:
+    """How many messages the conversation holds, so a capped panel can say so."""
+    db = await get_db()
+    async with db.execute(
+        f"SELECT COUNT(*) FROM ({_DIALOG_UNION})", (phone, phone)
+    ) as cursor:
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
 
 
 async def save_inbound_part(

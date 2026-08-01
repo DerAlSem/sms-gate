@@ -38,9 +38,12 @@ def test_english_render_has_no_cyrillic_on_each_page():
     asyncio.run(setup())
     try:
         c = TestClient(_app())
-        paths = ("/admin/messages", "/admin/inbound", "/admin/dialogs",
-                 "/admin/blacklist", "/admin/ranges", "/admin/stats",
-                 "/admin/dialogs/+79995550011")
+        # The inbound and dialog pages are the SMS view now; what used to be three
+        # renders is one, plus the expanded conversation and each period.
+        paths = ("/admin/messages", "/admin/messages?direction=in",
+                 "/admin/messages?open=out-1", "/admin/messages?period=24h",
+                 "/admin/blacklist", "/admin/ranges",
+                 "/admin/stats", "/admin/stats?period=1y")
         for path in paths:
             r = c.get(path, headers={**_AUTH, "Cookie": "lang=en"})
             assert r.status_code == 200, f"{path} -> {r.status_code}"
@@ -59,6 +62,7 @@ def test_russian_render_shows_translations():
         r = c.get("/admin/stats", headers=_AUTH)   # default ru
         assert r.status_code == 200
         assert "Статистика" in r.text              # nav translated
-        assert "За 14 дней" in r.text              # stats.html string translated under ru
+        assert "По дням" in r.text                 # the breakdown heading, sized to the period
+        assert "30 дней" in r.text                 # the period selector
     finally:
         asyncio.run(close_db())

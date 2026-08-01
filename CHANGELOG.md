@@ -5,6 +5,54 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-01
+
+One conversation used to be spread across three tabs, and every view counted all of history.
+
+### Changed
+- **`Inbound` and `Dialogs` are gone as tabs; there is one `SMS` tab.** It lists outbound and
+  inbound in a single stream ordered by time, and a row expands in place into the conversation
+  with that number — the timeline that used to be its own page, plus the actions that used to be
+  scattered: reply, re-send, delete, block. The split was an artifact of how the features were
+  built, not of how the gateway is used: the only question anyone ever asked spanned all three.
+  `/admin/inbound`, `/admin/dialogs` and `/admin/dialogs/{phone}` keep answering, as redirects —
+  the last one lands with that conversation open.
+- **The SMS table and the statistics view are bounded by a selected period** — 24 hours, 7 days,
+  30 days, a year, all time — defaulting to 30 days. The options are named after the window they
+  apply: these are rolling windows, and a control labelled "month" over a rolling 30 days would
+  answer a different question from the one it appears to answer.
+- **Statistics counts inbound messages** and buckets its breakdown to fit the period (hourly,
+  daily, monthly) instead of always showing 14 days. With the `Inbound` tab gone, nothing else
+  reported how much arrived.
+- **Unblocking a number no longer deletes its failure history.** It used to delete the row
+  outright, which was tolerable while unblocking meant a trip to its own tab. Blocking is now one
+  click inside any conversation, and its inverse must not hand a number that earned its
+  blacklist threshold a fresh budget of failures. This changes the existing `Blacklist` tab too.
+
+### Added
+- **An outbound message can be deleted** — but only when nothing still depends on it: its status
+  is `delivered` or `failed`, no re-sent copy is still in flight, and it is at least a day old.
+  Each condition guards a promise already made. `expired` is not deletable because a late
+  delivery report still corrects it to `delivered`; a live re-sent copy still owes `resent_from`
+  to every notification it sends; and a fresh message is still answerable through
+  `GET /sms/{id}`, which is how an application recovers a dropped webhook. A refusal says which
+  of the three stopped it. There is no soft delete, so both deletion and manual blocking are
+  logged.
+- **Destructive posts check the request's origin.** The console authenticates with HTTP Basic
+  and carries no per-request token, so a browser attaches cached credentials to a cross-site
+  form post — and this release introduces the first irreversible action reachable that way.
+
+### Fixed
+- **A Telegram reply to a blacklisted number is refused.** That path created and queued a message
+  with no blacklist check, unlike the API and the admin UI. Survivable while blocking meant a
+  trip to its own tab; with a block button in every conversation, "blocked, and it replied
+  anyway" was one click away.
+- **A wide table no longer drags the whole page sideways on a phone** — it scrolls inside its own
+  box instead.
+- **`docs/i18n.md` gave a translation-extraction command that silently extracted nothing.** The
+  mapping paths in `babel.cfg` are repo-root-relative, so `pybabel extract … app` produced an
+  empty catalog and the following `update` marked every existing string obsolete.
+
 ## [0.15.0] - 2026-08-01
 
 The alert gets out, and the fix gets there. Both had been quietly true only on paper: a relay
