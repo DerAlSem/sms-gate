@@ -5,6 +5,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-08-01
+
+The alert gets out, and the fix gets there. Both had been quietly true only on paper: a relay
+that two of three senders used, and a deploy that reported success while the running unit stayed
+as it was. Neither failed loudly, which is why both survived so long.
+
 ### Fixed
 - **Everything that raises an alert now leaves by the same door, and what cannot get out is
   kept.** Three scripts outside the application raise alerts — the uplink watchdog, the tunnel
