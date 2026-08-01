@@ -619,3 +619,21 @@ on disk and delivered when a route returns, stamped with its age — a late aler
 one is read as current.
 
 Set `ALERT_RELAY_BASE` in `.env`; the application picks it up as a setting on first start.
+
+**One sender, because three did not stay in step.** Everything raised outside the application —
+the uplink watchdog, the tunnel watchdog and the systemd notifier — hands its text to
+`/usr/local/sbin/sms-gate-alert` (`deploy/alert-send.sh`) and knows nothing about routes,
+credentials or retention. Each used to carry its own copy of the delivery path, and when the
+relay was added it reached two of the three; the one it missed was the uplink watchdog, whose
+failover alert was the message actually being lost. It kept posting directly for months while
+the README and a ticked spec task both said otherwise.
+
+The sender holds what it cannot deliver in `/var/lib/sms-gate/alert-spool` — one record per
+line, readable during an incident, bounded so a long outage cannot fill the disk the database
+lives on. Held alerts go out in the order they were raised, each stamped with its age. The
+uplink watchdog calls `sms-gate-alert --drain` on every tick, because otherwise a held alert
+would wait for the next alert to be raised — and if the held one says the uplink failed, that
+could be a very long time.
+
+To check delivery without staging an outage: `wwan-backup test-alert`, with the direct route
+blackholed if you want to prove the relay carried it. See `deploy/wwan-backup/README.md`.

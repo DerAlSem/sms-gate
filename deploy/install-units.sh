@@ -91,6 +91,8 @@ else
     echo "installing units — could not read the deployed commit from $BARE" >&2
 fi
 
+install_one 755 "$SRC/alert-send.sh"                       /usr/local/sbin/sms-gate-alert
+
 install_one 644 "$SRC/sms-gate.service"                    /etc/systemd/system/sms-gate.service
 install_one 644 "$SRC/sms-gate-notify@.service"            /etc/systemd/system/sms-gate-notify@.service
 

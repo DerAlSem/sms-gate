@@ -6,6 +6,24 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **Everything that raises an alert now leaves by the same door, and what cannot get out is
+  kept.** Three scripts outside the application raise alerts — the uplink watchdog, the tunnel
+  watchdog and the systemd notifier — and each carried its own copy of the delivery path. When
+  the relay was added it reached two of them. The one it missed was the uplink watchdog, whose
+  failover alert was the message that had actually been lost, and it kept posting directly for
+  months while the README and a ticked spec task both said otherwise. Copies do not drift
+  evenly; they drift in whichever one nobody remembers.
+  Delivery, credentials, route order and retention now live in a single sender the three hand
+  their text to. An alert no route will carry is held on disk — one readable record per line,
+  bounded so a long outage cannot fill the disk the database lives on — and delivered in the
+  order it was raised once a route returns, each stamped with how late it is, because a delayed
+  alert read without its age is read as current and sends the operator after a fault that has
+  already ended. The uplink watchdog drains the spool on every tick, since a held alert would
+  otherwise wait for the next alert to be raised, and if the held one says the uplink failed
+  that could be a very long time.
+  Covered by tests, which the two previous attempts at this were not: eleven cases driving the
+  real script against a fake curl. The notifier's own smoke test was folded into the suite at
+  the same time — it had been a standalone script, which is to say it had not been running.
 - **A unit file that was committed and deployed did not reach systemd.** Everything under
   `deploy/` was installed as a copy, so a commit changing a unit landed in `/opt/sms-gate` and
   stopped there. Nothing noticed: the deploy reported success, the service restarted, and the

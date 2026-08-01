@@ -53,36 +53,21 @@ log() { logger -t wwan-backup "$*"; echo "wwan-backup: $*" >&2; }
 
 read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 
+ALERT_SENDER="${ALERT_SENDER:-/usr/local/sbin/sms-gate-alert}"
+
 alert() {
-    # Telegram notification on channel switch. Skipped if no credentials.
-    # The direct route cannot carry the message that matters here. The carrier the backup
-    # uplink runs on blocks api.telegram.org, so a failover alert is raised at the one moment
-    # the direct route is guaranteed dead — while the restore alert, sent once the wire is
-    # back, arrives normally. The operator is told the outage ended and never that it began.
-    # Observed 2026-07-29, and twice more on 2026-08-01 while proving the restart cases.
-    # The relay at the far end is reached over the tunnel and works on either uplink, so it
-    # goes first and the direct route stays as the fallback — the same order notify-telegram
-    # and the tunnel watchdog already use.
-    local token chat relay attempt base
-    token="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
-    chat="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
-    relay="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
-    [ -n "$token" ] && [ -n "$chat" ] || return 0
-    # Retries stay, and now cover the relay too: a failover alert is raised the moment the
-    # route changes, before WireGuard has handshaked from the new source address, so the
-    # relay's first attempt can legitimately fail on a tunnel that is about to work.
-    for attempt in 1 2 3; do
-        for base in "${relay%/}" "https://api.telegram.org"; do
-            [ -n "$base" ] || continue
-            if curl -sS --max-time 15 "${base}/bot${token}/sendMessage" \
-                --data-urlencode "chat_id=${chat}" \
-                --data-urlencode "text=📡 $(hostname): $*" >/dev/null 2>&1; then
-                return 0
-            fi
-        done
-        sleep 5
-    done
-    log "alert: no route delivered it after 3 attempts (default: $(ip route show default | head -1))"
+    # Route order, retention and the age stamp all live in one place now — see
+    # deploy/alert-send.sh. They used to live here as well, and in the tunnel watchdog, and in
+    # the systemd notifier; when the relay was added it reached two of the three, and the one
+    # it missed was this one, whose failover alert was the message actually being lost.
+    #
+    # The retry loop that used to be here is gone rather than kept. It existed because a
+    # failover alert is raised the instant the route changes, before WireGuard has handshaked
+    # from the new source address — but three sleeps cover ninety seconds, and the spool plus
+    # the drain on every watchdog tick covers an outage of any length.
+    [ -x "$ALERT_SENDER" ] || { log "no alert sender at $ALERT_SENDER; would have said: $*"; return 0; }
+    "$ALERT_SENDER" "📡 $(hostname): $*" \
+        || log "alert held for later delivery (default: $(ip route show default | head -1))"
 }
 
 mask2prefix() {
@@ -446,6 +431,13 @@ cmd_watchdog() {
         log "RESTORE: primary channel is back, traffic returned via $MAIN_IFACE"
         alert "primary internet restored — switched back from backup"
     fi
+
+    # 4) take out anything that could not be delivered earlier. This runs here rather than on a
+    # timer of its own because this tick is the most reliable heartbeat on the host, and because
+    # a held alert would otherwise wait for the next alert to be raised — which, if the held one
+    # said the uplink had failed, could be a very long time.
+    [ -x "$ALERT_SENDER" ] && "$ALERT_SENDER" --drain >/dev/null 2>&1
+    return 0
 }
 
 cmd_status() {

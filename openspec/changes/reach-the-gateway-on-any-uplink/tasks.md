@@ -116,7 +116,7 @@
            the other one, which is a fair description of how it stayed invisible.
            The constraint now lives in three places that a person changing either number will
            actually see: beside both timers, and as a requirement in the spec. -->
-- [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
+- [x] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
       <!-- Solved at the root rather than as retention alone, once the owner pointed out that
            the far end already reaches Telegram: the house now sends through a relay there,
            over the tunnel, which works on either uplink. Retention stays as the second half,
@@ -174,6 +174,27 @@
            test — unreachable at 07:37, reachable again at 07:38 — because it runs at the far
            end and never depended on the house having a route. During the window when the
            house can carry nothing, that check is the only thing that still speaks. -->
+      <!-- Closed by removing the reason it kept being half-done rather than by adding a spool
+           three times. Delivery moved out of all three raisers into one sender
+           (`deploy/alert-send.sh` → `/usr/local/sbin/sms-gate-alert`): routes, credentials,
+           retention and the age stamp live there, and the watchdogs now decide only what to
+           say and when. Three copies of a delivery path was the defect, not a symptom of it —
+           copies do not drift evenly, they drift in whichever one nobody remembers.
+           Retention as this task asked: what no route will carry is held in
+           `/var/lib/sms-gate/alert-spool`, one readable record per line, bounded so a long
+           outage cannot fill the disk the database lives on, delivered in the order raised and
+           stamped with its age. Draining hangs off the uplink watchdog's tick rather than a
+           timer of its own — a held alert would otherwise wait for the next alert to be
+           raised, and if the held one says the uplink failed, that could be a very long time.
+           Covered by tests this time, which the previous two attempts were not: eleven cases
+           driving the real script against a fake curl — relay before direct, fallback,
+           retention when neither answers, delivery on recovery, order preserved, the age
+           stamp, the bound, multi-line text through the spool, and a drain that costs nothing
+           when there is nothing to do. The notifier's own smoke test was folded into the suite
+           at the same time; it had been a standalone script, which is to say it had not run.
+           One behaviour deliberately dropped: the uplink script's three-retry loop. It covered
+           ninety seconds; the spool plus a drain every thirty seconds covers an outage of any
+           length, and keeping both would have been two answers to one question. -->
 
 ## 4. Watching from outside the failure domain
 

@@ -1,32 +1,17 @@
 #!/usr/bin/env bash
 # Telegram notifier for systemd OnFailure=. Self-contained: no app venv/config needed.
 # Usage: notify-telegram.sh <unit-name>
-# Reads ALERT_BOT_TOKEN / ALERT_CHAT_ID from the environment, falling back to /opt/sms-gate/.env.
+# Decides what to say about a unit and how often. Delivery — routes, retention, credentials —
+# belongs to the sender it hands the text to (deploy/alert-send.sh).
 set -u
 
 UNIT="${1:-unknown.service}"
-ENV_FILE="/opt/sms-gate/.env"
 THROTTLE_FILE="/tmp/sms-gate-notify.last"
 THROTTLE_SECONDS=60
 MAX_LEN=3500
 
-# Pull creds from .env if not already in the environment (grep, not source: tolerant of a
-# malformed file — which is exactly the failure that started all this).
-read_env() {
-    local key="$1"
-    grep -E "^${key}=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-
-}
-TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
-CHAT="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
-# A route that can reach Telegram when this host cannot. The mobile carrier the backup
-# uplink runs on cannot, so during a wired outage every alert raised here is lost — which is
-# how the failover alert of 2026-07-29 never arrived while the restore alert did. Tried
-# first, so it is the route ordinary traffic exercises rather than one first tested by the
-# outage; the direct route stays as the fallback.
-RELAY="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
-
-# No creds -> nothing to do.
-[ -n "$TOKEN" ] && [ -n "$CHAT" ] || exit 0
+# Credentials are read in one place only, by the sender. A script that does not deliver has no
+# business holding a token — and the fewer copies of that read, the fewer places to rotate.
 
 HOST=$(hostname)
 WHEN=$(date '+%Y-%m-%d %H:%M:%S %Z')
@@ -66,18 +51,15 @@ fi
 
 touch "$THROTTLE_FILE" 2>/dev/null || true
 
-send_via() {
-    curl -sS --max-time 15 "${1}/bot${TOKEN}/sendMessage" \
-        --data-urlencode "chat_id=${CHAT}" \
-        --data-urlencode "text=${TEXT}" >/dev/null 2>&1
-}
-
-# Both routes are attempted before giving up. `|| true` on a single route made a lost alert
-# indistinguishable from a delivered one, which is the failure this script exists to prevent
-# applied to the script itself.
-if [ -n "$RELAY" ] && send_via "${RELAY%/}"; then
+# Delivery is not this script's job any more. What it knows is *what to say about a unit* and
+# *how often*; which route carries it, and what happens when none will, belong to the one
+# sender all three raisers share — see deploy/alert-send.sh. Keeping a private copy here is
+# what let the relay reach some scripts and not others.
+ALERT_SENDER="${ALERT_SENDER:-/usr/local/sbin/sms-gate-alert}"
+if [ ! -x "$ALERT_SENDER" ]; then
+    logger -t notify-telegram "no alert sender at $ALERT_SENDER for ${UNIT}" 2>/dev/null || true
     exit 0
 fi
-send_via "https://api.telegram.org" || logger -t notify-telegram \
-    "no route delivered the alert for ${UNIT}" 2>/dev/null || true
+"$ALERT_SENDER" "$TEXT" || logger -t notify-telegram \
+    "alert for ${UNIT} held for later delivery" 2>/dev/null || true
 exit 0

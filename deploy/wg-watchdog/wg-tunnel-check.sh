@@ -18,7 +18,6 @@ set -u
 
 PEER_ADDR="${PEER_ADDR:-10.10.10.1}"
 UNIT="${UNIT:-wg-quick@wg-edge}"
-ENV_FILE="${ENV_FILE:-/opt/sms-gate/.env}"
 STATE_FILE="${STATE_FILE:-/run/wg-tunnel-check.state}"
 # Two minutes of silence before touching anything. A failover is ~90s of detection plus the
 # tunnel dialling out from its new address, and restarting during that would interrupt a
@@ -38,26 +37,17 @@ if [ "$PEER_ADDR" = "10.10.10.1" ]; then
     exit 2
 fi
 
-read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
-TOKEN="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
-CHAT="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
+# Credentials and routes are the sender's business, not this script's. This one decides
+# *whether* the tunnel is carrying and *when* that is worth saying out loud.
 
-# A route that can reach Telegram when this host cannot — which is the case whenever the
-# backup uplink is carrying, since the carrier blocks it. Without this, the watchdog that
-# exists to report an unreachable tunnel is silent in exactly the situation it was built for.
-RELAY="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
+ALERT_SENDER="${ALERT_SENDER:-/usr/local/sbin/sms-gate-alert}"
 
 notify() {
-    local text="$1" base
-    [ -n "$TOKEN" ] && [ -n "$CHAT" ] || { log "no alert credentials; would have said: $text"; return 0; }
-    for base in "${RELAY%/}" "https://api.telegram.org"; do
-        [ -n "$base" ] || continue
-        if curl -sS --max-time 15 "${base}/bot${TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${CHAT}" --data-urlencode "text=${text}" >/dev/null 2>&1; then
-            return 0
-        fi
-    done
-    log "no route delivered the alert"
+    # Route order and retention live in one place — see deploy/alert-send.sh. They were
+    # duplicated here and in two other scripts, which is how the relay came to be wired into
+    # some of them and not others.
+    [ -x "$ALERT_SENDER" ] || { log "no alert sender at $ALERT_SENDER; would have said: $1"; return 0; }
+    "$ALERT_SENDER" "$1" || log "alert held for later delivery"
 }
 
 fails=0
