@@ -159,10 +159,23 @@
            fallback, retries covering both, matching the two scripts that were already
            correct. Retries matter more here than there: the alert is raised at the instant
            the route changes, before WireGuard has handshaked from the new source address.
-           Relay half verified live 2026-08-01 10:16, and verified as a claim about routes
-           rather than about delivery: Telegram's own ranges were blackholed for the duration,
-           so the direct route could not have carried it. The message arrived and the journal
-           recorded no failure — with the only remaining route being the relay.
+           Relay half was declared verified at 10:16 on the strength of a test that proved
+           nothing, and the claim is withdrawn rather than quietly amended. The reasoning was
+           "Telegram's published ranges were blackholed, so the direct route could not have
+           carried it" — but on this host the name answers as 198.18.11.187, a reserved
+           RFC 2544 address substituted by a bypass on the router, which those ranges do not
+           contain. The direct route was open throughout. The same broken method was then used
+           on the tunnel watchdog at 11:07, so both of that morning's "decisive" proofs rested
+           on an unchecked assumption about where a name resolves — the exact failure this
+           change kept finding elsewhere, committed while looking straight at it.
+           Verified properly at 13:22 by blackholing the address the name actually resolves to:
+           the alert arrived at once, with no age stamp and nothing held, leaving the relay as
+           the only route that could have carried it.
+           Worth keeping from the detour: both reasons the direct route dies in an outage hold
+           independently, where only one had been recorded. The carrier does block Telegram —
+           its real addresses time out over `wwan0` while an ordinary host answers 200 over the
+           same interface — and separately the substituted address is a LAN-local fiction that
+           means nothing once traffic leaves by the backup.
            Still open, and stated precisely this time so it cannot be ticked by generosity
            again: retention is implemented in `app/alerting.py`, which is the gateway's own
            alerts. All three shell raisers — the uplink script, the tunnel watchdog and the
@@ -194,7 +207,14 @@
            at the same time; it had been a standalone script, which is to say it had not run.
            One behaviour deliberately dropped: the uplink script's three-retry loop. It covered
            ninety seconds; the spool plus a drain every thirty seconds covers an outage of any
-           length, and keeping both would have been two answers to one question. -->
+           length, and keeping both would have been two answers to one question.
+           Retention verified on the machine 2026-08-01, which no previous attempt at this task
+           had been: with both routes genuinely dead the alert was held — one readable record
+           in the spool and `alert held for later delivery` in the journal — nothing arrived for
+           the seventy seconds it stayed held, and the watchdog's own tick took it out
+           afterwards with no manual command. It arrived as `⏳ delayed 1 min (raised
+           13:18:34)`, which is the whole point of the exercise: without that line a late alert
+           reads as current and sends the operator after a fault that has already ended. -->
 
 ## 4. Watching from outside the failure domain
 
