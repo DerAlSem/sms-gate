@@ -83,7 +83,19 @@
            an incident. The filter came back with the interface, which is why it hangs off the
            interface rather than off boot. -->
 - [x] 3.5 Test: make it fail persistently (invalid key material) — the bound is reached and the operator is alerted
-- [x] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
+- [ ] 3.7 Write down the coupling 9.7 exposed, and decide whether to enforce it. On a cold
+      start with the uplink already dead, the tunnel comes up only because `wg-quick` blocks
+      retrying name resolution until failover switches DNS — measured at 143 seconds of
+      retrying against a resolution that succeeded 10 seconds after failover. The deadline it
+      is racing is `OnBootSec=90` plus two 30-second intervals, so 150 seconds is the earliest
+      a failover can occur by construction. Neither number knows about the other, the retry
+      budget is not ours and is not documented, and the margin between them is ten seconds.
+      Raise the first check, lengthen the threshold, or meet a build of `wg` that gives up
+      sooner, and the unit fails instead of waiting: recovery then falls to the tunnel
+      watchdog and costs minutes rather than seconds. Either make the boot path not depend on
+      the margin, or state the margin as a constraint that a change to either number must
+      respect
+- [ ] 3.6 Ensure an alert raised while nothing can carry it is retained and delivered later, and that the connector and the uplink cannot suppress each other's messages through the shared throttle
       <!-- Solved at the root rather than as retention alone, once the owner pointed out that
            the far end already reaches Telegram: the house now sends through a relay there,
            over the tunnel, which works on either uplink. Retention stays as the second half,
@@ -110,6 +122,22 @@
            reachability check does not, because it runs at the far end and reaches Telegram by
            a path of its own — which is a stronger argument for having built it than the one
            originally given. -->
+      <!-- Reopened 2026-08-01. It was ticked on the strength of the relay existing, and the
+           relay does exist and does work — but it was only wired into `notify-telegram.sh`
+           and `wg-tunnel-check.sh`. The uplink script, which raises the failover alert that
+           started all of this, still posted straight to `api.telegram.org`.
+           Proven twice the same morning, by the restart tests rather than by inspection:
+           `alert: Telegram unreachable after 3 attempts` at 07:30:27 and again at 07:38:22,
+           both while the backup was carrying — and both RESTORE alerts delivered silently
+           once the wire was back. Exactly the shape this task calls the worst available: the
+           operator is told the outage ended and never that it began.
+           What the tick actually recorded was that the mechanism had been built, not that
+           every raiser used it. A task that says "ensure an alert is delivered" is not closed
+           by the existence of a route — only by every sender taking it.
+           `alert()` in `wwan-backup.sh` now tries the relay first and the direct route as
+           fallback, retries covering both, matching the two scripts that were already
+           correct. Retries matter more here than there: the alert is raised at the instant
+           the route changes, before WireGuard has handshaked from the new source address. -->
 
 ## 4. Watching from outside the failure domain
 
@@ -150,7 +178,7 @@
            address, so the two coexist.
            The filter opened port 80 to the far end only; everything else stayed shut,
            verified again after reloading the table. -->
-- [ ] 6.2 Issue its certificate there and confirm renewal works — bridged for now with the
+- [x] 6.2 Issue its certificate there and confirm renewal works — bridged for now with the
       house's own certificate, valid to 2026-09-14, so the cutover needs no window in which the
       hostname answers with the wrong certificate. Issued properly at the far end after the
       record moves, when the challenge can reach it. Do not assume the challenge works: verify
@@ -214,8 +242,39 @@
            path in group 10 is about. -->
 - [x] 9.4 Live: confirm administrative access works while the wired link is down — the half of the remedy easiest to leave untested
 - [x] 9.5 Live: restore the wired link, confirm traffic returns with nothing switched by hand
-- [ ] 9.6 Live: restart the host and confirm the path returns
-- [ ] 9.7 Live: restart the host *while the wired link is down* and confirm the path comes up over the backup — the case that will actually happen
+- [x] 9.6 Live: restart the host and confirm the path returns
+      <!-- Returned unaided, everything back: tunnel carrying, the source-routing rule, the
+           backup session up two seconds after boot, and the access log again showing distinct
+           caller addresses rather than one repeated tunnel address.
+           It also retired a hazard that had been argued from the files and was not real. The
+           house serves the hostname on `listen 10.67.67.3:80`, an address that does not exist
+           until the tunnel is up; nginx and wg-quick share `After=network-online.target` with
+           no ordering between them, nginx has no `Restart=`, and `nginx -t` cannot catch it
+           because it does not bind. That reads as a boot-order race that leaves the whole
+           front end dead. It is not one: a neighbouring block already listens on `80` without
+           an address, so nginx opens a single wildcard socket per port and dispatches the
+           address-specific blocks in process. `ss` confirms only `0.0.0.0:80` is ever bound.
+           Worth keeping because the reasoning was sound and the conclusion still wrong — and
+           because the protection is incidental. A future change that removes the last
+           wildcard `listen 80` from this host would create the race for real, silently. -->
+- [x] 9.7 Live: restart the host *while the wired link is down* and confirm the path comes up over the backup — the case that will actually happen
+      <!-- Passed: the path came back over the backup with no intervention, about three
+           minutes after boot. Measured 2026-08-01, boot at 07:34:47 — interface created at
+           14s, backup session up at 15s, first uplink check at 90s, failover at 154s, the
+           endpoint finally resolved at 164s, hostname served over `wwan0` by 187s.
+           Done without touching the cable, which the owner could not do easily: the wire was
+           blacked out at the output hook from before the network was configured, dropping
+           everything the host originates over it while letting replies to tracked inbound
+           TCP through, so the operator kept a way in over the very link under test. Undone by
+           a timer counted from boot, so losing contact could not strand it.
+           The blackout had to drop UDP wholesale rather than exempt established flows. The
+           far end still holds this host's last endpoint on the wire, so a conntrack exemption
+           would have let it keep the tunnel alive over the link the test claims is down, and
+           the test would have passed without proving anything.
+           What actually saved it was not what this change built. `wg-quick` does not fail on
+           name resolution — it blocks in its own retry loop, here for 143 seconds, until
+           failover flipped DNS and the name resolved. The tunnel watchdog never came into it.
+           See 3.7: that rescue rests on a margin nobody has written down. -->
 
 ## 10. Soak, then retire the direct path
 
@@ -236,6 +295,25 @@
       tree so content follows a deploy, or teach the deploy hook to install and reload it —
       both need a decision about the privileges the hook holds, which is why this is named
       rather than quietly patched
+      <!-- Two findings from 2026-08-01 that change what this task may do.
+           First, it cannot be answered by installing everything from the repository. Four of
+           the five files that had diverged differ *on purpose*: this repository publishes
+           the shape and not the address, so `wg-tunnel-check.{sh,service,timer}` and the
+           house's nginx block carry example values while the machine carries real ones.
+           Installing them would point the tunnel watchdog at an address nothing answers on —
+           where its own guard exits 2 and it silently stops watching — reference an
+           `EnvironmentFile` that does not exist on this host, and rewrite the nginx block to
+           a hostname the caller does not use. A deploy would take the gateway down. So the
+           prerequisite is to move every machine-specific value out of files the deploy will
+           overwrite, using the mechanism the repository already has and this host skipped
+           (`/etc/wg-tunnel-check.env`, `/etc/default/wwan-backup`); the nginx block stays out
+           of any manifest, since `listen` and `server_name` do not parameterise.
+           Second, the failure mode is quieter than "the file did not arrive". Installing by
+           hand from `/opt/sms-gate` reports success while copying whatever that tree happens
+           to hold — which, if the deploy has not run, is the previous version. Observed
+           today: an install ran, said nothing, and left the old script in place. Whatever
+           this task builds must make the source of the install unambiguous, not merely
+           automatic. -->
 
 - [x] 11.1 Document the topology, both machines' parts in it, and the rollback
 - [ ] 11.2 Archive so the `inbound-reachability` requirements land in `openspec/specs/`

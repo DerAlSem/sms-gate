@@ -55,21 +55,34 @@ read_env() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-; }
 
 alert() {
     # Telegram notification on channel switch. Skipped if no credentials.
-    # NB: from the backup channel (T2) api.telegram.org may not respond
-    # (mobile carrier blocks) — hence retries and a log entry on failure.
-    local token chat attempt
+    # The direct route cannot carry the message that matters here. The carrier the backup
+    # uplink runs on blocks api.telegram.org, so a failover alert is raised at the one moment
+    # the direct route is guaranteed dead — while the restore alert, sent once the wire is
+    # back, arrives normally. The operator is told the outage ended and never that it began.
+    # Observed 2026-07-29, and twice more on 2026-08-01 while proving the restart cases.
+    # The relay at the far end is reached over the tunnel and works on either uplink, so it
+    # goes first and the direct route stays as the fallback — the same order notify-telegram
+    # and the tunnel watchdog already use.
+    local token chat relay attempt base
     token="${ALERT_BOT_TOKEN:-$(read_env ALERT_BOT_TOKEN)}"
     chat="${ALERT_CHAT_ID:-$(read_env ALERT_CHAT_ID)}"
+    relay="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
     [ -n "$token" ] && [ -n "$chat" ] || return 0
+    # Retries stay, and now cover the relay too: a failover alert is raised the moment the
+    # route changes, before WireGuard has handshaked from the new source address, so the
+    # relay's first attempt can legitimately fail on a tunnel that is about to work.
     for attempt in 1 2 3; do
-        if curl -sS --max-time 15 "https://api.telegram.org/bot${token}/sendMessage" \
-            --data-urlencode "chat_id=${chat}" \
-            --data-urlencode "text=📡 $(hostname): $*" >/dev/null 2>&1; then
-            return 0
-        fi
+        for base in "${relay%/}" "https://api.telegram.org"; do
+            [ -n "$base" ] || continue
+            if curl -sS --max-time 15 "${base}/bot${token}/sendMessage" \
+                --data-urlencode "chat_id=${chat}" \
+                --data-urlencode "text=📡 $(hostname): $*" >/dev/null 2>&1; then
+                return 0
+            fi
+        done
         sleep 5
     done
-    log "alert: Telegram unreachable after 3 attempts (default: $(ip route show default | head -1))"
+    log "alert: no route delivered it after 3 attempts (default: $(ip route show default | head -1))"
 }
 
 mask2prefix() {
@@ -453,10 +466,21 @@ cmd_status() {
     resolvectl status "$IFACE" 2>/dev/null | head -8 || true
 }
 
+cmd_test_alert() {
+    # Exercises the real alert() rather than a copy of it, because the question this answers
+    # — which route actually delivered — was previously only askable by staging a failover,
+    # and a genuine outage is a poor price for checking a curl. To prove the relay carried
+    # it, blackhole the direct route for the duration: the message still arriving is the
+    # whole claim.
+    alert "test alert — ignore (checking which route delivers)"
+    echo "sent; if no message arrives, 'journalctl -t wwan-backup' names the failure"
+}
+
 case "${1:-}" in
-    up)       cmd_up ;;
-    down)     cmd_down ;;
-    watchdog) cmd_watchdog ;;
-    status)   cmd_status ;;
-    *) echo "usage: $0 up|down|watchdog|status" >&2; exit 2 ;;
+    up)         cmd_up ;;
+    down)       cmd_down ;;
+    watchdog)   cmd_watchdog ;;
+    status)     cmd_status ;;
+    test-alert) cmd_test_alert ;;
+    *) echo "usage: $0 up|down|watchdog|status|test-alert" >&2; exit 2 ;;
 esac

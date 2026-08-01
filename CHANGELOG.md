@@ -6,6 +6,26 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **The alert saying the uplink had failed took the one route that is dead during an uplink
+  failure.** The carrier the backup channel runs on blocks `api.telegram.org`, so the failover
+  alert was raised at the exact moment the direct route could not carry it, while the restore
+  alert — sent once the wire was back — arrived normally. The operator was told the outage had
+  ended and never that it had begun.
+  A relay at the far end, reached over the tunnel and working on either uplink, was built for
+  this and wired into the gateway's notifier and the tunnel watchdog. The uplink script, which
+  raises the failover alert this all started with, was never converted and still posted
+  directly. The README and the deployment notes said the house sent through the relay; that
+  was true of every sender but the one that mattered.
+  Found by testing rather than by reading: two restart tests on 2026-08-01 each logged
+  `alert: Telegram unreachable after 3 attempts` while the backup was carrying, and each
+  restore alert went out silently minutes later. `alert()` now tries the relay first and the
+  direct route as fallback, with retries covering both — retries matter more here than
+  elsewhere, because the alert is raised the instant the route changes, before WireGuard has
+  handshaked from its new source address.
+  A `wwan-backup test-alert` subcommand comes with it. The alert path could previously be
+  checked only by staging a real failover, which is a genuine outage spent answering a
+  question about a route; blackholing Telegram's ranges around the new subcommand answers the
+  same question in seconds and proves which route delivered.
 - **Messages were reported as failures while arriving whole.** The gateway called a
   multipart message delivered only once every part had been reported, and one network on
   this SIM reports the final segment and no more. Those messages never completed, sat until

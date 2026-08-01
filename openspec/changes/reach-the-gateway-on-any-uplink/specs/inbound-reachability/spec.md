@@ -232,6 +232,19 @@ with no one able to tell, which is the same silent failure the supervision requi
 to prevent. The case that matters most is the one that will actually happen: a restart during
 an outage, when the path must come up over the backup uplink rather than the wired one.
 
+**Measured on 2026-08-01: about three minutes with the uplink dead from boot, and no
+intervention.** Counted from boot: the tunnel interface exists at 14 seconds, the backup
+session at 15, the first uplink check at 90, failover at 154, the far end's name resolves at
+164, and the hostname is served over the backup by 187. With the uplink healthy the path is
+back as soon as the host is.
+
+Almost all of that is the uplink's own detection threshold — the first check waits ninety
+seconds after boot and two more intervals must fail — so the figure to plan against is that
+threshold, not anything this path does. What the figure hides is that the tunnel unit spends
+those minutes blocked retrying name resolution rather than failing, and recovers because the
+retry outlives the threshold by ten seconds. That margin is not designed and not documented,
+which is why it is named as work rather than recorded as a property.
+
 #### Scenario: An ordinary restart
 - **WHEN** the host restarts with the primary uplink healthy
 - **THEN** the inbound path is established without intervention
