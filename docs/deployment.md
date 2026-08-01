@@ -64,6 +64,9 @@ if [ ! -d "venv" ] || [ requirements.txt -nt venv/timestamp ]; then
     touch venv/timestamp
 fi
 
+echo ">>> Installing units..."
+sudo /usr/local/sbin/sms-gate-install-units
+
 echo ">>> Restarting service..."
 sudo systemctl restart sms-gate
 
@@ -104,15 +107,32 @@ sudo systemctl start sms-gate
 Unit-файлы теперь лежат в репозитории в каталоге `deploy/` (источник истины):
 `deploy/sms-gate.service` и `deploy/sms-gate-notify@.service`.
 
-Установите или обновите их (однократно, и снова всякий раз, когда unit-файлы меняются —
-хук `post-receive` НЕ копирует их):
+Начиная с этого места их ставит деплой — хук вызывает `sms-gate-install-units`, который
+сравнивает содержимое, копирует только изменившееся, делает `daemon-reload` и печатает, что
+именно поменял. До этого они были копиями, которые деплой не трогал, и изменение unit-файла
+молча не доезжало: деплой отчитывался успехом, служба перезапускалась, правки не было.
+
+**Ставится не всё из `deploy/`, и это намеренно.** Репозиторий публикует форму, а не адрес,
+поэтому сторож туннеля и nginx-блоки держат здесь примеры, а на машине — настоящие значения.
+Установка таких файлов направила бы сторож на адрес, где никто не отвечает, и переписала бы
+`server_name` на имя, которым никто не пользуется. Машинные значения живут в
+`/etc/wg-tunnel-check.env`, `/etc/default/wwan-backup` и systemd-drop-in'ах. nginx-блоки
+исключены навсегда: `listen` и `server_name` не параметризуются.
+
+Службы установщик **не перезапускает** — `wwan-backup` на остановке рвёт резервную сессию, и
+во время проводной аварии это унесло бы единственный живой аплинк. Скрипты, которые эти
+службы запускают, перевызываются на каждом тике, так что установки скрипта достаточно;
+изменившийся *unit* вступает в силу на следующей загрузке.
+
+Сам установщик — root-owned, лежит вне задеплоенного дерева и обновляется руками:
 
 ```bash
-sudo cp /opt/sms-gate/deploy/sms-gate.service /etc/systemd/system/
-sudo cp /opt/sms-gate/deploy/sms-gate-notify@.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart sms-gate
+sudo install -m 755 /opt/sms-gate/deploy/install-units.sh /usr/local/sbin/sms-gate-install-units
 ```
+
+Это граница, а не недосмотр: манифест, который может переписать пуш, — не манифест. Отсюда же
+следует, что доступ на пуш здесь равносилен руту, поскольку unit-файл называет команду. Сузить
+это нельзя, пока деплой вообще ставит юниты, и принято оно осознанно.
 
 Главный unit ограничивает перезапуски (`StartLimitBurst=5` / `StartLimitIntervalSec=300`): после
 5 быстрых сбоев systemd прекращает циклические попытки и переходит в состояние `failed`, что запускает
@@ -182,7 +202,9 @@ sudo systemctl start sms-gate-notify@sms-gate.service
 
 ## 6. Sudoers for Restart (no password)
 
-Хуку post-receive нужен `sudo systemctl restart` без пароля:
+Хуку post-receive нужен `sudo systemctl restart` и установщик юнитов без пароля. Имя в правиле
+обязано совпадать с аккаунтом, от которого выполняется хук, — это владелец bare-репозитория
+`/opt/sms-gate.git`, а не обязательно `smsgate`; проверить можно через `ls -ld /opt/sms-gate.git`.
 
 ```bash
 sudo visudo -f /etc/sudoers.d/sms-gate
@@ -190,7 +212,7 @@ sudo visudo -f /etc/sudoers.d/sms-gate
 
 Добавьте:
 ```
-smsgate ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart sms-gate, /usr/bin/systemctl stop sms-gate, /usr/bin/systemctl start sms-gate
+smsgate ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart sms-gate, /usr/bin/systemctl stop sms-gate, /usr/bin/systemctl start sms-gate, /usr/local/sbin/sms-gate-install-units
 ```
 
 ---
@@ -304,6 +326,9 @@ if [ ! -d "venv" ] || [ requirements.txt -nt venv/timestamp ]; then
     touch venv/timestamp
 fi
 
+echo ">>> Installing units..."
+sudo /usr/local/sbin/sms-gate-install-units
+
 echo ">>> Restarting service..."
 sudo systemctl restart sms-gate
 
@@ -344,15 +369,32 @@ sudo systemctl start sms-gate
 The unit files now live in the repo under `deploy/` (source of truth):
 `deploy/sms-gate.service` and `deploy/sms-gate-notify@.service`.
 
-Install or refresh them (one-time, and again whenever the unit files change — the
-`post-receive` hook does NOT copy them):
+The deploy installs them from here on: the hook calls `sms-gate-install-units`, which compares
+content, copies only what differs, runs `daemon-reload`, and prints what it changed. Before
+that they were copies the deploy never touched, so a changed unit file silently failed to
+arrive — the deploy reported success, the service restarted, and the change was simply absent.
+
+**Not everything under `deploy/` is installed, deliberately.** This repository publishes the
+shape and not the address, so the tunnel watchdog and the nginx blocks hold examples here and
+real values on the machine. Installing those would point the watchdog at an address nothing
+answers on and rewrite a `server_name` to a hostname nobody calls. Machine-specific values
+belong in `/etc/wg-tunnel-check.env`, `/etc/default/wwan-backup` and systemd drop-ins. The
+nginx blocks are excluded permanently: `listen` and `server_name` do not parameterise.
+
+The installer does **not** restart services. `wwan-backup` tears down the backup data session
+on stop, which during a wired outage would take the only working uplink with it. The scripts
+those services run are re-executed on every tick, so installing the script is enough for them;
+a changed *unit* applies at the next boot.
+
+The installer itself is root-owned, lives outside the deployed tree, and is updated by hand:
 
 ```bash
-sudo cp /opt/sms-gate/deploy/sms-gate.service /etc/systemd/system/
-sudo cp /opt/sms-gate/deploy/sms-gate-notify@.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl restart sms-gate
+sudo install -m 755 /opt/sms-gate/deploy/install-units.sh /usr/local/sbin/sms-gate-install-units
 ```
+
+That is the boundary, not an oversight — a manifest a push could edit is not a manifest. It
+also means push access is equivalent to root here, since a unit file names a command. That
+cannot be narrowed away while deploys install units at all, and is accepted knowingly.
 
 The main unit limits restarts (`StartLimitBurst=5` / `StartLimitIntervalSec=300`): after
 5 rapid failures systemd stops looping and enters `failed`, which triggers
@@ -422,7 +464,9 @@ handler covers anything that logs before dying.
 
 ## 6. Sudoers for Restart (no password)
 
-The post-receive hook needs `sudo systemctl restart` without password:
+The post-receive hook needs `sudo systemctl restart` and the unit installer without a password.
+The name in the rule must be the account the hook runs as — the owner of the bare repo
+`/opt/sms-gate.git`, not necessarily `smsgate`; check with `ls -ld /opt/sms-gate.git`.
 
 ```bash
 sudo visudo -f /etc/sudoers.d/sms-gate
@@ -430,7 +474,7 @@ sudo visudo -f /etc/sudoers.d/sms-gate
 
 Add:
 ```
-smsgate ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart sms-gate, /usr/bin/systemctl stop sms-gate, /usr/bin/systemctl start sms-gate
+smsgate ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart sms-gate, /usr/bin/systemctl stop sms-gate, /usr/bin/systemctl start sms-gate, /usr/local/sbin/sms-gate-install-units
 ```
 
 ---

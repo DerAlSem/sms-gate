@@ -6,6 +6,30 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **A unit file that was committed and deployed did not reach systemd.** Everything under
+  `deploy/` was installed as a copy, so a commit changing a unit landed in `/opt/sms-gate` and
+  stopped there. Nothing noticed: the deploy reported success, the service restarted, and the
+  change was simply absent. It happened silently to `RestartSec` in 0.12.0, to a uvicorn bind,
+  to two nginx blocks, and — for months — to the tunnel watchdog's ability to deliver an alert
+  over the backup uplink, which is to say the watchdog for the only entrance to the house was
+  mute in the one situation it exists for.
+  The deploy hook now calls a root-owned installer that compares content, copies only what
+  differs, reloads systemd and prints what it changed. Three things about it are deliberate.
+  It lives outside the deployed tree and is updated by hand, because a manifest a push could
+  edit is not a manifest. It installs only environment-neutral files: this repository
+  publishes the shape and not the address, so the tunnel watchdog and the nginx blocks hold
+  examples here and real values on the machine, and installing them would point a monitor at
+  an address nothing answers on. And it restarts no services — stopping `wwan-backup` tears
+  down the backup data session, which during a wired outage would take the only working uplink
+  with it.
+  The prerequisite came first and was worth as much: machine-specific values moved out of the
+  files a deploy overwrites, into an env file and a systemd drop-in. The published unit had
+  hardcoded the placeholder tunnel name in `After=`/`Wants=`, so installing it would have made
+  systemd try to start a `wg-quick` instance with no configuration — which is precisely why
+  that file had been edited in place, and precisely how it came to diverge.
+  Push access to this repository is now equivalent to root on the deployment host, since a
+  unit file names a command. That cannot be narrowed away while deploys install units at all;
+  it is recorded rather than glossed.
 - **The alert saying the uplink had failed took the one route that is dead during an uplink
   failure.** The carrier the backup channel runs on blocks `api.telegram.org`, so the failover
   alert was raised at the exact moment the direct route could not carry it, while the restore
