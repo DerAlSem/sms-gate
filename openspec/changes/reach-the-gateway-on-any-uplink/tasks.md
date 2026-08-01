@@ -302,7 +302,7 @@
 
 ## 11. Ship
 
-- [ ] 11.0 Close the gap this change tripped over: a unit file committed and deployed does not
+- [x] 11.0 Close the gap this change tripped over: a unit file committed and deployed does not
       reach systemd, because the installed unit is a copy rather than a link to the repository.
       Nothing notices the divergence — the deploy reports success, the service restarts, and
       the change is simply absent. It happened silently for `RestartSec` in 0.12.0 too, where
@@ -329,6 +329,29 @@
            today: an install ran, said nothing, and left the old script in place. Whatever
            this task builds must make the source of the install unambiguous, not merely
            automatic. -->
+      <!-- Answered by teaching the hook to install, with the privilege decision taken rather
+           than avoided: a root-owned installer outside the deployed tree, reached by NOPASSWD
+           sudo, carrying its own manifest. A push can change what is installed but not where,
+           because a manifest a push could edit is not a manifest. The consequence is stated
+           in the file itself — push access is now equivalent to root here, since a unit names
+           a command, and that cannot be narrowed away while deploys install units at all.
+           The prerequisite came first and was the larger half: machine values moved into
+           `/etc/wg-tunnel-check.env` and a systemd drop-in, because `EnvironmentFile` reaches
+           the script but not `After=`/`Wants=` — a gap that had forced the unit to be edited
+           in place, which is how it diverged and then missed the alert-relay fix for months.
+           Verified end to end 2026-08-01, not by inspection: a real unit change was pushed and
+           the deploy printed `installing units from e506dd3` / `installed
+           /etc/systemd/system/wwan-backup.service` / `daemon-reload`. All nine managed files
+           now match the repository; the only remaining divergence is the nginx block, excluded
+           on purpose.
+           Two things it deliberately does not do. It installs nothing carrying published
+           placeholders, since that would point a monitor at an address nothing answers on. And
+           it restarts no services: stopping `wwan-backup` drops the backup data session, which
+           during a wired outage would take the only working uplink with it.
+           One defect found by running it: the first version read the commit with `git -C
+           /opt/sms-gate`, which is a work tree with no `.git`, so it printed "unknown commit" —
+           the exact ambiguity the line existed to remove, wearing the shape of an answer. It
+           now reads the bare repository and warns when the tree does not match the commit. -->
 
 - [x] 11.1 Document the topology, both machines' parts in it, and the rollback
 - [ ] 11.2 Archive so the `inbound-reachability` requirements land in `openspec/specs/`
