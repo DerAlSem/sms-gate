@@ -47,9 +47,21 @@ sudo tee /etc/wg-tunnel-check.env >/dev/null <<'ENVEOF'
 PEER_ADDR=YOUR.TUNNEL.FAR.END
 UNIT=wg-quick@YOUR-INTERFACE
 ENVEOF
+sudo mkdir -p /etc/systemd/system/wg-tunnel-check.service.d
+sudo tee /etc/systemd/system/wg-tunnel-check.service.d/local.conf >/dev/null <<'DROPEOF'
+[Unit]
+After=wg-quick@YOUR-INTERFACE.service
+Wants=wg-quick@YOUR-INTERFACE.service
+DROPEOF
 sudo systemctl daemon-reload
 sudo systemctl enable --now wg-tunnel-check.timer
 ```
+
+**Both files, not just the env one.** `EnvironmentFile` reaches the script; it cannot reach
+`After=`/`Wants=`, so the tunnel's unit name has to arrive by drop-in. Skipping the drop-in
+costs only ordering — the timer fires every minute regardless — but skipping it by *editing
+the unit in place* is how the installed copy came to diverge from this one and then quietly
+miss a fix for months.
 
 Credentials come from `/opt/sms-gate/.env`, the same place the gateway's own notifier reads
 them — one place to rotate, not two.

@@ -1,7 +1,16 @@
 [Unit]
-Description=Is the tunnel to edge.example.com carrying anything
-After=wg-quick@wg-edge.service
-Wants=wg-quick@wg-edge.service
+Description=Is the tunnel carrying anything
+# The tunnel's unit name is deliberately absent. It belongs to the machine, and naming it
+# here would be worse than untidy: `Wants=` on a published placeholder makes systemd try to
+# *start* a wg-quick instance that has no configuration. Ordering therefore lives in a
+# machine-local drop-in, which is what drop-ins are for — `EnvironmentFile` parameterises the
+# script but cannot reach `After=`/`Wants=`, and that gap is how this file came to be edited
+# in place on the host and then silently diverge from the one here.
+#
+#   /etc/systemd/system/wg-tunnel-check.service.d/local.conf
+#   [Unit]
+#   After=wg-quick@<iface>.service
+#   Wants=wg-quick@<iface>.service
 
 [Service]
 Type=oneshot
