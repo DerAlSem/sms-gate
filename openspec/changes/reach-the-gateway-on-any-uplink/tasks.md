@@ -137,7 +137,22 @@
            `alert()` in `wwan-backup.sh` now tries the relay first and the direct route as
            fallback, retries covering both, matching the two scripts that were already
            correct. Retries matter more here than there: the alert is raised at the instant
-           the route changes, before WireGuard has handshaked from the new source address. -->
+           the route changes, before WireGuard has handshaked from the new source address.
+           Relay half verified live 2026-08-01 10:16, and verified as a claim about routes
+           rather than about delivery: Telegram's own ranges were blackholed for the duration,
+           so the direct route could not have carried it. The message arrived and the journal
+           recorded no failure — with the only remaining route being the relay.
+           Still open, and stated precisely this time so it cannot be ticked by generosity
+           again: retention is implemented in `app/alerting.py`, which is the gateway's own
+           alerts. All three shell raisers — the uplink script, the tunnel watchdog and the
+           unit notifier — have the relay and the fallback but no spool, so an alert raised
+           while *neither* route answers is logged and dropped. That is the case this task
+           names, and for those three it is still true.
+           Partly compensated, and worth knowing rather than assuming: the outside
+           reachability check raised and delivered both of its alerts during the cold-boot
+           test — unreachable at 07:37, reachable again at 07:38 — because it runs at the far
+           end and never depended on the house having a route. During the window when the
+           house can carry nothing, that check is the only thing that still speaks. -->
 
 ## 4. Watching from outside the failure domain
 
