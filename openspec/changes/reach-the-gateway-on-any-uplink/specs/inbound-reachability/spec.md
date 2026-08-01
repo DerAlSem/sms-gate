@@ -238,12 +238,19 @@ session at 15, the first uplink check at 90, failover at 154, the far end's name
 164, and the hostname is served over the backup by 187. With the uplink healthy the path is
 back as soon as the host is.
 
-Almost all of that is the uplink's own detection threshold — the first check waits ninety
-seconds after boot and two more intervals must fail — so the figure to plan against is that
+Almost all of that is the uplink's own detection threshold — the first check waited ninety
+seconds after boot and two more intervals had to fail — so the figure to plan against is that
 threshold, not anything this path does. What the figure hides is that the tunnel unit spends
 those minutes blocked retrying name resolution rather than failing, and recovers because the
-retry outlives the threshold by ten seconds. That margin is not designed and not documented,
-which is why it is named as work rather than recorded as a property.
+retry outlives the threshold by ten seconds.
+
+**That threshold has since been lowered, so the figure above describes the configuration it was
+measured on and not the current one.** The first check now runs thirty seconds after boot,
+which moves the earliest possible failover from 150 seconds to 90 and should bring the whole
+path back in roughly two minutes rather than three. That is arithmetic, not a measurement: it
+has not been observed, and it is recorded as a prediction until it is. The measured figure
+stays because a superseded measurement is still evidence, while an unmeasured improvement
+written in its place would be neither.
 
 #### Scenario: An ordinary restart
 - **WHEN** the host restarts with the primary uplink healthy
