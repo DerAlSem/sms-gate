@@ -69,9 +69,15 @@ them — one place to rotate, not two.
 Verify:
 
 ```sh
-sudo /usr/local/sbin/wg-tunnel-check ; echo "exit=$?"          # silent, 0
+sudo systemctl start wg-tunnel-check.service                   # silent
+systemctl show wg-tunnel-check.service -p Result -p ExecMainStatus
 sudo env PEER_ADDR=10.10.10.99 UNIT=true /usr/local/sbin/wg-tunnel-check ; echo "exit=$?"
 ```
+
+**Through systemd, not by hand.** `EnvironmentFile` is applied by systemd when it runs the
+unit; a bare `sudo /usr/local/sbin/wg-tunnel-check` never reads it, falls back to the
+published placeholders, and the guard refuses — which looks exactly like a misconfigured
+host and is not one. The second line does pass the values explicitly, which is why it works.
 
 The second points at an address that cannot answer and at `true` instead of the real unit, so
 it exercises the failure path without restarting the tunnel. Run it four times to see the
