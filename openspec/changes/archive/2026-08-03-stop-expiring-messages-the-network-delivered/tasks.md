@@ -46,4 +46,8 @@
 - [x] 5.2 Changelog entry saying plainly that messages were reported failed while arriving
 - [x] 5.3 Ship and verify against prod
       <!-- Deployed 18:28, migration applied, no restart loop, verified live above. -->
-- [ ] 5.4 Archive so the modified requirements land in `openspec/specs/`
+- [x] 5.4 Archive so the modified requirements land in `openspec/specs/`
+      <!-- Archived 2026-08-03, two days after the deploy, once prod data had had time to
+           disagree and didn't: every "two parts, one confirmed" expiry stops at the deploy,
+           and the three since are all zero-report messages the rule was never about. -->
+

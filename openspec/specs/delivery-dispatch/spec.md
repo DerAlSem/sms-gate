@@ -43,6 +43,11 @@ synchronously.
 The gateway SHALL send exactly one notification per message per status change,
 regardless of how many parts a multipart message has.
 
+A message the sweep completes as delivered on partial reports SHALL notify `delivered`,
+and SHALL NOT notify `expired` first. The application is owed the conclusion, not the
+reasoning that reached it — and a pair of contradicting notifications is worse than the
+wrong one alone, because a receiver that acts on the first has already acted.
+
 #### Scenario: A message is delivered
 - **WHEN** the delivery report for every part of message 42 (owned by app `app1`) arrives
 - **THEN** exactly one POST is made to app `app1`'s route with `"id": 42` and `"status": "delivered"` and `"error": null`
@@ -58,6 +63,10 @@ regardless of how many parts a multipart message has.
 #### Scenario: The first part of a multipart message is delivered
 - **WHEN** part 1 of a two-part message is reported delivered and part 2 is not
 - **THEN** no `delivered` notification is sent yet
+
+#### Scenario: The remaining reports never arrive
+- **WHEN** the timeout is reached for that message and no part was reported failed
+- **THEN** one `delivered` notification is sent, and no `expired` notification is sent for it
 
 #### Scenario: A delivery report arrives after the message expired
 - **WHEN** message 42 is swept to `expired`, and a delivery report for it arrives later
