@@ -42,17 +42,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     store.on_change("Alerting", lambda: _alert_reconfigure(store))
     logger.info("Settings loaded")
 
-    await modem_manager.connect()
+    # The modem is deliberately *not* awaited here. Establishing the link used to happen
+    # before this function yielded, which made a reachable modem a precondition for
+    # serving HTTP at all: on 2026-08-28 an unplugged device meant uvicorn never listened
+    # and the admin console answered `502 Bad Gateway` — taking away the one page that
+    # could have explained the fault. The console reads the database, not the modem; its
+    # dependence on the hardware was ordering inside this function and nothing else.
+    #
+    # Opening the port, initialising it and reconciling the inbox now belong to the
+    # linker below, which does them for as long as the process runs.
     app.state.modem = modem_manager
-    logger.info("Modem connected")
-
-    await modem_manager.scan_inbox()
+    modem_manager.suspend_until_linked()
 
     # Essential means the gateway cannot do its job without it: nothing goes out, nothing
     # comes in, or nothing ever reaches a terminal status. Leaving the process running
     # after one of those dies is a service that is up and quietly no longer working —
     # which is the state the 2026-07-29 incident produced and nothing noticed.
     loops = [
+        # First in the list because everything else waits on what it does. Essential: a
+        # gateway whose linker has died can never reach its modem again, and would sit
+        # serving pages while silently unable to send or receive anything.
+        ("linker", modem_manager.linker_loop(), True),
         ("sender", modem_manager.sender_loop(), True),
         ("reader", modem_manager.reader_loop(), True),
         ("inbound", modem_manager.inbound_loop(), True),

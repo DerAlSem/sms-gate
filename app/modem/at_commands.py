@@ -152,6 +152,17 @@ class ATSerial:
         return self._usable
 
     @property
+    def in_service(self) -> bool:
+        """Open, believed good, and actually carrying a transport.
+
+        `usable` alone cannot answer this. It starts True so that a test which installs a
+        transport by hand begins from an open link, which makes it unable to tell "never
+        opened" from "open" — and the gateway now starts without opening anything, so that
+        distinction has become load-bearing rather than academic.
+        """
+        return self._usable and self._writer is not None
+
+    @property
     def reopens(self) -> int:
         return self._reopens
 
@@ -352,7 +363,16 @@ class ATSerial:
         return ModemTransportError(f"link to {self._port} lost: {reason}")
 
     def _check_usable(self) -> None:
-        if not self._usable:
+        """Refuse to touch a link that is not carrying a transport.
+
+        The absent writer is checked here rather than left to the bare `assert` further
+        down, because the two failures are not interchangeable to the caller: the send
+        path is required to read a transport failure as permission to hold a message,
+        and an `AssertionError` escapes that handling and fails the message instead. The
+        gateway now starts before the port is open, so this is the ordinary state at
+        startup rather than an impossible one.
+        """
+        if not self._usable or self._writer is None:
             raise ModemTransportError(f"link to {self._port} is not open")
 
     async def _send(self, data: bytes) -> None:

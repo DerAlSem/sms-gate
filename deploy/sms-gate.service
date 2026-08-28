@@ -24,11 +24,16 @@ WorkingDirectory=/opt/sms-gate
 ExecStart=/opt/sms-gate/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 30080 \
     --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
-# Paired with the 60s the gateway spends waiting for its modem to reappear (see
-# _DEVICE_WAIT). A failed start therefore costs 90s, so five of them span 450s and cannot
-# exhaust StartLimitBurst inside its 300s window — which matters because a restart
-# provoked by a lost link lands while the modem is still re-enumerating. A fast crash (a
-# bad .env, an import error) still trips the limit within seconds, which is what it is for.
+# This used to be paired against the 60s the gateway spent waiting for its modem before
+# giving up and exiting: 90s per failed start, five of them spanning 450s, deliberately
+# too long to exhaust StartLimitBurst inside its 300s window.
+#
+# That arithmetic is no longer load-bearing, because the gateway no longer exits over a
+# modem it cannot reach. Startup does not wait for the device at all — it serves HTTP and
+# leaves the link to the linker, which retries for as long as the process runs — so an
+# absent modem now costs zero restarts instead of an endless procession of them. The
+# limits below are back to guarding what they were always for: a fast crash, a bad .env,
+# an import error, which still trips them within seconds.
 RestartSec=30
 Environment=PYTHONUNBUFFERED=1
 EnvironmentFile=/opt/sms-gate/.env

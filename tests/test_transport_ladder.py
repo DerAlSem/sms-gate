@@ -106,12 +106,33 @@ def test_a_restored_link_clears_the_ladder():
 class _DeadLinkSender:
     """A sender whose port is gone: every AT exchange raises, as it would in production."""
 
-    def __init__(self):
+    def __init__(self, reopen=False):
         self.soft = 0
         self.hard = 0
+        self.reopens = 0
         self.usable = False
+        self.port = "/dev/ttyUSB2"
+        self._reopen = reopen
         self.link_lost = asyncio.Event()
         self.link_lost.set()
+
+    @property
+    def in_service(self):
+        return self.usable
+
+    async def reconnect(self, *, init=True):
+        self.reopens += 1
+        if not self._reopen:
+            return False
+        self.usable = True
+        return True
+
+    async def list_all_sms(self, timeout=10.0):
+        return "OK"
+
+    def link_snapshot(self):
+        return {"link": "open" if self.usable else "lost",
+                "link_last_good": "—", "link_reopens": self.reopens}
 
     async def registration_ok(self):
         raise ModemTransportError("link to /dev/ttyUSB2 lost: gone")
@@ -131,13 +152,26 @@ def _mgr(sender):
     return m
 
 
-def test_a_dead_port_reaches_the_exit_instead_of_looping():
+def test_a_dead_port_is_recognised_rather_than_swallowed():
     """The incident itself: the poll raised, escaped the step, and was swallowed 316
-    times over five hours while the ladder never advanced a single rung."""
+    times over five hours while nothing was ever counted. The step must still see it —
+    what changed is only who acts on it, since the linker now owns the port and the
+    watchdog owns the radio."""
     m = _mgr(_DeadLinkSender())
     first = asyncio.run(m._watchdog_step())
     second = asyncio.run(m._watchdog_step())
-    assert (first, second) == (SOFT, HARD)
+    assert (first, second) == (WAIT, WAIT), "the ladder has no rung for a missing port"
+    assert m._health.cause == TRANSPORT, "but it must still be recognised as one"
+
+
+def test_a_lost_link_is_never_counted_against_the_radio():
+    """Letting it accumulate would drive the registration ladder to a hard reset on
+    evidence that says nothing about the radio."""
+    m = _mgr(_DeadLinkSender())
+    for _ in range(5):
+        asyncio.run(m._watchdog_step())
+    assert m._health.fails == 0
+    assert m._health.soft_tried is False
 
 
 def test_no_at_remedy_is_issued_against_a_port_that_is_gone():
@@ -213,12 +247,18 @@ def test_a_poll_that_cannot_be_completed_counts_as_a_failed_poll():
 # --- the switch, and who notices first ----------------------------------------
 
 
-def test_a_lost_link_is_acted_on_even_when_the_watchdog_is_disabled(monkeypatch):
+def test_a_lost_link_is_recovered_even_when_the_watchdog_is_disabled(monkeypatch):
     """The switch exists so an operator can take over judgement about an unhealthy
     *modem*. A port that does not exist is not that kind of judgement call — there is no
     policy under which the right answer is to keep writing to it — so silencing the
-    watchdog must not silently opt out of ever recovering the port."""
+    watchdog must not silently opt out of ever recovering the port.
+
+    It used to be enforced by ending the process from inside the watchdog loop. Now it
+    needs no enforcing: the linker is a task of its own and never reads the setting."""
     monkeypatch.setattr(mgr, "_WD_INTERVAL", 0.01)
+    monkeypatch.setattr(mgr, "_LINK_RETRY_BASE", 0.005)
+    monkeypatch.setattr(mgr, "_LINK_RETRY_CEILING", 0.02)
+    monkeypatch.setattr(mgr, "notify", lambda *a, **kw: None)
     monkeypatch.setattr(mgr, "_WD_HARD_RESET_SETTLE", 0.01)
     # Through the cache, not `setattr` on the store: the settings are served by
     # `__getattr__`, so patching the attribute writes a real one — and monkeypatch's undo
@@ -229,17 +269,25 @@ def test_a_lost_link_is_acted_on_even_when_the_watchdog_is_disabled(monkeypatch)
     exits = []
     monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))
 
-    m = _mgr(_DeadLinkSender())
+    sender = _DeadLinkSender(reopen=True)
+    m = _mgr(sender)
+    m._reader_link._writer = object()
 
     async def run():
-        # The loop exits by calling os._exit, which the patch turns into a record; give
-        # it a couple of ticks and then stop it.
-        task = asyncio.get_event_loop().create_task(m.watchdog_loop())
-        await asyncio.sleep(0.15)
-        task.cancel()
+        watchdog = asyncio.get_event_loop().create_task(m.watchdog_loop())
+        linker = asyncio.get_event_loop().create_task(m.linker_loop())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if sender.usable:
+                break
+        watchdog.cancel()
+        linker.cancel()
 
     asyncio.run(run())
-    assert exits, "the link stayed unusable for ever because the watchdog was switched off"
+    assert sender.usable is True, (
+        "the link stayed unusable for ever because the watchdog was switched off"
+    )
+    assert exits == [], "and recovering it costs no process restart"
 
 
 def test_the_send_paths_observation_wakes_the_watchdog_without_waiting_a_full_interval():

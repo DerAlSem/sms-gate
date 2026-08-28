@@ -34,6 +34,11 @@ class FakeLink:
         self.inits = []
         self._reopen = reopen
 
+    @property
+    def in_service(self):
+        """A scripted port carries no transport, so `usable` is the whole answer."""
+        return self.usable
+
     def lose(self):
         self.usable = False
         self.link_lost.set()
@@ -66,13 +71,22 @@ def _mgr(sender=None, urc=None):
     return m
 
 
+def _linker_pass(m):
+    """One turn of the linker: close the gate, bring both ports back, reopen it.
+
+    The watchdog used to drive this. It no longer has a rung for a missing port — the
+    linker owns both ports, which is what keeps the recovery coordinated rather than
+    letting two actors reconnect the same hardware."""
+    return m._recover(m.ensure_link)
+
+
 def test_a_re_enumeration_taking_both_ports_is_one_coordinated_recovery():
     sender, urc = FakeLink("/dev/ttyUSB2"), FakeLink("/dev/ttyUSB1")
     sender.lose()
     urc.lose()
     m = _mgr(sender, urc)
 
-    assert asyncio.run(m._watchdog_step()) == "soft"
+    asyncio.run(_linker_pass(m))
     assert (sender.reopens, urc.reopens) == (1, 1)
     assert m._modem_gate.is_set() is True
 
@@ -84,7 +98,7 @@ def test_losing_only_the_urc_port_still_reaches_the_shared_recovery():
     urc.lose()
     m = _mgr(urc=urc)
 
-    assert asyncio.run(m._watchdog_step()) == "soft"
+    asyncio.run(_linker_pass(m))
     assert urc.reopens == 1
     assert m._sender.reopens == 0, "a working command port must not be replaced"
 
@@ -96,7 +110,7 @@ def test_the_urc_port_is_reopened_without_an_init_sequence_of_its_own():
     urc.lose()
     m = _mgr(urc=urc)
 
-    asyncio.run(m._watchdog_step())
+    asyncio.run(_linker_pass(m))
     assert urc.inits == [False]
 
 
@@ -116,7 +130,7 @@ def test_the_command_port_is_reopened_before_the_urc_port():
     sender.lose()
     urc.lose()
 
-    asyncio.run(_mgr(sender, urc)._watchdog_step())
+    asyncio.run(_linker_pass(_mgr(sender, urc)))
     assert order == ["/dev/ttyUSB2", "/dev/ttyUSB1"]
 
 
@@ -125,8 +139,8 @@ def test_an_unreopenable_urc_port_reaches_the_same_service_exit():
     urc.lose()
     m = _mgr(urc=urc)
 
-    assert asyncio.run(m._watchdog_step()) == "soft"
-    assert asyncio.run(m._watchdog_step()) == "hard"
+    asyncio.run(_linker_pass(m))
+    asyncio.run(_linker_pass(m))
 
 
 def test_the_reader_does_not_reopen_during_the_settling_period_after_a_hard_reset():
@@ -157,7 +171,7 @@ def test_the_reader_resumes_once_the_shared_recovery_has_put_the_port_back():
         waiting = asyncio.create_task(m._await_link_restored())
         await asyncio.sleep(0.02)
         assert not waiting.done()
-        await m._watchdog_step()   # the one coordinated recovery
+        await _linker_pass(m)   # the one coordinated recovery
         await asyncio.wait_for(waiting, timeout=1.0)
 
     asyncio.run(run())
@@ -176,12 +190,18 @@ def test_the_watchdog_wakes_on_a_loss_reported_by_either_port():
     assert asyncio.run(run()) < 1.0, "a reported loss must not wait out a whole interval"
 
 
-def test_a_disabled_watchdog_still_restarts_on_a_lost_urc_port(monkeypatch):
+def test_a_disabled_watchdog_still_recovers_a_lost_urc_port(monkeypatch):
     """Silencing the watchdog is a judgement call about an unhealthy *modem*. A port that
-    does not exist is not that kind of call."""
+    does not exist is not that kind of call.
+
+    It used to be enforced by ending the process. The linker is a task of its own and
+    never reads the setting, so the guarantee now costs no restart."""
     from app.settings_store import store
 
     monkeypatch.setitem(store._cache, "modem_watchdog_enabled", "false")
+    monkeypatch.setattr(mgr, "_LINK_RETRY_BASE", 0.005)
+    monkeypatch.setattr(mgr, "_LINK_RETRY_CEILING", 0.02)
+    monkeypatch.setattr(mgr, "notify", lambda *a, **kw: None)
     exits = []
     monkeypatch.setattr(mgr.os, "_exit", lambda code: exits.append(code))
 
@@ -189,10 +209,15 @@ def test_a_disabled_watchdog_still_restarts_on_a_lost_urc_port(monkeypatch):
     m._reader_link.lose()
 
     async def run():
-        # One tick: the loop would go round again, so it is cancelled after the exit.
-        task = asyncio.create_task(m.watchdog_loop())
-        await asyncio.sleep(0.1)
-        task.cancel()
+        watchdog = asyncio.create_task(m.watchdog_loop())
+        linker = asyncio.create_task(m.linker_loop())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if m._reader_link.usable:
+                break
+        watchdog.cancel()
+        linker.cancel()
 
     asyncio.run(run())
-    assert exits == [1]
+    assert m._reader_link.usable is True, "the URC port must come back regardless"
+    assert exits == [], "and it costs no process restart"

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from app.config import settings
 from app.settings_store import store
-from app.modem import at_commands
 from app.modem.at_commands import ATSerial, ATCommandError, ModemFailure, ModemTransportError
 from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
@@ -54,6 +53,15 @@ _HOLD_RETRY_FALLBACK = 30
 # guessed, and necessarily longer than _WD_HARD_RESET_SETTLE, since the hard path keeps
 # sending suspended until the process exits. Not a scheduling knob — an escape hatch.
 _SEND_GATE_TIMEOUT = _RECOVERY_TIMEOUT + _RECOVERY_SETTLE + 60.0
+
+# How the linker paces itself while there is no modem. Attempts never stop — the gateway
+# has no remedy beyond waiting for the device, so a budget that expires would only
+# convert waiting into giving up — but they widen towards a ceiling, because a device
+# absent for hours must cost neither the processor nor the journal. The ceiling is
+# generous on purpose: a device that returns is noticed within it, and nothing else is
+# waiting on the difference.
+_LINK_RETRY_BASE = 3.0
+_LINK_RETRY_CEILING = 60.0
 
 # How long a deduplication key is kept. It guards against re-reading a copy still in
 # modem memory, and that copy is deleted by the first scan that recognises the key — so a
@@ -238,51 +246,6 @@ class ModemManager:
             if reopen:
                 self._modem_gate.set()
 
-    async def _reopen_link(self) -> None:
-        """Put the link back in place, instead of restarting the service to get it back.
-
-        Runs as a recovery action, so sending and inbound reading are already suspended on
-        the gate and the whole thing is bounded by `_RECOVERY_TIMEOUT`. It reports failure
-        by leaving the link unusable rather than by raising: the ladder reads the link's
-        own state on the next tick, and an exhausted reopen is an ordinary outcome with a
-        remedy waiting, not an error to log a traceback for.
-        """
-        started = time.monotonic()
-        reopened: list[ATSerial] = []
-        if not self._sender.usable:
-            if not await self._sender.reconnect():
-                logger.error("Could not reopen the link — the service will be restarted")
-                return
-            reopened.append(self._sender)
-        if not self._reader_link.usable:
-            # Second, and without an init sequence of its own — the design's open question,
-            # settled here. It has no writer, so it cannot issue commands at all; the URC
-            # subscription that matters is applied through the command port above and
-            # takes effect for both. Reopening it after that ordering is deliberate: the
-            # subscription is back in place before this port starts listening for what it
-            # produces.
-            if not await self._reader_link.reconnect(init=False):
-                logger.error(
-                    "Could not reopen %s — the service will be restarted", self._read_port
-                )
-                return
-            reopened.append(self._reader_link)
-        # The reconciliation the restart used to provide for free, and the reason this
-        # change could otherwise make inbound delivery *worse* than the restart it
-        # replaces: SMS accumulate in modem memory while the link is down, and the +CMTI
-        # announcing them go with the link. Without this they would sit unread until some
-        # later restart.
-        self._drop_queued_inbound_indices()
-        await self.scan_inbox()
-        if reopened:
-            # One notification, sent once the outcome is known, in place of one per step on
-            # the way there. Three red alerts for a pause that healed itself in fourteen
-            # seconds is how an operator learns to stop reading them — which is the same
-            # masked fault the reopen count exists to prevent, arrived at from the other
-            # side. Deduplicated on the ports, so a modem that flaps produces one message
-            # per window carrying the count of the ones it stood in for.
-            self._notify_reopened(reopened, time.monotonic() - started)
-
     def _notify_reopened(self, reopened: list[ATSerial], seconds: float) -> None:
         detail = ", ".join(
             f"{link.port} (reopen #{link.reopens})" for link in reopened
@@ -315,12 +278,132 @@ class ModemManager:
                 "Dropped %d inbound index(es) superseded by the inbox scan", dropped
             )
 
-    async def connect(self) -> None:
-        # Waits for the device rather than failing outright: a restart provoked by a lost
-        # link lands while the modem is still re-enumerating, and treating that as fatal
-        # would turn the remedy into an indefinite outage.
-        await self._sender.connect(wait_for_device=at_commands._DEVICE_WAIT)
-        await self._sender.init()
+    @property
+    def link_in_service(self) -> bool:
+        """Both ports open and initialised — the condition `ensure_link` restores."""
+        return self._sender.in_service and self._reader_link.in_service
+
+    def suspend_until_linked(self) -> None:
+        """Close the gate before any loop starts, unless the link is already up.
+
+        The gate starts open, which was right when startup would not finish until the
+        link was up. Now the loops start first, so without this a sender could claim a
+        message in the moment before the linker has opened anything — and every loop that
+        waits on the gate would sail past it into a port that does not exist.
+        """
+        if not self.link_in_service:
+            self._modem_gate.clear()
+
+    # `connect()` used to live here: open the command port, run the init sequence, and let
+    # `lifespan` await the whole thing before serving. It is gone rather than merely
+    # unused, because leaving it would leave two ways to establish the link — and the two
+    # it replaced had already drifted once, when the startup wait and the reopen budget
+    # had to be pinned to each other by hand after a prod incident. `ensure_link` below is
+    # the only way in now.
+
+    async def linker_loop(self) -> None:
+        """Own bringing the link up, for as long as the process runs.
+
+        This is where the link now comes from. It used to come from startup, which made a
+        reachable modem a precondition for serving HTTP at all: an unplugged device meant
+        uvicorn never listened and the console answered `502 Bad Gateway` — taking away
+        the one page that could have explained the fault.
+
+        It is also the only actor that establishes the link. The watchdog no longer has a
+        rung for a missing port, so there is nothing here to race: one loop closes the
+        gate, restores both ports, and opens it again.
+
+        Attempts do not stop. The old reopen budget ended in a process restart, and a
+        restart cannot reopen a device that is not plugged in — its only observable effect
+        was to spend the supervisor's restart limits until it gave up altogether, which is
+        the indefinite outage the spec warns about.
+        """
+        logger.info("Linker started")
+        delay = _LINK_RETRY_BASE
+        announced = False
+        while True:
+            if self.link_in_service:
+                announced = False
+                delay = _LINK_RETRY_BASE
+                await self._wait_for_link_lost()
+                continue
+            if not announced:
+                # Once per episode, not once per attempt: the gateway can no longer
+                # announce an unreachable modem by dying, so this is the only thing that
+                # says so — and a notification per attempt is how an operator learns to
+                # stop reading them.
+                announced = True
+                logger.error("No modem: the link is not in service — retrying until it is")
+                notify("link", f"modem not detected on {self._sender.port} — retrying",
+                       dedup_extra="absent")
+            await self._recover(self.ensure_link)
+            if self.link_in_service:
+                continue
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, _LINK_RETRY_CEILING)
+
+    async def _wait_for_link_lost(self) -> None:
+        """Sleep until either port reports itself gone, or a poll interval passes.
+
+        The interval is the backstop: a port can stop being in service without anyone
+        setting the event — nothing sets it when a reconnect leaves the link half up.
+        """
+        waiters = [
+            asyncio.ensure_future(link.link_lost.wait())
+            for link in (self._sender, self._reader_link)
+        ]
+        try:
+            await asyncio.wait(
+                waiters, timeout=_LINK_RETRY_CEILING,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        finally:
+            for waiter in waiters:
+                waiter.cancel()
+            # Taken, so a link that is back does not spin this loop on a stale event.
+            self._sender.link_lost.clear()
+            self._reader_link.link_lost.clear()
+
+    async def ensure_link(self) -> bool:
+        """Bring the link into service: open both ports, initialise, reconcile the inbox.
+
+        One operation with one definition of done, used the first time the link comes up
+        and every time it comes back. This is what the process restart used to do for
+        free — it was the remedy that reliably worked precisely because it did all of this
+        in one sweep — so retiring the restart without gathering the work here would
+        remove a crude remedy and put nothing in its place.
+
+        Reports failure by returning False rather than raising: an attempt that did not
+        succeed is an ordinary outcome with another attempt waiting, not an error worth a
+        traceback.
+        """
+        started = time.monotonic()
+        reopened: list[ATSerial] = []
+        if not self._sender.in_service:
+            if not await self._sender.reconnect():
+                return False
+            reopened.append(self._sender)
+        if not self._reader_link.in_service:
+            # Second, and without an init sequence of its own — it has no writer, so it
+            # cannot issue commands at all; the URC subscription that matters is applied
+            # through the command port above and takes effect for both. The ordering is
+            # deliberate: the subscription is back in place before this port starts
+            # listening for what it produces.
+            if not await self._reader_link.reconnect(init=False):
+                return False
+            reopened.append(self._reader_link)
+        # The reconciliation the restart used to provide for free, and the reason this
+        # would otherwise make inbound delivery *worse* than the restart it replaces: SMS
+        # accumulate in modem memory while the link is down, and the +CMTI announcing them
+        # go with the link. Without this they would sit unread until some later restart.
+        self._drop_queued_inbound_indices()
+        await self.scan_inbox()
+        if reopened:
+            # One notification, once the outcome is known, in place of one per step on the
+            # way there. Three red alerts for a pause that healed itself in fourteen
+            # seconds is how an operator learns to stop reading them.
+            self._notify_reopened(reopened, time.monotonic() - started)
+        return True
 
     async def disconnect(self) -> None:
         await self._sender.close()
@@ -564,7 +647,11 @@ class ModemManager:
     async def reader_loop(self) -> None:
         """Listen on read port for +CDS delivery reports."""
         logger.info("Reader loop started on %s", self._read_port)
-        await self._reader_link.connect(wait_for_device=at_commands._DEVICE_WAIT)
+        # Not opened here any more. The linker owns both ports, so this loop starts
+        # before there is anything to read from and waits on the same gate it already
+        # waits on after a loss — one actor opening ports, one place that decides when
+        # they are in service.
+        await self._await_link_restored()
         buf = b''
         while True:
             try:
@@ -610,9 +697,9 @@ class ModemManager:
         closed on purpose and the process exits during the settle, so this simply never
         gets a turn.
         """
-        while not self._reader_link.usable:
+        while not self._reader_link.in_service:
             await self._await_modem_gate("reading URCs")
-            if self._reader_link.usable:
+            if self._reader_link.in_service:
                 return
             # The gate is open and the port is still gone: the watchdog has not reached
             # this observation yet. Its own tick is what acts on it.
@@ -844,21 +931,18 @@ class ModemManager:
         # escalation writing into a missing port — the incident's failure mode, reached
         # by a different route.
         if cause == TRANSPORT:
-            if action == SOFT:
-                # The gentle rung is no longer "wait and see". A re-enumeration is
-                # physically a device disappearing for a few seconds, and paying for it
-                # with a process restart drops the in-memory send queue and re-runs
-                # startup. Reopening the port turns that restart cycle into a pause. The
-                # blunt rung is unchanged: the restart is what an exhausted reopen earns.
-                # WARNING: this announces a remedy starting, not a fault standing. The
-                # rung below it, which gives up and ends the process, stays at ERROR.
-                logger.warning("Link to the modem is gone — reopening the port in place")
-                await self._recover(self._reopen_link)
-                return SOFT
-            logger.error(
-                "Link to the modem is still gone after reopening; restarting the service"
-            )
-            return HARD
+            # The ladder has no rung for this any more. Both of the ones it had were
+            # about getting the port back — reopening it, and failing that, restarting
+            # the process to reopen it — and the linker now does the first for as long as
+            # it takes, which makes the second pointless: a restart cannot reopen a
+            # device that is not plugged in.
+            #
+            # Returning WAIT rather than acting is what keeps the two apart. Two actors
+            # each closing the gate and each reconnecting the same ports is a race with
+            # nothing to win; the linker owns the link, and the watchdog owns the radio.
+            self._health.fails = 0
+            self._health.soft_tried = False
+            return WAIT
 
         if action == SOFT:
             logger.warning("Modem unhealthy: %s — soft recovery", cause)
@@ -920,20 +1004,13 @@ class ModemManager:
                 # Recovery is the operator's job now, so stop accumulating a suspicion
                 # nothing will act on.
                 self._health.forget()
-                # A lost link is the exception, and deliberately not covered by this
-                # switch. It exists so an operator can take over judgement about an
-                # unhealthy *modem* — whether to cycle its radio, whether to reset it.
-                # A port that does not exist is not that kind of judgement call: there is
-                # no policy under which the right answer is to keep writing to it, and
-                # silencing the watchdog to investigate a flapping registration should
-                # not silently opt out of ever recovering the port.
-                if not (self._sender.usable and self._reader_link.usable):
-                    logger.error(
-                        "Link to the modem is gone while the watchdog is disabled — "
-                        "restarting the service anyway"
-                    )
-                    # No settle: see the exit below. Nothing was reset here either.
-                    os._exit(1)
+                # A lost link used to be the exception this switch did not cover, and it
+                # was enforced here by ending the process. It no longer needs enforcing:
+                # the linker is a task of its own and does not consult this setting, so
+                # silencing the watchdog to investigate a flapping registration still
+                # cannot opt out of recovering the port. The switch means what it says —
+                # the operator has taken over judgement about the *modem* — and the port
+                # is not that kind of judgement call either way.
                 continue
             try:
                 action = await self._watchdog_step()
@@ -945,15 +1022,13 @@ class ModemManager:
                 # nothing touches a modem the gateway has just deliberately reset — the
                 # restart would otherwise land mid-reboot and fail to open the port.
                 #
-                # A lost link is reached without issuing a single AT command, so there is
-                # nothing rebooting to wait for, and the wait is spent lying down with the
-                # decision to die already taken. Prod 2026-07-29: the device came back
-                # five seconds after the reopen gave up, and the gateway spent the next
-                # forty seconds not looking. Exiting at once hands the question to
-                # `connect(wait_for_device=...)`, which is the code that waits for a
-                # device properly.
-                if self._health.cause != TRANSPORT:
-                    await asyncio.sleep(_WD_HARD_RESET_SETTLE)
+                # A lost link no longer reaches this rung at all — the linker owns the
+                # port and never gives it up — so the only way here is a modem the
+                # gateway has just deliberately reset, and the settle always applies.
+                # The restart that follows is about the modem's own reboot, not about
+                # the link: the ports go with the reset, and the linker brings them back
+                # whether this process is the one that started or the next one.
+                await asyncio.sleep(_WD_HARD_RESET_SETTLE)
                 os._exit(1)
 
     def health_snapshot(self) -> dict:
@@ -969,6 +1044,11 @@ class ModemManager:
         snapshot = self._health.snapshot(held=len(self._held), stalled=self._stalled)
         snapshot.update(self._sender.link_snapshot())
         snapshot["urc_link"] = "open" if self._reader_link.usable else "lost"
+        # The one fact the console's banner reads. It is here rather than derived in the
+        # template so the banner and the diagnostics page cannot disagree about whether
+        # the modem is reachable — and it is the whole link, not one port, because a
+        # gateway with only its command port is not one that can receive anything.
+        snapshot["modem_detected"] = self.link_in_service
         return snapshot
 
     async def collect_diagnostics(self) -> list[dict]:

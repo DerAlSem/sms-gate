@@ -57,11 +57,28 @@ def _build_env(locale: str) -> jinja2.Environment:
 _ENVS: dict[str, jinja2.Environment] = {loc: _build_env(loc) for loc in SUPPORTED}
 
 
+def _modem_detected(request: Any) -> bool:
+    """Whether the gateway currently has a link, for the layout's banner.
+
+    Read from the manager's health snapshot rather than derived here, so the banner and
+    the diagnostics page cannot disagree about whether the modem is reachable.
+
+    Absent or unreadable counts as *detected*, which is the safe way round: many tests
+    and any future caller build a bare admin app with no manager attached, and a banner
+    that appears because nothing answered would cry wolf on a healthy gateway.
+    """
+    try:
+        return bool(request.app.state.modem.health_snapshot()["modem_detected"])
+    except Exception:
+        return True
+
+
 def render(template_name: str, request: Any, ctx: dict | None = None) -> HTMLResponse:
     """Render a template in the request's locale. The only admin render path."""
     locale = resolve_locale(request)
     context = dict(ctx or {})
     context["request"] = request
     context["current_locale"] = locale
+    context["modem_detected"] = _modem_detected(request)
     html = _ENVS[locale].get_template(template_name).render(context)
     return HTMLResponse(html)

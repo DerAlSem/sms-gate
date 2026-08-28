@@ -36,6 +36,12 @@ class FakeSender:
         self.deleted = []
         self._reopen = reopen
 
+    @property
+    def in_service(self):
+        """A scripted port has no transport to point at, so `usable` is the whole
+        answer for it."""
+        return self.usable
+
     async def registration_ok(self):
         if not self.usable:
             raise mgr.ModemTransportError("link to /dev/ttyUSB2 is not open")
@@ -84,6 +90,9 @@ def _no_dispatch(monkeypatch):
 def _mgr(sender):
     m = ModemManager("/dev/null", "/dev/null")
     m._sender = sender
+    # The URC port is not what these tests are about; leave it in service so `ensure_link`
+    # goes straight to the command port and the reconciliation that follows it.
+    m._reader_link._writer = object()
     return m
 
 
@@ -101,7 +110,7 @@ def test_inbound_arriving_during_an_outage_is_delivered_after_a_reopen(_no_dispa
         try:
             sender = FakeSender(stored=[(1, PDU_A), (2, PDU_B)])
             m = _mgr(sender)
-            assert await m._watchdog_step() == "soft"
+            assert await m.ensure_link() is True
             return sender.deleted, len(await queries.list_inbound(None, 50, 0))
         finally:
             await close_db()
@@ -127,7 +136,7 @@ def test_a_message_persisted_but_not_deleted_is_not_delivered_twice(_no_dispatch
             await queries.mark_inbound_pdu_seen(inbound_pdu_key(PDU_A))
             _no_dispatch.clear()
 
-            await m._watchdog_step()
+            await m.ensure_link()
             return sender.deleted, len(await queries.list_inbound(None, 50, 0))
         finally:
             await close_db()
@@ -149,7 +158,7 @@ def test_indexes_queued_before_the_outage_are_not_relied_upon(_no_dispatch):
             m = _mgr(sender)
             await m._inbound_indices.put(1)
             await m._inbound_indices.put(7)
-            await m._watchdog_step()
+            await m.ensure_link()
             return m._inbound_indices.qsize(), sender.deleted
         finally:
             await close_db()
@@ -160,15 +169,15 @@ def test_indexes_queued_before_the_outage_are_not_relied_upon(_no_dispatch):
 
 
 def test_a_reopen_that_failed_does_not_scan(_no_dispatch):
-    """There is nothing to scan through a port that is not there, and the ladder's next
-    rung is the restart."""
+    """There is nothing to scan through a port that is not there, and the linker's next
+    move is another attempt."""
 
     async def run():
         await _fresh_db()
         try:
             sender = FakeSender(stored=[(1, PDU_A)], reopen=False)
             m = _mgr(sender)
-            await m._watchdog_step()
+            await m.ensure_link()
             return sender.deleted
         finally:
             await close_db()

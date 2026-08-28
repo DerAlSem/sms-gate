@@ -100,6 +100,7 @@ def test_the_diagnostics_sweep_still_reports_the_link_when_the_modem_answers():
             raise ModemTransportError("not the point of this test")
 
         usable = True
+        in_service = True
 
         def link_snapshot(self):
             return {"link": "open", "link_last_good": "—", "link_reopens": 2}

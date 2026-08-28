@@ -98,6 +98,15 @@ def test_send_failure_notifies_send_error(monkeypatch):
             raise ATCommandError("+CMS ERROR 305 (invalid text mode parameter)")
         monkeypatch.setattr(m._sender, "send_sms_pdu", boom)
 
+        # The gateway now holds a message rather than failing it when there is no link at
+        # all, so this test has to supply one: what it is about is the notification a
+        # *modem* failure produces, not the absence of hardware.
+        async def registered():
+            return True
+        m._sender._writer = object()
+        m._reader_link._writer = object()
+        monkeypatch.setattr(m._sender, "registration_state", registered)
+
         await m.enqueue(mid, "+79991234567", "hi", "app1")
         task = asyncio.create_task(m.sender_loop())
         await m._queue.join()

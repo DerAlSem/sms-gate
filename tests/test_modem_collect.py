@@ -10,6 +10,8 @@ class FakeSender:
         self.raise_for = set(raise_for)
         self.calls = []
 
+    in_service = True
+
     async def command(self, cmd, timeout=5.0):
         self.calls.append(cmd)
         if cmd in self.raise_for:

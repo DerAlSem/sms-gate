@@ -389,6 +389,10 @@ msgstr "Всего"
 msgid "No data"
 msgstr "Нет данных"
 
+#: app/admin/templates/base.html:107
+msgid "Modem not detected — nothing can be sent or received. Messages are being held."
+msgstr "Модем не обнаружен — отправка и приём невозможны. Сообщения ждут."
+
 #~ msgid "Dialogs"
 #~ msgstr "Диалоги"
 
