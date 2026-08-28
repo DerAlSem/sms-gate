@@ -293,3 +293,30 @@ def test_a_reopened_link_lets_the_ladder_come_all_the_way_down():
     asyncio.run(_linker_pass(m))
     assert asyncio.run(m._watchdog_step()) == "ok"
     assert m._health.cause is None
+
+
+def test_an_ordinary_start_does_not_announce_a_missing_modem(monkeypatch, caplog):
+    """Every start begins with the link down. Announcing on entry fires on every deploy —
+    and did, in the 48 milliseconds between the linker starting and the port opening.
+    An alert that cries wolf on a healthy gateway is worth less than none."""
+    import logging
+
+    sent = []
+    monkeypatch.setattr(mgr, "notify", lambda *a, **kw: sent.append((a, kw)))
+    sender = FakeSender()          # reopens on the first attempt, as a present modem does
+    m = _mgr(sender)
+
+    async def run():
+        linker = asyncio.create_task(m.linker_loop())
+        await asyncio.sleep(0.05)
+        linker.cancel()
+
+    with caplog.at_level(logging.DEBUG):
+        asyncio.run(run())
+
+    assert sender.usable is True
+    errors = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
+    assert errors == [], f"a link that came straight up must raise no ERROR: {errors}"
+    assert not [a for a, k in sent if "not detected" in a[1]], (
+        f"and must not report the modem missing: {sent}"
+    )

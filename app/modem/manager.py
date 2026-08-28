@@ -327,18 +327,24 @@ class ModemManager:
                 delay = _LINK_RETRY_BASE
                 await self._wait_for_link_lost()
                 continue
+            await self._recover(self.ensure_link)
+            if self.link_in_service:
+                continue
             if not announced:
+                # After the first attempt has failed, never before it. Every start begins
+                # with the link down, so announcing on entry would fire on every deploy
+                # and every restart — and it did, in the 48 milliseconds between this loop
+                # starting and the port opening. An alert that cries wolf on a healthy
+                # gateway is worth less than none.
+                #
                 # Once per episode, not once per attempt: the gateway can no longer
                 # announce an unreachable modem by dying, so this is the only thing that
-                # says so — and a notification per attempt is how an operator learns to
+                # says so, and a notification per attempt is how an operator learns to
                 # stop reading them.
                 announced = True
                 logger.error("No modem: the link is not in service — retrying until it is")
                 notify("link", f"modem not detected on {self._sender.port} — retrying",
                        dedup_extra="absent")
-            await self._recover(self.ensure_link)
-            if self.link_in_service:
-                continue
             await asyncio.sleep(delay)
             delay = min(delay * 2, _LINK_RETRY_CEILING)
 
