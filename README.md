@@ -60,13 +60,24 @@ POST с номером и текстом; шлюз отправляет сооб
   терять очередь отправки в памяти и заново проходить старт. Теперь шлюз переоткрывает
   порт, заново проигрывает init (включая подписку `CNMI` — порт, который отвечает на
   команды, но не шлёт `+CDS` и `+CMTI`, прошёл бы любую проверку здоровья, оставаясь
-  бесполезным) и продолжает работу; перезапуск остаётся последним средством, если
-  переоткрыть не удалось. Бюджет на переоткрытие — срок, а не число попыток, и он равен
-  тому, сколько старт и так ждёт это же устройство. Восстановление обоих портов —
+  бесполезным) и продолжает работу. Попытки **не кончаются**: перезапуск не способен
+  открыть устройство, которого нет в USB, — он лишь тратил лимиты systemd, пока тот не
+  переставал пытаться вовсе. Пауза между попытками нарастает до потолка, чтобы
+  отсутствующий модем не стоил ни процессора, ни журнала. Восстановление обоих портов —
   одна согласованная операция, а не два независимых цикла. После восстановления память
   модема перечитывается: входящие, накопившиеся за время простоя, не теряются, а
   дедупликация по PDU не даёт доставить их дважды. Состояние линка, время последней
   исправности и счётчик переоткрытий видны на странице диагностики
+- **Админка живёт без модема** — раньше подключение к модему происходило на старте, до того
+  как поднимется HTTP, поэтому вынутый из USB модем означал не «шлюз без модема», а
+  `502 Bad Gateway` на всю панель. Оператор шёл выяснять, что с модемом, и не получал ни
+  слова — при том что админка читает базу, а не модем. Теперь HTTP поднимается всегда, а
+  линк устанавливает отдельная фоновая задача; она же — единственный путь установления
+  линка, один и тот же при старте и после потери. Пока модема нет, на **каждой** странице
+  висит красная плашка «Модем не обнаружен» (тот, кто заметил, что SMS встали, начинает не
+  со страницы диагностики), а исходящие **ждут в очереди** со своим обычным сроком, а не
+  падают в `failed`: отсутствие железа — это не отказ сети, и короткое передёргивание USB
+  не должно превращаться в потерянные SMS
 - **Доступен по любому живому каналу** — резервный канал сидит за CGNAT: у него нет адреса,
   на который можно указать, и порт на нём открыть нельзя. Раньше падение провода уносило шлюз
   с собой: модем, SIM и сервис живы, а достучаться нельзя — и войти посмотреть, что случилось,
@@ -309,14 +320,25 @@ supervision. No external broker, no container required.
   dropping the in-memory send queue and re-running startup. The gateway now reopens the
   port, replays the init sequence (including the `CNMI` subscription — a port that accepts
   commands but delivers no `+CDS` and no `+CMTI` would pass every health check while being
-  useless) and carries on; the restart remains the last resort once reopening has failed.
-  The reopen budget is a deadline rather than a count of attempts, and it is the same wait
-  the startup path already gives that device. Both ports are recovered in one coordinated
+  useless) and carries on. Attempts **do not end**: a restart cannot reopen a device that is
+  not plugged in — its only effect was to spend systemd's restart limits until it stopped
+  trying at all. The delay between attempts widens to a ceiling, so an absent modem costs
+  neither the processor nor the journal. Both ports are recovered in one coordinated
   operation instead of two independent loops. Afterwards the modem's memory is re-read, so
   inbound SMS accumulated during the outage are not stranded, and a PDU-level
   deduplication key stops a re-read message being delivered twice. The link's state, when
   it was last known good and how often it has been reopened are shown on the diagnostics
   page
+- **The admin console outlives the modem** — establishing the link used to happen during
+  startup, before uvicorn began listening, so a modem unplugged from USB meant not "a gateway
+  without a modem" but `502 Bad Gateway` across the whole console. The operator went looking
+  for what was wrong with the modem and was told nothing, though the console reads the
+  database and never needed the modem. HTTP now starts unconditionally and a background task
+  owns the link — the same operation whether it is the first time or after a loss. While the
+  modem is missing, **every** page carries a red "modem not detected" banner (whoever notices
+  that SMS have stopped begins wherever they were, not at the diagnostics page), and outbound
+  messages **wait in the queue** on their existing deadline rather than being failed: absent
+  hardware is not a refusal by the network, and a brief unplug must not become lost SMS
 - **Reachable over whichever uplink is carrying** — the backup uplink sits behind
   carrier-grade NAT: no address to resolve to, no port that can be opened. A wired outage used
   to take the gateway with it — modem, SIM and service healthy, nobody able to reach them or to

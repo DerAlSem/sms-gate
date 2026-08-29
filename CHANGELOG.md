@@ -5,6 +5,39 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+The gateway used to take its admin console down with the modem.
+
+### Changed
+- **The gateway serves HTTP whether or not it can reach the modem.** Establishing the link
+  happened during startup, before uvicorn began listening, so a modem unplugged from USB did
+  not mean "a gateway without a modem" — it meant `502 Bad Gateway` across the whole console,
+  restarting and failing again on a loop. The operator went looking for what was wrong with the
+  modem and was told nothing at all, though the console reads the database and never needed the
+  modem for anything. The link is now brought up by a background task instead, and no state of
+  the hardware can stop the console being served.
+- **Reopening a lost port no longer ends in a service restart.** The budget behind it is gone.
+  A restart cannot reopen a device that is not plugged in; its only observable effect was to
+  spend systemd's restart limits until it stopped trying altogether, which is the indefinite
+  outage the reopen exists to prevent. Attempts now continue for as long as the process runs,
+  spacing out to a ceiling so an absent modem costs neither the processor nor the journal.
+- **One operation brings the link into service**, used the first time it comes up and every time
+  it comes back: open both ports, apply the init sequence including the `CNMI` subscription,
+  reconcile the modem's stored messages. This is what the restart used to accomplish for free —
+  naming it is what made retiring the restart safe rather than a quiet loss. The old startup
+  path is deleted rather than left unused, because two ways to establish a link drift apart, and
+  these two already had.
+- **A message due while there is no modem is held, not failed.** Absent hardware is not a refusal
+  by the network: failing here turned a brief unplug into lost SMS and reported `failed` to the
+  owning application for messages the network never saw. Held messages keep their attempt count
+  and their existing pending deadline, and `POST /sms/send` still accepts and queues throughout.
+
+### Added
+- **Every admin page carries a notice when the modem is not detected.** An operator who notices
+  that SMS have stopped begins wherever they were, usually the message list — confining the fact
+  to the diagnostics page let the console look entirely normal while nothing was being sent or
+  received. The notice is rendered from the same health snapshot that page reads, so the two
+  cannot disagree, and an alert fires once per outage rather than once per attempt.
+
 ## [0.16.0] - 2026-08-01
 
 One conversation used to be spread across three tabs, and every view counted all of history.

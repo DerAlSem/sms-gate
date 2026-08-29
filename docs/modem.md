@@ -152,10 +152,16 @@ Use `pyserial-asyncio` for non-blocking serial I/O that integrates with FastAPI'
 
 ## Serial Port Locking
 
-Only one process can open the serial port. On startup:
-1. Try to open the port
-2. If `PermissionError` or `SerialException` → log error, exit with clear message
-3. Consider using `/var/lock/LCK..ttyUSB2` lockfile (standard UUCP convention)
+Only one process can open the serial port. Opening it is **not** part of startup: the gateway
+serves HTTP first and a background linker brings the link up, so a port that cannot be opened
+never stops the service or the admin console.
+
+1. The linker tries to open both ports and run the init sequence
+2. `FileNotFoundError` (no node) and `PermissionError` (node recreated, udev has not applied
+   ownership yet) both mean "not back yet" — log, wait, try again. Neither ends the process
+3. Attempts continue for as long as the process runs, backing off to a ceiling; the health
+   snapshot reports the link as not detected meanwhile
+4. Consider using `/var/lock/LCK..ttyUSB2` lockfile (standard UUCP convention)
 
 ---
 
