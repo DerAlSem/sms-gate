@@ -5,6 +5,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-08-29
+
 The gateway used to take its admin console down with the modem.
 
 ### Changed
