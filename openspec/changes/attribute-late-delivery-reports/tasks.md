@@ -96,9 +96,9 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 6. The loop survives what the network sends
 
-- [ ] 6.1 Test: a report whose address field cannot be interpreted is recorded and abandoned, and the next `+CDS` on the port is still processed
-- [ ] 6.2 Test: an unexpected error inside report handling is logged, the reader loop continues, and a later `+CMTI` is still handled
-- [ ] 6.3 Wrap `+CDS` handling in `reader_loop` as `inbound_loop` and `retry_loop` already are — today it is the only bare path, and this change is what starts feeding it network-chosen text
+- [x] 6.1 Test: a report whose address field cannot be interpreted is recorded and abandoned, and the next `+CDS` on the port is still processed
+- [x] 6.2 Test: an unexpected error inside report handling is logged, the reader loop continues, and a later `+CMTI` is still handled
+- [x] 6.3 Wrap `+CDS` handling in `reader_loop` as `inbound_loop` and `retry_loop` already are — today it is the only bare path, and this change is what starts feeding it network-chosen text
 
 ## 7. Nothing left unwired, nothing left unmeasured
 

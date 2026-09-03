@@ -246,7 +246,11 @@ async def run_migrations() -> None:
             submitted_at  TIMESTAMP,
             discharged_at TIMESTAMP,
             status_code   INTEGER,
-            outcome       TEXT NOT NULL,   -- attributed | superseded | unplaced | unparsable
+            -- attributed | superseded | unplaced  — the three attribution outcomes;
+            -- unparsable  — the parser could not read the line at all;
+            -- unprocessable — it parsed, and handling it raised. Kept apart from
+            --   unparsable because the two say different things about what broke.
+            outcome       TEXT NOT NULL,
             reason        TEXT,            -- why, in words, for the outcomes that need it
             decided_by    TEXT,            -- sole | nearest | recency
             message_id    INTEGER,

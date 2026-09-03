@@ -752,7 +752,29 @@ class ModemManager:
             logger.error("Could not parse a +CDS line: %r", line)
             await self._record_report(raw_line=line, outcome="unparsable")
             return
-        await self._handle_cds(report)
+        try:
+            await self._handle_cds(report)
+        except Exception:
+            # The guard `inbound_loop` and `retry_loop` already have, and the one path
+            # that did not. Losing this loop is silent and total — no `+CDS` and no
+            # `+CMTI` — and this change is what starts feeding it text the network chose:
+            # a phone number, a timestamp, and a route through attribution, the ledger and
+            # the alerting layer. The report is abandoned; the port keeps being read.
+            # ERROR rather than a notify() of its own: `notify_system_errors` defaults
+            # to on and routes ERROR records to the operator, so this already reaches
+            # somebody without adding a switch that would have to be found first.
+            logger.exception(
+                "Failed to handle a +CDS report (ref=%s st=%s); abandoning it",
+                report.modem_ref, report.status_code,
+            )
+            await self._record_report(
+                raw_line=report.raw_line or line,
+                outcome="unprocessable",
+                reason="handling the report raised",
+                modem_ref=report.modem_ref,
+                recipient=report.recipient,
+                status_code=report.status_code,
+            )
 
     async def _record_report(self, **fields) -> None:
         """Write the account of a report, and never let it undo the report.

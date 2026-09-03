@@ -130,7 +130,11 @@ CREATE TABLE delivery_reports (
     submitted_at  TIMESTAMP,          -- scts, resolved to UTC
     discharged_at TIMESTAMP,          -- dt
     status_code   INTEGER,
-    outcome       TEXT NOT NULL,      -- attributed | superseded | unplaced | unparsable
+    outcome       TEXT NOT NULL,      -- attributed | superseded | unplaced
+                                    -- | unparsable   (the parser could not read it)
+                                    -- | unprocessable (it parsed; handling it raised —
+                                    --   the loop guard's own outcome, kept apart because
+                                    --   the two say different things about what broke)
     reason        TEXT,               -- why, in words: "the record carries ... the reason"
     decided_by    TEXT,               -- sole | nearest | recency
     message_id    INTEGER,            -- NOT a foreign key; see below
