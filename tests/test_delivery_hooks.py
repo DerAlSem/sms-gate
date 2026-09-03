@@ -189,11 +189,11 @@ def test_expired_message_can_still_become_delivered():
         await queries.expire_stale_messages(60)
         # a delivery report arriving after the sweep still finds the message
         await queries.add_message_part(mid, 7, seq=1, total=1)
-        row = await queries.find_message_by_part_ref(7)
-        return mid, row
+        rows = await queries.parts_matching_ref(7)
+        return mid, rows
 
-    mid, row = _with_db(body)
-    assert row is not None and row["message_id"] == mid, (
+    mid, rows = _with_db(body)
+    assert len(rows) == 1 and rows[0]["message_id"] == mid, (
         "an expired message must still be eligible for a late delivery report"
     )
-    assert row["msg_status"] == "expired"
+    assert rows[0]["msg_status"] == "expired"

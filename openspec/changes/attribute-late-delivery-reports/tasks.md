@@ -16,16 +16,16 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 2. Every report is written down
 
-- [ ] 2.1 Test: an attributed report leaves a record naming message, segment and how it was chosen, and raises no notification
-- [ ] 2.2 Test: an unplaced report leaves a record carrying reference, address and reason, and raises one operator notification
-- [ ] 2.3 Test: a superseded report — one whose reference matches a part of an already `delivered` message — is recorded and raises **no** notification
-- [ ] 2.4 Test: several unplaced reports with the same reference inside the dedup window raise one notification
-- [ ] 2.5 Test: a `+CDS` line that does not parse still leaves a record holding the raw line and the arrival time
-- [ ] 2.6 Test: the record names **every** part whose reference matched, each with its own outcome — not only the winner
-- [ ] 2.6a Test: a report bounded out by the window records the part it bounded out, not "nothing matched"; a superseded report names the part it was superseded by. Collect the reference matches BEFORE applying the window and status filters — a `WHERE` clause that filters first cannot name what it discarded, and makes every superseded report look unplaced and alert
-- [ ] 2.6b Test: an unparsable line is recorded under its own outcome and logged at **error** level — it is the one class of event that must not reach nobody, because our parser failing on a live line is either a wire-format change or the group-renumbering fault
-- [ ] 2.7 Test: the record carries the window and switch values in force at the time
-- [ ] 2.8 Test: a failing record write leaves the attribution standing and logs
+- [x] 2.1 Test: an attributed report leaves a record naming message, segment and how it was chosen, and raises no notification
+- [x] 2.2 Test: an unplaced report leaves a record carrying reference, address and reason, and raises one operator notification
+- [x] 2.3 Test: a superseded report — one whose reference matches a part of an already `delivered` message — is recorded and raises **no** notification
+- [x] 2.4 Test: several unplaced reports with the same reference inside the dedup window raise one notification
+- [x] 2.5 Test: a `+CDS` line that does not parse still leaves a record holding the raw line and the arrival time
+- [x] 2.6 Test: the record names **every** part whose reference matched, each with its own outcome — not only the winner
+- [x] 2.6a Test: a report bounded out by the window records the part it bounded out, not "nothing matched"; a superseded report names the part it was superseded by. Collect the reference matches BEFORE applying the window and status filters — a `WHERE` clause that filters first cannot name what it discarded, and makes every superseded report look unplaced and alert
+- [x] 2.6b Test: an unparsable line is recorded under its own outcome and logged at **error** level — it is the one class of event that must not reach nobody, because our parser failing on a live line is either a wire-format change or the group-renumbering fault
+- [x] 2.7 Test: the record carries the window and switch values in force at the time
+- [x] 2.8 Test: a failing record write leaves the attribution standing and logs
 - [x] 2.9 Test: pruning removes records past the retention and nothing newer
 - [x] 2.10 Add the `delivery_reports` table and its indexes, the insert, and a named retention constant with a 30-day default
 - [x] 2.11 Call the prune from the expiry sweep, not from `scan_inbox` — a gateway that never loses its link would otherwise never prune
@@ -50,30 +50,30 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 4. Attribution, failing open
 
-- [ ] 4.1 Test: one qualifying, uncontradicted candidate **is** updated — the positive obligation, without which attributing nothing satisfies every other rule
-- [ ] 4.2 Test: two candidates, one chosen by the rules → that one **is** updated. Choosing is not applying, and a chain that selects and writes nothing satisfies every "SHALL prefer"
-- [ ] 4.3 Test: a part with no recorded submit time qualifies, rather than being excluded as too old
-- [ ] 4.4 Test: an empty address, an address of six digits, or a stored number of fewer than ten digits eliminates nothing
-- [ ] 4.5 Test: `89031680015` does not eliminate a candidate addressed to `+79031680015`
-- [ ] 4.6 Test: a submit timestamp hours from the candidate's own does not stop the update
-- [ ] 4.7 Test: two candidates → nearest submit time wins, every candidate recorded
-- [ ] 4.8 Test: no usable report timestamp → most recent wins, record says recency
-- [ ] 4.9 Test: two candidates nothing separates, permanent status → most recent wins and the destination's failure count is **not** incremented
-- [ ] 4.9a Test: the same carve-out holds on the late-negative path — an `expired` message moved to `failed` by a recency-chosen report does not increment the blacklist. Blocking a destination 422s every later send to it and unblocking does not reset the count
-- [ ] 4.10 Test: an already-reported part does not shadow an unreported candidate sharing the reference
-- [ ] 4.11 Test: a second report for an already-reported part, no other match → status stands, outcome superseded
-- [ ] 4.12 Test: the only matching part is past the window → nothing changes, recorded unplaced
-- [ ] 4.13 Test: `delivery_report_max_age_hours` saved as `0` or negative is refused; a stored value that cannot be read falls back to the default rather than discarding every report
-- [ ] 4.14 Rewrite the lookup as the chain, returning a **decision** — part, outcome, and how it was chosen — not a row
-- [ ] 4.15 Wire the decision through `_handle_cds`: the ledger writes all of it, the alert fires on unplaced alone, and `record_permanent_fail` is skipped when the choice was recency. Without this task 4.9 has a test and no mechanism
-- [ ] 4.16 Add `delivery_report_max_age_hours` (positive int, refused at zero or below, re-read per report, default per design)
-- [ ] 4.17 Change `set_part_delivered` / `set_part_failed` to address `(message_id, seq)`
-- [ ] 4.18 Test: a report attributed to one part leaves another message's part with the same reference untouched
-- [ ] 4.19 Test: `message_parts_all_delivered` reports parts outstanding for a message with no part rows
-- [ ] 4.20 Test: a message no report was ever attributed to does not become `delivered` at the timeout, by inference or otherwise
-- [ ] 4.21 Test: a late negative report inside the window moves an `expired` message to `failed`, notifies after the `expired` notification, and counts toward the blacklist
-- [ ] 4.22 Close both vacuous truths — the zero-row answer and the inferred delivery
-- [ ] 4.23 Test: the status write commits before the record is written
+- [x] 4.1 Test: one qualifying, uncontradicted candidate **is** updated — the positive obligation, without which attributing nothing satisfies every other rule
+- [x] 4.2 Test: two candidates, one chosen by the rules → that one **is** updated. Choosing is not applying, and a chain that selects and writes nothing satisfies every "SHALL prefer"
+- [x] 4.3 Test: a part with no recorded submit time qualifies, rather than being excluded as too old
+- [x] 4.4 Test: an empty address, an address of six digits, or a stored number of fewer than ten digits eliminates nothing
+- [x] 4.5 Test: `89031680015` does not eliminate a candidate addressed to `+79031680015`
+- [x] 4.6 Test: a submit timestamp hours from the candidate's own does not stop the update
+- [x] 4.7 Test: two candidates → nearest submit time wins, every candidate recorded
+- [x] 4.8 Test: no usable report timestamp → most recent wins, record says recency
+- [x] 4.9 Test: two candidates nothing separates, permanent status → most recent wins and the destination's failure count is **not** incremented
+- [x] 4.9a Test: the same carve-out holds on the late-negative path — an `expired` message moved to `failed` by a recency-chosen report does not increment the blacklist. Blocking a destination 422s every later send to it and unblocking does not reset the count
+- [x] 4.10 Test: an already-reported part does not shadow an unreported candidate sharing the reference
+- [x] 4.11 Test: a second report for an already-reported part, no other match → status stands, outcome superseded
+- [x] 4.12 Test: the only matching part is past the window → nothing changes, recorded unplaced
+- [x] 4.13 Test: `delivery_report_max_age_hours` saved as `0` or negative is refused; a stored value that cannot be read falls back to the default rather than discarding every report
+- [x] 4.14 Rewrite the lookup as the chain, returning a **decision** — part, outcome, and how it was chosen — not a row
+- [x] 4.15 Wire the decision through `_handle_cds`: the ledger writes all of it, the alert fires on unplaced alone, and `record_permanent_fail` is skipped when the choice was recency. Without this task 4.9 has a test and no mechanism
+- [x] 4.16 Add `delivery_report_max_age_hours` (positive int, refused at zero or below, re-read per report, default per design)
+- [x] 4.17 Change `set_part_delivered` / `set_part_failed` to address `(message_id, seq)`
+- [x] 4.18 Test: a report attributed to one part leaves another message's part with the same reference untouched
+- [x] 4.19 Test: `message_parts_all_delivered` reports parts outstanding for a message with no part rows
+- [x] 4.20 Test: a message no report was ever attributed to does not become `delivered` at the timeout, by inference or otherwise
+- [x] 4.21 Test: a late negative report inside the window moves an `expired` message to `failed`, notifies after the `expired` notification, and counts toward the blacklist
+- [x] 4.22 Close both vacuous truths — the zero-row answer and the inferred delivery
+- [x] 4.23 Test: the status write commits before the record is written
 
 ## 5. Refusal, behind the switch
 
@@ -95,7 +95,7 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 - [ ] 7.1 Mini conformance sweep: every normative SHALL added or reworded by this change, matched to the test that would fail without it. Name the ones with no test
 - [ ] 7.2 `grep -rn` every function this change adds or renames; each must have a caller outside its own definition and its tests
 - [ ] 7.3 Confirm `_handle_cds` passes the new fields through — the boundary unit tests do not cross, since they build `DeliveryReport` themselves
-- [ ] 7.4 Test: no `delivered`/`failed` webhook is sent for a report that was not attributed
+- [x] 7.4 Test: no `delivered`/`failed` webhook is sent for a report that was not attributed
 - [ ] 7.5 Test: an `expired` message past the window still cannot be deleted, and deleting an eligible message leaves its ledger rows
 - [x] 7.6 Settle the reference-counter question — does `AT+CFUN=1,1` restart TP-MR?
       <!-- Measured on live data instead of a vendor doc, which answers it better: eight

@@ -4,6 +4,7 @@ import os
 import time
 import sqlite3
 from dataclasses import dataclass
+from datetime import timezone
 from pathlib import Path
 
 from app.config import settings
@@ -13,6 +14,7 @@ from app.modem.delivery_dispatch import spawn_delivery_dispatch
 from app.modem.dispatch import dispatch_inbound
 from app.modem.errors import is_retryable
 from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANSPORT, WAIT
+from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
 from app.modem.pdu import decode_deliver, inbound_pdu_key
 from app.modem.pdu_encode import encode_submit
@@ -25,6 +27,14 @@ from app.db import queries
 from app.alerting import notify
 
 logger = logging.getLogger(__name__)
+
+
+def _as_stored_time(value) -> str | None:
+    """An aware datetime as the UTC string SQLite's own `CURRENT_TIMESTAMP` writes, so
+    the ledger's timestamps compare with every other timestamp in this database."""
+    if value is None:
+        return None
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _is_permanent_status(code: int) -> bool:
@@ -705,9 +715,7 @@ class ModemManager:
                 logger.debug("Serial read: %r", decoded)
 
                 if decoded.startswith('+CDS:'):
-                    report = parse_cds(decoded)
-                    if report:
-                        await self._handle_cds(report)
+                    await self._on_cds_line(decoded)
                 elif decoded.startswith('+CMTI:'):
                     index = parse_cmti(decoded)
                     if index is not None:
@@ -730,20 +738,97 @@ class ModemManager:
             # this observation yet. Its own tick is what acts on it.
             await asyncio.sleep(_RECOVERY_POLL)
 
-    async def _handle_cds(self, report) -> None:
-        row = await queries.find_message_by_part_ref(report.modem_ref)
-        if row is None:
-            logger.warning(
-                "+CDS for unknown/already-finalized part ref=%d st=%d",
-                report.modem_ref, report.status_code,
-            )
-            return
+    async def _on_cds_line(self, line: str) -> None:
+        """One `+CDS` from the port, from raw text to a recorded outcome.
 
-        message_id = row['message_id']
-        phone = row['phone']
+        A line the parser cannot read is recorded under its own outcome and logged at
+        error level. It is not a quiet fourth case of attribution: our own parser failing
+        on a line the network sent is either a wire-format change or the group-renumbering
+        fault, and that fault presents as every delivery in the system turning into a
+        failure. It must not be the one class of event that reaches nobody.
+        """
+        report = parse_cds(line)
+        if report is None:
+            logger.error("Could not parse a +CDS line: %r", line)
+            await self._record_report(raw_line=line, outcome="unparsable")
+            return
+        await self._handle_cds(report)
+
+    async def _record_report(self, **fields) -> None:
+        """Write the account of a report, and never let it undo the report.
+
+        The status write is the commitment and this is the account of it: an attribution
+        that happened and was not written down is a gap in the account, while a record
+        written for an attribution that then failed is a false account — and the account
+        is what the decision to flip strict attribution is taken on.
+        """
+        try:
+            await queries.record_delivery_report(**fields)
+        except Exception:
+            logger.exception(
+                "Could not record delivery report (outcome=%s ref=%s); the attribution "
+                "it describes stands", fields.get("outcome"), fields.get("modem_ref"),
+            )
+
+    async def _handle_cds(self, report) -> None:
+        window_hours = store.delivery_report_max_age_hours
+        strict = False
+        rows = await queries.parts_matching_ref(report.modem_ref)
+        decision = attribute(
+            report, rows, window_hours=window_hours, strict=strict,
+        )
+
+        phone = None
+        if decision.outcome == ATTRIBUTED:
+            phone = await self._apply_report(report, decision)
+        elif decision.outcome == UNPLACED:
+            # The only outcome that notifies. Every consequence of dropping a report is
+            # otherwise invisible: a message still `sent` goes on to `expired` and its
+            # application is told so, and a dropped negative report also suppresses the
+            # destination's failure count and the alert that would have named it.
+            logger.warning(
+                "+CDS could not be placed: ref=%d st=%d ra=%s — %s",
+                report.modem_ref, report.status_code, report.recipient, decision.reason,
+            )
+            notify(
+                "delivery_unplaced",
+                f"ref {report.modem_ref}, st={report.status_code}, "
+                f"to {report.recipient or 'unknown'}: {decision.reason}",
+                dedup_extra=report.modem_ref,
+            )
+        else:
+            # superseded — ordinary network behaviour, recorded and silent.
+            logger.info(
+                "+CDS superseded: ref=%d already answered by message %s part %s",
+                report.modem_ref, decision.message_id, decision.seq,
+            )
+
+        # After the status write, deliberately. See `_record_report`.
+        await self._record_report(
+            raw_line=report.raw_line,
+            outcome=decision.outcome,
+            reason=decision.reason,
+            modem_ref=report.modem_ref,
+            recipient=report.recipient,
+            submitted_at=_as_stored_time(report.submitted_at),
+            discharged_at=_as_stored_time(report.discharged_at),
+            status_code=report.status_code,
+            decided_by=decision.decided_by,
+            message_id=decision.message_id,
+            seq=decision.seq,
+            candidates=decision.candidates,
+            window_hours=window_hours,
+            strict=strict,
+        )
+
+    async def _apply_report(self, report, decision) -> str:
+        """Apply an attributed report to the part attribution chose."""
+        message_id, seq = decision.message_id, decision.seq
+        context = await queries.get_message_any(message_id)
+        phone = context["phone"] if context else ""
 
         if report.delivered:
-            await queries.set_part_delivered(report.modem_ref)
+            await queries.set_part_delivered(message_id, seq)
             if await queries.message_parts_all_delivered(message_id):
                 await queries.set_message_delivered(message_id)
                 spawn_delivery_dispatch(message_id, "delivered")
@@ -751,24 +836,31 @@ class ModemManager:
             else:
                 logger.info(
                     "+CDS part delivered: id=%d seq=%d (awaiting other parts)",
-                    message_id, row['seq'],
+                    message_id, seq,
                 )
         else:
-            await queries.set_part_failed(report.modem_ref)
+            await queries.set_part_failed(message_id, seq)
             desc = describe_tp_status(report.status_code)
             error = f"Delivery failed: {desc}"
             await queries.set_message_delivery_failed(message_id, error)
             spawn_delivery_dispatch(message_id, "failed", error)
-            logger.warning(
-                "+CDS failed: id=%d phone=%s %s",
-                message_id, phone, desc,
-            )
+            logger.warning("+CDS failed: id=%d phone=%s %s", message_id, phone, desc)
             if _is_permanent_status(report.status_code):
-                await queries.record_permanent_fail(
-                    phone, error, store.blacklist_threshold,
-                )
+                if decision.decided_by == BY_RECENCY:
+                    # An irreversible penalty may not rest on a tiebreak. Blocking a
+                    # destination 422s every later send to it, and unblocking
+                    # deliberately does not reset the count.
+                    logger.warning(
+                        "Not counting a permanent failure against %s: message %d was "
+                        "chosen by recency alone", phone, message_id,
+                    )
+                else:
+                    await queries.record_permanent_fail(
+                        phone, error, store.blacklist_threshold,
+                    )
             notify("delivery_error", f"{phone} (id {message_id}): {desc}",
                    dedup_extra=report.status_code, phone=phone)
+        return phone
 
     async def inbound_loop(self) -> None:
         """Read SMS at indexes posted from reader_loop, persist, then delete from SIM."""

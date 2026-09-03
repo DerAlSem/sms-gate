@@ -131,6 +131,7 @@ CREATE TABLE delivery_reports (
     discharged_at TIMESTAMP,          -- dt
     status_code   INTEGER,
     outcome       TEXT NOT NULL,      -- attributed | superseded | unplaced | unparsable
+    reason        TEXT,               -- why, in words: "the record carries ... the reason"
     decided_by    TEXT,               -- sole | nearest | recency
     message_id    INTEGER,            -- NOT a foreign key; see below
     seq           INTEGER,

@@ -5,8 +5,9 @@ from app import periods
 from app.db.connection import get_db
 
 # Statuses that owe nothing further. `expired` is deliberately absent: a report can
-# still arrive for it and correct it to `delivered` (see find_message_by_part_ref),
-# which is why it is not deletable either.
+# still arrive for it and correct it to `delivered` while the part it names is inside
+# `delivery_report_max_age_hours` (see `parts_matching_ref` and
+# `app.modem.attribution`), which is one of the two reasons it is not deletable either.
 TERMINAL_STATUSES = ("delivered", "failed")
 
 
@@ -271,6 +272,7 @@ async def record_delivery_report(
     *,
     raw_line: str,
     outcome: str,
+    reason: str | None = None,
     modem_ref: int | None = None,
     recipient: str | None = None,
     submitted_at: str | None = None,
@@ -297,13 +299,14 @@ async def record_delivery_report(
     async with db.execute(
         """
         INSERT INTO delivery_reports (
-            raw_line, outcome, modem_ref, recipient, submitted_at, discharged_at,
-            status_code, decided_by, message_id, seq, candidates, window_hours, strict
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            raw_line, outcome, reason, modem_ref, recipient, submitted_at,
+            discharged_at, status_code, decided_by, message_id, seq, candidates,
+            window_hours, strict
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
-            raw_line, outcome, modem_ref, recipient, submitted_at, discharged_at,
-            status_code, decided_by, message_id, seq,
+            raw_line, outcome, reason, modem_ref, recipient, submitted_at,
+            discharged_at, status_code, decided_by, message_id, seq,
             json.dumps(candidates, ensure_ascii=False) if candidates is not None else None,
             window_hours,
             None if strict is None else int(strict),
@@ -330,47 +333,74 @@ async def prune_delivery_reports(max_age_seconds: int) -> int:
     return gone
 
 
-async def find_message_by_part_ref(modem_ref: int) -> aiosqlite.Row | None:
-    """Part + owning message for a +CDS ref, only while the message is still
-    awaiting/expired (eligible for a delivery report)."""
+async def parts_matching_ref(modem_ref: int) -> list[aiosqlite.Row]:
+    """**Every** part carrying this reference, with its message's status and number.
+
+    Deliberately unfiltered. The window and the message-status test are applied by
+    `app.modem.attribution` and recorded as per-candidate outcomes, because a `WHERE`
+    clause that discards the rows cannot name what it excluded: the record would answer
+    "nothing matched" where the truth was "one match, too old", the evidence the strict
+    switch is flipped on would not exist, and a superseded report would be
+    indistinguishable from a report about nothing — which would start waking an operator
+    on ordinary traffic.
+    """
     db = await get_db()
     async with db.execute(
         """
-        SELECT p.message_id, p.seq, m.status AS msg_status, m.phone
+        SELECT p.message_id, p.seq, p.status AS part_status, p.sent_at,
+               m.status AS msg_status, m.phone
         FROM message_parts p
         JOIN messages m ON m.id = p.message_id
-        WHERE p.modem_ref = ? AND m.status IN ('sent', 'expired')
+        WHERE p.modem_ref = ?
+        ORDER BY p.message_id, p.seq
         """,
         (modem_ref,),
     ) as cursor:
-        return await cursor.fetchone()
+        return list(await cursor.fetchall())
 
 
-async def set_part_delivered(modem_ref: int) -> None:
+async def set_part_delivered(message_id: int, seq: int) -> None:
+    """Mark the part attribution chose, addressed by its own identity.
+
+    This used to say `WHERE modem_ref = ?` with no `LIMIT`, so the moment the reference
+    repeated it rewrote every historical part sharing that octet.
+    """
     db = await get_db()
     await db.execute(
-        "UPDATE message_parts SET status = 'delivered' WHERE modem_ref = ?",
-        (modem_ref,),
+        "UPDATE message_parts SET status = 'delivered' "
+        "WHERE message_id = ? AND seq = ?",
+        (message_id, seq),
     )
     await db.commit()
 
 
-async def set_part_failed(modem_ref: int) -> None:
+async def set_part_failed(message_id: int, seq: int) -> None:
     db = await get_db()
     await db.execute(
-        "UPDATE message_parts SET status = 'failed' WHERE modem_ref = ?",
-        (modem_ref,),
+        "UPDATE message_parts SET status = 'failed' WHERE message_id = ? AND seq = ?",
+        (message_id, seq),
     )
     await db.commit()
 
 
 async def message_parts_all_delivered(message_id: int) -> bool:
+    """Whether every recorded part of this message is delivered.
+
+    A message with no part rows at all answers **False**. "Nothing is outstanding" and
+    "nothing is known" are different answers and only the first is a delivery; the
+    previous form said `True` vacuously, which is one of the two ways a message no report
+    ever named could be recorded as delivered.
+    """
     db = await get_db()
     async with db.execute(
-        "SELECT 1 FROM message_parts WHERE message_id = ? AND status != 'delivered' LIMIT 1",
+        "SELECT COUNT(*) AS total, "
+        "       SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END) AS done "
+        "FROM message_parts WHERE message_id = ?",
         (message_id,),
     ) as cursor:
-        return await cursor.fetchone() is None
+        row = await cursor.fetchone()
+    total = int(row["total"] or 0)
+    return total > 0 and int(row["done"] or 0) == total
 
 
 async def set_message_delivered(message_id: int) -> None:
@@ -826,8 +856,11 @@ async def delete_outbound(message_id: int) -> str | None:
     Three conditions, all necessary, and each one protects a promise made elsewhere:
 
     - status is `delivered` or `failed` — an `expired` message still accepts a late
-      delivery report that corrects it to `delivered` (`find_message_by_part_ref`
-      matches `expired` for exactly that reason);
+      delivery report that corrects it to `delivered` while the part it names is inside
+      `delivery_report_max_age_hours` (`parts_matching_ref` collects `expired` messages
+      for exactly that reason). Past that window the refusal stands on a second reason:
+      an `expired` message is one whose outcome the gateway never learned, and the record
+      of an unanswered question is not the operator's routine tidying;
     - no re-sent copy is still in flight — `resent_from` is read at notification
       time, so clearing it under a live copy would strip the field the consumer uses
       to attribute the outcome;

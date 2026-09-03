@@ -247,6 +247,7 @@ async def run_migrations() -> None:
             discharged_at TIMESTAMP,
             status_code   INTEGER,
             outcome       TEXT NOT NULL,   -- attributed | superseded | unplaced | unparsable
+            reason        TEXT,            -- why, in words, for the outcomes that need it
             decided_by    TEXT,            -- sole | nearest | recency
             message_id    INTEGER,
             seq           INTEGER,

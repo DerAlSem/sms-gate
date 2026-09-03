@@ -38,9 +38,9 @@ async def _stale_message(db, parts, *, age=600):
         ref = mid * 10 + seq
         await queries.add_message_part(mid, ref, seq, len(parts))
         if status == "delivered":
-            await queries.set_part_delivered(ref)
+            await queries.set_part_delivered(mid, seq)
         elif status == "failed":
-            await queries.set_part_failed(ref)
+            await queries.set_part_failed(mid, seq)
     await db.commit()
     return mid
 
