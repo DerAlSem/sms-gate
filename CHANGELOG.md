@@ -5,6 +5,81 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-03
+
+A delivery report could land on a message it was not about.
+
+### Fixed
+- **A delivery report is attributed to the message it is about, or to no message.** The
+  report was matched by the modem's message reference alone, and that reference is one
+  octet: it counts 0–255 and starts again, roughly every three weeks at this volume. The
+  gateway has been round that loop eight times. Matching was also unbounded in age — a
+  message expires five minutes after it is sent and stayed eligible for a delivery report
+  for ever — so a report arriving late, which is the *normal* case for a permanent failure
+  because the network exhausts its retries first, was applied to whichever message happened
+  to hold that reference at the time. The wrong message changed status, the operator alert
+  named the wrong number, the owning application was told a message failed that had been
+  delivered, and the failure was counted against an uninvolved destination, moving it toward
+  a blacklist whose count unblocking deliberately does not reset.
+- **A misattributed positive report could manufacture a delivery.** When one part of a
+  multipart message is reported delivered and none failed, the timeout completes the message
+  as `delivered` rather than expiring it. A report misattributed to a part of an unrelated
+  message satisfied that condition, so a message no report ever named was recorded as
+  delivered — and recorded as a delivery the gateway had *concluded*, which is the record an
+  operator reads when a customer says they never received it. Separately,
+  `message_parts_all_delivered` answered "all delivered" for a message with no part records
+  at all: "nothing is outstanding" and "nothing is known" are different answers and only the
+  first is a delivery.
+- **A part record is no longer the network's to overwrite.** `message_parts` was keyed on
+  the modem's reference and written with `INSERT OR REPLACE`, so a send that reused a
+  reference did not add a row — it took the row of the message that used that reference
+  before, and that message lost every trace of what it put on the wire. The table could
+  therefore never hold more than 256 rows, and production held exactly 256. Of 131 messages
+  still eligible for a late report, exactly one still had its part records, and 130 carried a
+  reference the table attributed to a different message. Parts are now identified by their
+  message and segment number, and each carries its own submit time.
+- **The reader loop survives a report it cannot handle.** It was the one path in that loop
+  with no exception handling, while the sibling loops already had it. Losing the loop is
+  silent and total — no delivery reports and no inbound SMS — and this release is what starts
+  feeding it text the network chooses.
+
+### Added
+- **Every `+CDS` is written down, in a `delivery_reports` ledger**, with its fields, its raw
+  line, which part it was attributed to, and **every** candidate considered with its own
+  outcome. A report that cannot be placed is kept rather than discarded, so the complaint
+  this release answers — a report about a message that can never be corrected — is not
+  reproduced by the fix. A line the parser cannot read is recorded too, and logged as an
+  error: our own parser failing on a live line is the one event that must not reach nobody.
+  Records are pruned after 30 days, on the expiry sweep rather than at startup.
+- **An operator is notified when a report could not be placed**, under
+  `notify_unplaced_reports` (on by default), de-duplicated on the report's reference so a
+  wrapped counter cannot turn one fault into a storm. Dropping a report is not neutral: the
+  message goes on to `expired` and its application is told so.
+- **`delivery_report_max_age_hours`** (default 168) bounds how old a part may be and still
+  accept a report. Measured, not guessed: across 1544 reported deliveries the mean report
+  arrived 93 seconds after submission and the slowest took 13 hours, none over a day, while
+  the negative verdict that prompted this work took 27 hours. Seven days is six times the
+  worst verdict this gateway has seen. A report outside the window is recorded rather than
+  lost.
+- **`delivery_report_strict_attribution`** (default **off**) refuses a report whose recipient
+  address contradicts the only candidate. This is the one rule here that can turn a real
+  delivery into an expiry, so it ships switched off and is turned on against the ledger's own
+  evidence rather than an argument. Off, the contradiction is recorded and the report is
+  attributed as before.
+- **The report's recipient address and submit timestamp are read** from the `+CDS` line and
+  used to eliminate a candidate they contradict or to order candidates they can separate.
+  They are never *required*: an empty address, an unreadable timestamp or a part whose submit
+  time is unknown leaves attribution exactly where it was. A rule that turned deliveries into
+  expiries on a formatting difference would be worse than the defect it replaces.
+
+### Changed
+- **`message_parts` is rebuilt** onto `(message_id, seq)`, in its own transaction, carrying
+  every existing row over with its status intact and backfilling each part's submit time from
+  its message. Rehearsed on a copy of the production database before release.
+- **`docs/api.md` no longer promises without qualification** that a late `+CDS` corrects an
+  `expired` message. It does, inside the window; past it the report is recorded and no second
+  notification is sent.
+
 ## [0.17.0] - 2026-08-29
 
 The gateway used to take its admin console down with the modem.

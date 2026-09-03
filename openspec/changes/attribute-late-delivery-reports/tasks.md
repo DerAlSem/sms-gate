@@ -194,8 +194,8 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 - [ ] 8.1 Back up `data/sms-gate.db`, deploy, confirm the migration ran and the part-row count matches 7.9
 - [ ] 8.2 Rehearse the back-out once: restore the backup into a scratch copy and confirm the service starts on it. "Restore" is the whole rollback plan and it has never been executed
 - [ ] 8.3 Live: send a message and confirm it reaches `delivered` through the new lookup — the path is not proven by tests that build their own reports
-- [ ] 8.4 Changelog entry saying plainly that a delivery report could land on a message it was not about, and that a positive one could manufacture a delivery; bump the version in `app/__init__.py`
-- [ ] 8.5 Replace the file-only evidence tags in the spec deltas with the shipped line spans
+- [x] 8.4 Changelog entry saying plainly that a delivery report could land on a message it was not about, and that a positive one could manufacture a delivery; bump the version in `app/__init__.py`
+- [x] 8.5 Replace the file-only evidence tags in the spec deltas with the shipped line spans
 - [ ] 8.6 Archive through `openspec archive`, once every task above is checked
 
 ## 9. After the ledger has evidence
@@ -204,4 +204,4 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 - [ ] 9.2 After the flip, verify both directions on the live gateway: a contradicting report is refused **and** ordinary deliveries still complete. Write down the condition that turns it back off
 - [ ] 9.3 Open a separate change for the intermediate-status defect: a temporary `st` in the 0x20–0x3F band moves a message to `failed`, which is not an eligible status, so the real verdict can never be applied afterwards. Named as a non-goal here, and it is a live bug either way
 
-- [ ] 9.4 `AGENTS.md` says the database is `data/sms-gate.db`; on the host it is `data/sms.db`. One of them is wrong and it is the one an operator would follow
+- [x] 9.4 `AGENTS.md` says the database is `data/sms-gate.db`; on the host it is `data/sms.db`. One of them is wrong and it is the one an operator would follow

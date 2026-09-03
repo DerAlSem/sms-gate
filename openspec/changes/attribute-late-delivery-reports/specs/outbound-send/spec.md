@@ -57,7 +57,7 @@ Writing a record SHALL NOT be able to undo or prevent an attribution: the status
 the commitment, the record is the account of it, and a record that fails to write SHALL be
 logged and abandoned rather than allowed to fail the report.
 
-[normative · evidence: app/modem/parser.py, app/db/queries.py, app/db/migrate.py, app/modem/manager.py, app/alerting.py · conf: high]
+[normative · evidence: app/db/migrate.py:240-268 (the ledger and its indexes), app/db/queries.py:271-334 (record and prune), app/modem/manager.py:741-848 (`_on_cds_line`, `_record_report`, `_handle_cds`), app/modem/manager.py:87 (retention), app/modem/manager.py:1233-1258 (pruned on the sweep), app/alerting.py:386,398 (the `delivery_unplaced` event), app/settings_store.py:51 (`notify_unplaced_reports`, default on), app/modem/parser.py:33-42 (the positional capture groups the record's fields depend on) · conf: high]
 
 #### Scenario: A report is attributed
 - **WHEN** a report is applied to a part
@@ -153,7 +153,7 @@ be treated as absent rather than as any particular time. **The distance between 
 clocks** SHALL NOT eliminate a candidate, however large it is; the window, which is about a
 part's age and not about that distance, is the only rule that excludes on time.
 
-[normative · evidence: app/modem/parser.py, app/db/queries.py, app/modem/manager.py, app/settings_store.py · conf: high]
+[normative · evidence: app/modem/attribution.py:49-66 (significant digits), app/modem/attribution.py:104-200 (the chain), app/modem/attribution.py:202-217 (nearest, then recency), app/db/queries.py:336-360 (`parts_matching_ref`, unfiltered by design), app/db/queries.py:244-269 (the part insert), app/modem/manager.py:795-848 (the decision reaching its three consumers), app/modem/manager.py:869-882 (the recency blacklist carve-out), app/modem/parser.py:176-202 (`scts`, quarter-hours), app/settings_store.py:83-95 (both settings) · conf: high]
 
 #### Scenario: The reference has been reused since the message was sent
 - **WHEN** message A was sent under reference 42, message B is later sent under reference 42, and a report for reference 42 naming A's recipient arrives while strict attribution is on
@@ -234,7 +234,7 @@ A window of zero discards every report the gateway receives and would announce i
 as every message expiring — a setting whose worst value looks like a network outage is one
 the settings layer has to refuse rather than the operator has to remember.
 
-[normative · evidence: app/settings_store.py, app/db/queries.py · conf: high]
+[normative · evidence: app/settings_store.py:83-89 (the spec, default 168), app/settings_store.py:98-118 (the `posint` type: refused at zero or below), app/settings_store.py:255-274 (`get` falls back to the default rather than taking a broken row literally), app/modem/manager.py:799 (re-read per report) · conf: high]
 
 #### Scenario: The window is set to zero
 - **WHEN** an operator saves `delivery_report_max_age_hours` as `0` or a negative number
@@ -254,7 +254,7 @@ Losing that loop is silent and total — no `+CDS` and no `+CMTI` — and this c
 loop read text chosen by the network and hand it to a number parser that raises. The sibling
 loops already hold this line; this one does not.
 
-[normative · evidence: app/modem/manager.py · conf: high]
+[normative · evidence: app/modem/manager.py:741-777 (`_on_cds_line`: unparsable recorded and logged, handling wrapped and the report abandoned), app/modem/manager.py:682-697 (the reader loop that calls it) · conf: high]
 
 #### Scenario: The recipient address is not a number
 - **WHEN** a report arrives whose address field cannot be interpreted
@@ -281,7 +281,7 @@ submit time was never recorded and cannot be recovered. The approximation can on
 later segment look older than it was, never newer, and a part that looks too old is kept by
 the unknown-and-late rules rather than dropped by them.
 
-[normative · evidence: app/modem/manager.py, app/modem/at_commands.py, app/db/queries.py, app/db/migrate.py · conf: high]
+[normative · evidence: app/modem/manager.py:509-527 (`on_part_sent`, and the conflict that is logged without failing the message), app/db/queries.py:244-269 (plain INSERT, each part's own `sent_at`), app/db/migrate.py:200-222 (the base DDL), app/db/migrate.py:20-119 (the rebuild, its guard and the backfill) · conf: high]
 
 #### Scenario: A two-part message is transmitted
 - **WHEN** part 1 of a two-part message receives `+CMGS: 10`
@@ -319,7 +319,7 @@ A message with no part records at all SHALL NOT be treated as having every part 
 "nothing is outstanding" and "nothing is known" are different answers, and only the first is
 a delivery.
 
-[normative · evidence: app/modem/manager.py, app/db/queries.py · conf: high]
+[normative · evidence: app/db/queries.py:362-384 (both writes address `(message_id, seq)`), app/db/queries.py:386-400 (no part rows is not a delivery), app/modem/manager.py:850-882 (`_apply_report`) · conf: high]
 
 #### Scenario: One part of two is reported delivered
 - **WHEN** part 1 is reported delivered and part 2 is outstanding
@@ -362,7 +362,7 @@ A message completed this way SHALL be distinguishable afterwards from one whose 
 was confirmed. "We were told" and "we concluded" are different facts, and an operator
 diagnosing a complaint needs to know which one they are reading.
 
-[normative · evidence: app/db/queries.py, app/modem/manager.py · conf: high]
+[normative · evidence: app/db/queries.py:704-746 (`complete_partly_reported_messages`, now fed only by parts a report attributed to that message), app/db/queries.py:749-769 (`expire_stale_messages`), app/modem/manager.py:1233-1258 (the sweep, and the ledger prune on it) · conf: high]
 
 #### Scenario: No report arrives in time
 - **WHEN** a message has been `sent` for longer than the configured timeout and no part was ever confirmed
