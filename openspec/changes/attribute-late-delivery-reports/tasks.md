@@ -159,7 +159,26 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
            BOTH its part rows, so that attribution was correct. Verdict took 27h. Delivered
            messages (n=1544): mean 93s, max 13.0h, eleven over 1h, none over 24h.
            168h default stands — six times the worst verdict observed. -->
-- [ ] 7.9 Rehearse the migration on a **copy of the production database**, recording the part-row count before and after. The precedent in this repo rehearsed an `ADD COLUMN`; this one drops a table
+- [x] 7.9 Rehearse the migration on a **copy of the production database**, recording the part-row count before and after. The precedent in this repo rehearsed an `ADD COLUMN`; this one drops a table
+      <!-- Rehearsed 2026-09-03 ON derserver, against `.backup` copies in /tmp — the live
+           database was read through `sqlite3 -readonly` and nothing was pulled off the
+           host, since it holds message texts and numbers. Copies removed after.
+
+           BEFORE: 256 part rows (saturated, as measured on 2026-09-02), 256 distinct
+           (message_id, seq) pairs, zero orphans, zero legacy duplicates; statuses
+           250 delivered / 1 failed / 5 sent; 1781 messages; old single-column PK.
+           AFTER:  256 part rows, the SAME 250/1/5, `sent_at` backfilled on all 256,
+           both indexes present plus the pair PK, `delivery_reports` created empty.
+           Second run: byte-identical counts — the guard holds on real stored DDL.
+           `PRAGMA integrity_check` = ok, `PRAGMA foreign_key_check` = 0 rows.
+
+           The crash-loop case rehearsed on its own copy: a `message_parts_v2` left
+           behind by a killed run (planted with a row in it) migrated cleanly to the same
+           256/250/1/5 instead of failing every start.
+
+           Note the live table has no duplicate pairs and no orphans, so the two hardest
+           branches of the rebuild ran against nothing here. They are covered by tests
+           on constructed data (3.7, orphan-drop), which is the only place they can be. -->
 - [x] 7.10 Full test suite green
       <!-- 682 passed. Four failures remain in tests/test_alert_send_sh.py and are
            PRE-EXISTING and unrelated: verified by stashing this branch and running them
