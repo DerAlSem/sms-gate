@@ -202,6 +202,14 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 - [ ] 9.1 A week after deploy, read the ledger: how many reports were contradicted, how many unplaced, how many decided by recency, how many superseded. Turn `delivery_report_strict_attribution` on only if the contradictions are real misattributions and not our own formatting
 - [ ] 9.2 After the flip, verify both directions on the live gateway: a contradicting report is refused **and** ordinary deliveries still complete. Write down the condition that turns it back off
-- [ ] 9.3 Open a separate change for the intermediate-status defect: a temporary `st` in the 0x20–0x3F band moves a message to `failed`, which is not an eligible status, so the real verdict can never be applied afterwards. Named as a non-goal here, and it is a live bug either way
+- [x] 9.3 Open a separate change for the intermediate-status defect: a temporary `st` in the 0x20–0x3F band moves a message to `failed`, which is not an eligible status, so the real verdict can never be applied afterwards. Named as a non-goal here, and it is a live bug either way
+      <!-- Opened as `hold-messages-on-a-temporary-tp-status`: proposal, an outbound-send
+           MODIFIED delta and tasks, `openspec validate --strict` green. Marked in its own
+           proposal as authored-but-NOT-critiqued — the system-architect / gap-finder layer
+           is task 2.3 there, and two design questions are deliberately left open (what the
+           owning application hears, and what a held message does at the timeout).
+           It declares a dependency on THIS change being archived first: both rewrite the
+           same requirement, and its MODIFIED block is written against the text this one
+           installs. Archiving in the other order would drop one rewrite silently. -->
 
 - [x] 9.4 `AGENTS.md` says the database is `data/sms-gate.db`; on the host it is `data/sms.db`. One of them is wrong and it is the one an operator would follow
