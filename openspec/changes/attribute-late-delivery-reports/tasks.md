@@ -77,12 +77,22 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 5. Refusal, behind the switch
 
-- [ ] 5.1 Test: strict on, the only candidate addressed elsewhere → nothing changes, both numbers recorded, operator notified
-- [ ] 5.2 Test (positive control for 5.1): strict on, the same report against a candidate whose digits agree → the part **is** updated. Without this, 5.1 passes against a lookup that finds nothing at all
-- [ ] 5.3 Test: strict off, that same contradicting report → attributed as before, contradiction recorded
-- [ ] 5.4 Test: the switch is read per report — changing it takes effect without a restart
-- [ ] 5.5 Add `delivery_report_strict_attribution`, default off
-- [ ] 5.6 Mutation check: revert the lookup to matching on reference alone and confirm 4.1, 4.18 and 5.1 go red. A guard nobody has bitten is an unchecked box
+- [x] 5.1 Test: strict on, the only candidate addressed elsewhere → nothing changes, both numbers recorded, operator notified
+- [x] 5.2 Test (positive control for 5.1): strict on, the same report against a candidate whose digits agree → the part **is** updated. Without this, 5.1 passes against a lookup that finds nothing at all
+- [x] 5.3 Test: strict off, that same contradicting report → attributed as before, contradiction recorded
+- [x] 5.4 Test: the switch is read per report — changing it takes effect without a restart
+- [x] 5.5 Add `delivery_report_strict_attribution`, default off
+- [x] 5.6 Mutation check: revert the lookup to matching on reference alone and confirm 4.1, 4.18 and 5.1 go red. A guard nobody has bitten is an unchecked box
+      <!-- Done, and the task's own single mutation turned out not to bite all three: the
+           three guards protect three different mechanisms, so each was bitten separately.
+           (a) chain matches on the reference alone — 8 red, including 5.1, the superseded
+           outcome and the window bound; 4.1 and 4.18 stay green, correctly, because one
+           uncontradicted candidate is still found and the WRITE is still addressed.
+           (b) set_part_delivered addressed by modem_ref again — 4.18 red, and 4.20 with
+           it: that is the inferred-delivery manufacture reappearing.
+           (c) attribution selects but applies nothing — 4.1 red, with four others.
+           A single mutation reported as covering all three would have been a green tick
+           over two unbitten guards. -->
 
 ## 6. The loop survives what the network sends
 

@@ -124,47 +124,55 @@ def attribute(report, rows, *, window_hours: int, strict: bool,
     cutoff = now - timedelta(hours=window_hours)
     reported_at = report.submitted_at
 
-    graded: list[tuple[dict, str, datetime | None]] = []
+    graded: list[tuple[dict, str, datetime | None, bool]] = []
     for row in rows:
         sent_at = _parse_stored_time(row["sent_at"])
+        contradicted = _contradicts(report.recipient, row["phone"])
         if row["msg_status"] not in ELIGIBLE_MESSAGE_STATUSES or row["part_status"] != "sent":
             # The message already reached `delivered` or `failed`, or a report has already
             # set this part. Ordinary network behaviour, not a fault: a multipart message
             # completed at the timeout still receives its remaining reports.
-            graded.append((row, SUPERSEDED, sent_at))
+            graded.append((row, SUPERSEDED, sent_at, contradicted))
         elif sent_at is not None and sent_at < cutoff:
-            graded.append((row, OUTSIDE_WINDOW, sent_at))
-        elif _contradicts(report.recipient, row["phone"]):
+            graded.append((row, OUTSIDE_WINDOW, sent_at, contradicted))
+        elif contradicted:
             # Recorded whether or not it eliminates. While the switch is off this is the
             # evidence the flip decision is taken on.
-            graded.append((row, CONTRADICTED, sent_at))
+            graded.append((row, CONTRADICTED, sent_at, contradicted))
         else:
-            graded.append((row, ELIGIBLE, sent_at))
+            graded.append((row, ELIGIBLE, sent_at, contradicted))
 
     def _record(chosen_key=None) -> list[dict]:
+        # The number we hold travels with each candidate, alongside the number the report
+        # named. Without both, nobody can tell a real misattribution from a difference in
+        # our own formatting — and that is precisely the question the strict switch is
+        # flipped on. `contradicted` is carried separately from the outcome, because a
+        # chosen candidate can also have been contradicted while the switch was off.
         return [
             {
                 "message_id": row["message_id"],
                 "seq": row["seq"],
+                "phone": row["phone"],
+                "contradicted": contradicted,
                 "outcome": CHOSEN if (row["message_id"], row["seq"]) == chosen_key
                            else grade,
             }
-            for row, grade, _ in graded
+            for row, grade, _, contradicted in graded
         ]
 
     # A contradiction is the one rule in this change that can refuse a delivery, so it is
     # the only one behind a switch. While the switch is off the candidate stands.
     surviving = [
-        (row, sent_at) for row, grade, sent_at in graded
+        (row, sent_at) for row, grade, sent_at, _ in graded
         if grade == ELIGIBLE or (grade == CONTRADICTED and not strict)
     ]
 
     if not surviving:
-        grades = {grade for _, grade, _ in graded}
+        grades = {grade for _, grade, _, _ in graded}
         if SUPERSEDED in grades:
             # A completed message is an ordinary explanation for a report that cannot be
             # applied. Recorded, silent — the operator is not woken by ordinary traffic.
-            row = next(r for r, g, _ in graded if g == SUPERSEDED)
+            row = next(r for r, g, _, _ in graded if g == SUPERSEDED)
             return AttributionDecision(
                 outcome=SUPERSEDED, message_id=row["message_id"], seq=row["seq"],
                 reason="the reference matches a part already reported or completed",

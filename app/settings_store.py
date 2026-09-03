@@ -83,6 +83,14 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("delivery_report_max_age_hours", "posint", 168, "Limits", False,
          "Stop considering a delivery report once the part it names is older than N "
          "hours (the report is still recorded)"),
+    # The only rule in this gateway that can refuse a delivery, so the only one with a
+    # switch. Off, a contradicting recipient address is recorded and the report is
+    # attributed as it would have been before; on, it eliminates. Flipped as a separate
+    # decision against the ledger's own evidence, because turning a real delivery into an
+    # expiry is worse than the defect it replaces.
+    Spec("delivery_report_strict_attribution", "bool", False, "Limits", False,
+         "Refuse a delivery report whose recipient address contradicts the only "
+         "candidate (off = record the contradiction and attribute anyway)"),
     Spec("max_sms_parts", "int", 6, "Sending", False,
          "Max parts for a multipart SMS; longer text fails before sending"),
     Spec("send_retry_backoff", "delays", "30,120,300", "Sending", False,

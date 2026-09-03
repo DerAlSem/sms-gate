@@ -771,8 +771,12 @@ class ModemManager:
             )
 
     async def _handle_cds(self, report) -> None:
+        # Both re-read per report, as `delivery_timeout_seconds` is re-read per sweep:
+        # a settings change applies without a restart, and the values in force are
+        # recorded on the row so a decision can be read back against the rule it was made
+        # under.
         window_hours = store.delivery_report_max_age_hours
-        strict = False
+        strict = store.delivery_report_strict_attribution
         rows = await queries.parts_matching_ref(report.modem_ref)
         decision = attribute(
             report, rows, window_hours=window_hours, strict=strict,
