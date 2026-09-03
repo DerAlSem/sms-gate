@@ -70,6 +70,12 @@ _LINK_RETRY_CEILING = 60.0
 # without end.
 _INBOUND_SEEN_RETENTION = 7 * 24 * 3600
 
+# How long a delivery-report record is kept. Thirty days, so the decision to turn
+# `delivery_report_strict_attribution` on is taken against a full window of real
+# evidence rather than against an argument — the ledger is what answers "how many
+# contradictions did we record while the switch was off".
+_DELIVERY_REPORT_RETENTION = 30 * 24 * 3600
+
 # Per attempt, on top of its scheduled delay: the failing exchange itself (a prompt
 # timeout plus the drain, or a full response timeout) and one retry-scheduler tick.
 _ATTEMPT_ALLOWANCE = 60
@@ -1126,5 +1132,11 @@ class ModemManager:
         # notification — hence the returned ids rather than a bare UPDATE.
         for message_id in await queries.expire_stale_messages(timeout):
             spawn_delivery_dispatch(message_id, "expired")
+        # Here rather than beside `prune_inbound_seen`, which runs from `scan_inbox` — at
+        # startup and on link recovery. A gateway that never loses its link would not
+        # prune this table for months, and the retention would be a comment.
+        gone = await queries.prune_delivery_reports(_DELIVERY_REPORT_RETENTION)
+        if gone:
+            logger.info("Pruned %d delivery report record(s) past retention", gone)
 
 

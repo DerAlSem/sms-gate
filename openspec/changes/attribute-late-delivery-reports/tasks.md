@@ -26,11 +26,11 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 - [ ] 2.6b Test: an unparsable line is recorded under its own outcome and logged at **error** level — it is the one class of event that must not reach nobody, because our parser failing on a live line is either a wire-format change or the group-renumbering fault
 - [ ] 2.7 Test: the record carries the window and switch values in force at the time
 - [ ] 2.8 Test: a failing record write leaves the attribution standing and logs
-- [ ] 2.9 Test: pruning removes records past the retention and nothing newer
-- [ ] 2.10 Add the `delivery_reports` table and its indexes, the insert, and a named retention constant with a 30-day default
-- [ ] 2.11 Call the prune from the expiry sweep, not from `scan_inbox` — a gateway that never loses its link would otherwise never prune
-- [ ] 2.11a Test: pruning happens on a recurring tick, not only at startup — a boot-only prune satisfies "does not depend on link recovery" and still never runs on a long-lived gateway
-- [ ] 2.12 Add the alert type with **its own toggle defaulting to on** (`notify_delivery_errors` defaults to off and would leave the guarantee empty on every existing install) and dedup keyed on the reference
+- [x] 2.9 Test: pruning removes records past the retention and nothing newer
+- [x] 2.10 Add the `delivery_reports` table and its indexes, the insert, and a named retention constant with a 30-day default
+- [x] 2.11 Call the prune from the expiry sweep, not from `scan_inbox` — a gateway that never loses its link would otherwise never prune
+- [x] 2.11a Test: pruning happens on a recurring tick, not only at startup — a boot-only prune satisfies "does not depend on link recovery" and still never runs on a long-lived gateway
+- [x] 2.12 Add the alert type with **its own toggle defaulting to on** (`notify_delivery_errors` defaults to off and would leave the guarantee empty on every existing install) and dedup keyed on the reference
 
 ## 3. A part record stops being the network's to overwrite
 

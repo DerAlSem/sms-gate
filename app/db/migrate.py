@@ -220,6 +220,47 @@ async def run_migrations() -> None:
         -- this change stops bounding at 256 rows.
         CREATE INDEX IF NOT EXISTS idx_message_parts_ref     ON message_parts(modem_ref);
 
+        -- Every +CDS the gateway reads, recorded before anything is decided on it.
+        --
+        -- Append-only and evidence, not a queue: there is no operation that applies a
+        -- recorded report after the fact. What it buys is that the risky rule can ship
+        -- recording but not acting, and be turned on against a week of real evidence
+        -- rather than an argument — and that a report the gateway drops is *kept*, so
+        -- the complaint this change exists to answer ("the message the report was
+        -- actually about can never be corrected") is not reproduced by the fix.
+        --
+        -- Only `raw_line` and `outcome` are required. Everything the parser produces is
+        -- nullable by design, so a line the parser cannot read is recorded too rather
+        -- than becoming the one event that leaves no trace.
+        --
+        -- `message_id` is deliberately NOT a foreign key: `PRAGMA foreign_keys` is ON,
+        -- and a declared reference would turn every deletion of a message that has
+        -- reports into a refusal — an operator surface breaking on an audit table. This
+        -- is the account of what the network said; it outlives the row it names.
+        CREATE TABLE IF NOT EXISTS delivery_reports (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            received_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            raw_line      TEXT NOT NULL,
+            modem_ref     INTEGER,
+            recipient     TEXT,
+            submitted_at  TIMESTAMP,
+            discharged_at TIMESTAMP,
+            status_code   INTEGER,
+            outcome       TEXT NOT NULL,   -- attributed | superseded | unplaced | unparsable
+            decided_by    TEXT,            -- sole | nearest | recency
+            message_id    INTEGER,
+            seq           INTEGER,
+            candidates    TEXT,            -- JSON: every part whose reference matched
+            -- The settings this decision was made under. The flip decision asks "how many
+            -- contradictions did we record while the switch was off", and a setting read a
+            -- week later cannot answer for a decision made before it changed.
+            window_hours  INTEGER,
+            strict        INTEGER
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_delivery_reports_at  ON delivery_reports(received_at);
+        CREATE INDEX IF NOT EXISTS idx_delivery_reports_ref ON delivery_reports(modem_ref);
+
         CREATE TABLE IF NOT EXISTS notify_refs (
             message_id  INTEGER PRIMARY KEY,
             phone       TEXT NOT NULL,

@@ -41,6 +41,12 @@ SETTINGS_SPEC: list[Spec] = [
          "Notify when an outbound SMS fails to send"),
     Spec("notify_delivery_errors", "bool", False, "Alerting", False,
          "Notify on delivery failure or when a number is blacklisted"),
+    # Its own switch rather than a share of the one above, which defaults to off: this
+    # guarantee would then be empty on every existing install — and every existing
+    # install is one that has the defect.
+    Spec("notify_unplaced_reports", "bool", True, "Alerting", False,
+         "Notify when a delivery report could not be attributed to any message "
+         "(the report is recorded either way)"),
     Spec("notify_inbound", "bool", False, "Alerting", False,
          "Notify on every inbound SMS received"),
     Spec("notify_dispatch_errors", "bool", True, "Alerting", False,

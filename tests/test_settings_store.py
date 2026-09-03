@@ -14,6 +14,7 @@ def test_spec_has_all_soft_keys():
         "instance_name",
         "notify_system_errors", "notify_send_errors",
         "notify_delivery_errors", "notify_inbound", "notify_dispatch_errors",
+        "notify_unplaced_reports",
         "telegram_replies_enabled",
         "inbound_dispatch", "delivery_dispatch",
         "inbound_dispatch_retries", "inbound_dispatch_timeout",

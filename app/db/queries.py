@@ -1,3 +1,4 @@
+import json
 from typing import Any
 import aiosqlite
 from app import periods
@@ -264,6 +265,69 @@ async def add_message_part(message_id: int, modem_ref: int, seq: int, total: int
         (message_id, seq, modem_ref, total),
     )
     await db.commit()
+
+
+async def record_delivery_report(
+    *,
+    raw_line: str,
+    outcome: str,
+    modem_ref: int | None = None,
+    recipient: str | None = None,
+    submitted_at: str | None = None,
+    discharged_at: str | None = None,
+    status_code: int | None = None,
+    decided_by: str | None = None,
+    message_id: int | None = None,
+    seq: int | None = None,
+    candidates: list | None = None,
+    window_hours: int | None = None,
+    strict: bool | None = None,
+) -> int:
+    """Write down one `+CDS`, whatever became of it.
+
+    Only the raw line and the outcome are required: a line the parser cannot read has
+    nothing else, and it is precisely the line that must not become the one event leaving
+    no trace.
+
+    `candidates` records **every** part whose reference matched, each with its own
+    outcome — not only the winner. "How many reports did we contradict" is unanswerable
+    from a table that stores the choice and forgets the alternatives.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        INSERT INTO delivery_reports (
+            raw_line, outcome, modem_ref, recipient, submitted_at, discharged_at,
+            status_code, decided_by, message_id, seq, candidates, window_hours, strict
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            raw_line, outcome, modem_ref, recipient, submitted_at, discharged_at,
+            status_code, decided_by, message_id, seq,
+            json.dumps(candidates, ensure_ascii=False) if candidates is not None else None,
+            window_hours,
+            None if strict is None else int(strict),
+        ),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def prune_delivery_reports(max_age_seconds: int) -> int:
+    """Drop records past the retention, and report how many went.
+
+    Called from the expiry sweep rather than from `scan_inbox`, where `prune_inbound_seen`
+    is called: that one fires at startup and on link recovery, so a gateway that never
+    loses its link would not prune this table for months.
+    """
+    db = await get_db()
+    async with db.execute(
+        "DELETE FROM delivery_reports WHERE received_at < datetime('now', ?) RETURNING id",
+        (f"-{int(max_age_seconds)} seconds",),
+    ) as cursor:
+        gone = len(await cursor.fetchall())
+    await db.commit()
+    return gone
 
 
 async def find_message_by_part_ref(modem_ref: int) -> aiosqlite.Row | None:

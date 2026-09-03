@@ -378,6 +378,12 @@ _EVENT_TOGGLE = {
     "delivery_error": "notify_delivery_errors",
     "inbound": "notify_inbound",
     "dispatch_error": "notify_dispatch_errors",
+    # Deliberately not folded into `delivery_error`: that one defaults to off, and an
+    # unplaced report is the one event whose whole point is that nobody would otherwise
+    # find out. Every consequence of dropping a report is invisible — a message still
+    # `sent` goes on to `expired` and its application is told so, and a dropped negative
+    # report also suppresses the destination's failure count.
+    "delivery_unplaced": "notify_unplaced_reports",
     # Shares the system-errors switch rather than adding one of its own: it replaces the
     # ERROR lines that switch already governed, so the same toggle keeps governing the
     # same class of message.
@@ -389,15 +395,16 @@ _EVENT_TITLE = {
     "delivery_error": "🚫 Delivery failed",
     "inbound": "📨 Inbound",
     "dispatch_error": "📡 Webhook failed",
+    "delivery_unplaced": "🕳 Report about nothing",
     "link": "🔌 Link restored",
 }
 
 
 def notify(event_type: str, text: str, dedup_extra=None, phone=None) -> None:
     """Send a typed operator notification if its toggle is on and a notifier is
-    configured. event_type in {'send_error','delivery_error','inbound','dispatch_error',
-    'link'}. Error types dedup on (event_type, dedup_extra); inbound (dedup_extra None) is
-    never deduped."""
+    configured. event_type in {'send_error','delivery_error','delivery_unplaced',
+    'inbound','dispatch_error','link'}. Error types dedup on (event_type, dedup_extra);
+    inbound (dedup_extra None) is never deduped."""
     from app.settings_store import store
 
     if _notifier is None:
