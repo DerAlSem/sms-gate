@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 
 @dataclass
@@ -7,6 +8,12 @@ class DeliveryReport:
     modem_ref: int
     delivered: bool
     status_code: int
+    # Everything below is optional by design: the line may carry it, and a line that
+    # does not must still produce a usable report. Absent evidence never closes a door.
+    recipient: str | None = None        # `ra` — recipient address of the original submit
+    submitted_at: datetime | None = None    # `scts` — when the SMSC took the submit
+    discharged_at: datetime | None = None   # `dt`  — when the network reached its verdict
+    raw_line: str = ""
 
 
 @dataclass
@@ -16,8 +23,15 @@ class InboundSms:
     text: str
 
 
+# +CDS: fo,mr,ra,tora,scts,dt,st  (docs/modem.md:103)
+#
+# ⚠️ The groups are positional and `parse_cds` reads them by number. `ra`, `scts` and `dt`
+# are captured *ahead* of the status, so every group reference below is indexed against
+# this comment, not against the shape this pattern used to have. Getting it wrong reads
+# the status out of a timestamp and turns every delivery in the system into a failure.
+#             1=mr        2=ra          3=scts     4=dt      5=st
 _CDS_PATTERN = re.compile(
-    r'\+CDS:\s*\d+,(\d+),"[^"]*",\d+,"[^"]*","[^"]*",(\d+)'
+    r'\+CDS:\s*\d+,(\d+),"([^"]*)",\d+,"([^"]*)","([^"]*)",(\d+)'
 )
 _CMTI_PATTERN = re.compile(r'\+CMTI:\s*"([^"]+)"\s*,\s*(\d+)')
 _CMGR_PATTERN = re.compile(
@@ -154,17 +168,59 @@ def parse_cmgs_ref(response: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# GSM 03.40 §9.2.3.11 TP-SCTS: `YY/MM/DD,hh:mm:ss±zz`, where `zz` is the offset from UTC
+# in **quarter-hours** — `+12` is UTC+03:00, not UTC+12:00. An implementation reading it as
+# hours is nine hours out, and since a timestamp may only *order* candidates and never
+# eliminate one, that error would never surface as a failure: only as the wrong candidate
+# chosen, silently, for ever.
+_SCTS_PATTERN = re.compile(
+    r'^(\d{2})/(\d{2})/(\d{2}),(\d{2}):(\d{2}):(\d{2})([+-]\d{1,2})$'
+)
+
+
+def parse_scts(value: str) -> datetime | None:
+    """Service-centre timestamp → aware datetime, or None when it cannot be read.
+
+    Unreadable is *absent*, never epoch zero: a report that lands in 1970 would be
+    ordered against every candidate as impossibly old, and the rules that use this
+    value must degrade to not using it rather than to using a wrong one.
+    """
+    match = _SCTS_PATTERN.match(value.strip())
+    if not match:
+        return None
+    yy, mm, dd, hh, mi, ss, quarters = match.groups()
+    try:
+        offset = timedelta(minutes=15 * int(quarters))
+        return datetime(
+            2000 + int(yy), int(mm), int(dd), int(hh), int(mi), int(ss),
+            tzinfo=timezone(offset),
+        )
+    except ValueError:
+        # An out-of-range field (month 13, hour 25) or an offset past ±24h. The shape
+        # matched and the content did not; still absent, still not a rejection.
+        return None
+
+
 def parse_cds(line: str) -> DeliveryReport | None:
-    """Parse +CDS delivery report line into DeliveryReport."""
+    """Parse +CDS delivery report line into DeliveryReport.
+
+    Group numbers follow `_CDS_PATTERN` above: 1=mr, 2=ra, 3=scts, 4=dt, 5=st.
+    """
     match = _CDS_PATTERN.search(line)
     if not match:
         return None
     modem_ref = int(match.group(1))
-    status_code = int(match.group(2))
+    status_code = int(match.group(5))
+    recipient = match.group(2).strip()
     return DeliveryReport(
         modem_ref=modem_ref,
         delivered=(status_code == 0),
         status_code=status_code,
+        # An empty `ra` is the network saying nothing, not a number with no digits.
+        recipient=recipient or None,
+        submitted_at=parse_scts(match.group(3)),
+        discharged_at=parse_scts(match.group(4)),
+        raw_line=line,
     )
 
 
