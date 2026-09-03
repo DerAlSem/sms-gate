@@ -221,7 +221,34 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
            Redone with the values exported into the environment. This is the task's own
            warning arriving a second time: a rollback nobody has executed, and then a
            rehearsal that executed the wrong thing. -->
-- [ ] 8.3 Live: send a message and confirm it reaches `delivered` through the new lookup — the path is not proven by tests that build their own reports
+- [x] 8.3 Live: send a message and confirm it reaches `delivered` through the new lookup — the path is not proven by tests that build their own reports
+      <!-- Done on ORGANIC traffic rather than a synthetic send (owner's choice: the live
+           database is real customer traffic and a test number would have had to be
+           guessed). The first report after deploy exercised the reference collision
+           directly.
+
+           `+CDS: 6,112,"+79857566633",145,"26/09/03,14:08:39+12","26/09/03,14:08:41+12",0`
+
+           Reference 112 is carried by TWO messages ten days apart — 1578 (sent
+           2026-08-24, to +79266235172) and 1785 (sent today, to +79857566633) — and
+           BOTH part rows exist. Under the old schema `add_message_part` would have
+           overwritten 1578's row on today's send; that is the whole defect, and it did
+           not happen.
+
+           The ledger row: 1578's part graded `superseded` (its message is already
+           `delivered`) and recorded `contradicted: true` — the numbers really do differ;
+           1785's part `chosen`, `decided_by: sole`. 1785 -> `delivered`,
+           `delivery_inferred = 0`. 1578 untouched. No alert, no error in the journal.
+
+           `scts` "26/09/03,14:08:39+12" stored as 2026-09-03 11:08:39 UTC. MSK is UTC+3
+           and +12 quarter-hours is +03:00 — the conversion is right on a live line, which
+           no hand-built report could have shown.
+
+           Said precisely: this particular report would have been attributed correctly by
+           the OLD code too, because 1578 was already `delivered` and therefore ineligible.
+           What it proves is the machinery end to end on a real collision — both records
+           surviving, the grading, the contradiction recorded while strict is off, the
+           timestamp, and the sole choice. -->
 - [x] 8.4 Changelog entry saying plainly that a delivery report could land on a message it was not about, and that a positive one could manufacture a delivery; bump the version in `app/__init__.py`
 - [x] 8.5 Replace the file-only evidence tags in the spec deltas with the shipped line spans
 - [ ] 8.6 Archive through `openspec archive`, once every task above is checked
