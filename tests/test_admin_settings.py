@@ -86,3 +86,43 @@ def test_phone_region_renders_as_country_select():
         assert "Estonia (EE)" in en.text
     finally:
         asyncio.run(close_db())
+
+
+def test_the_new_delivery_report_settings_render():
+    """The three settings this change adds are reachable in the console.
+
+    `posint` is a type the settings template has no branch for, so it falls through to a
+    plain text input. That is the intended outcome and not an accident — but a template
+    that raised on an unknown type would take the whole page down, and no unit test of
+    the settings store can see that.
+    """
+    _db()
+    try:
+        r = _client().get("/admin/settings", headers=_AUTH)
+        assert r.status_code == 200
+        for key in ("delivery_report_max_age_hours",
+                    "delivery_report_strict_attribution",
+                    "notify_unplaced_reports"):
+            assert f'id="set-{key}"' in r.text, f"{key} has no input on the page"
+        assert 'name="delivery_report_max_age_hours" id="set-delivery_report_max_age_hours" type="text"' in r.text
+        assert 'name="delivery_report_strict_attribution"' in r.text
+        assert "168" in r.text and "true" in r.text
+    finally:
+        asyncio.run(close_db())
+
+
+def test_the_window_refuses_zero_through_the_form():
+    """The refusal an operator actually meets. A window of zero discards every report
+    the gateway receives and would announce itself only as every message expiring."""
+    _db()
+    try:
+        c = _client()
+        assert c.post("/admin/settings",
+                      data={"delivery_report_max_age_hours": "24"},
+                      headers=_AUTH).status_code in (200, 303)
+        r = c.post("/admin/settings",
+                   data={"delivery_report_max_age_hours": "0"}, headers=_AUTH)
+        assert r.status_code == 200, "a refused save re-renders the form"
+        assert store.delivery_report_max_age_hours == 24, "the previous value stands"
+    finally:
+        asyncio.run(close_db())
