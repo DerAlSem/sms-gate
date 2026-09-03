@@ -240,11 +240,28 @@ async def stale_pending_messages(max_age_seconds: int) -> list[aiosqlite.Row]:
 
 
 async def add_message_part(message_id: int, modem_ref: int, seq: int, total: int) -> None:
+    """Record a segment the modem accepted, under its own identity.
+
+    A plain INSERT, not `INSERT OR REPLACE`. The old form was keyed on `modem_ref` — one
+    octet the modem reuses every 256 sends — so a wrap did not add a row, it took the row
+    of whichever message held that reference before, and that message lost every trace of
+    what it put on the wire.
+
+    On the new key a conflict is a fault, not a collision to resolve: the same segment of
+    the same message cannot legitimately be accepted twice. It is raised rather than
+    swallowed, and the caller decides — `is_retryable(..., already_sent=…)` refuses a
+    retry once any part has been accepted, so this can only fire after the network already
+    took the segment.
+
+    `sent_at` is the segment's own submit time. The message's `sent_at` dates the message,
+    which is set once on the first part; a later segment is not that time, and attribution
+    measures a part's age against its own clock.
+    """
     db = await get_db()
     await db.execute(
-        "INSERT OR REPLACE INTO message_parts (modem_ref, message_id, seq, total) "
-        "VALUES (?, ?, ?, ?)",
-        (modem_ref, message_id, seq, total),
+        "INSERT INTO message_parts (message_id, seq, modem_ref, total, sent_at) "
+        "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+        (message_id, seq, modem_ref, total),
     )
     await db.commit()
 

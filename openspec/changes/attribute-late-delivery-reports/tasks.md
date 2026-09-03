@@ -34,19 +34,19 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 3. A part record stops being the network's to overwrite
 
-- [ ] 3.1 Test: recording a part under a reference another message already used leaves both records, each against its own message, and the earlier one keeps its status
-- [ ] 3.2 Test: recording part 2 does not disturb part 1 of the same message
-- [ ] 3.3 Test: part 2's recorded time is when part 2 was accepted, not the message's `sent_at`
-- [ ] 3.4 Test: the migration carries existing part rows over with status intact and backfills submit time from the message
-- [ ] 3.5 Test: the migration is idempotent, and the guard reads the **primary key shape** from `sqlite_master`, not the presence of a column
-- [ ] 3.6 Test: **fresh install** — an empty database gets the new shape from the base DDL and the rebuild does not run, on the first start or the second. Without this, a base statement the guard cannot match rebuilds the table on every boot, invisibly
-- [ ] 3.7 Test: legacy rows duplicating `(message_id, seq)` do not abort the migration, **and a duplicated pair holding `delivered` and `sent` survives as `delivered`** — a column-wise `MAX()` picks `sent` and silently downgrades a confirmed part, which then expires and tells the app a delivery failed
-- [ ] 3.7a Test: a duplicate insert on the new key raises, is logged, and does **not** fail the message — it can only fire after a segment the network already accepted, and failing there invites a resend and a second delivery
-- [ ] 3.8 Test: a database left holding `message_parts_v2` from a crashed run migrates cleanly instead of crash-looping
-- [ ] 3.9 Test: both indexes exist after the rebuild — `DROP TABLE` takes them, and the base script that created one has already run
-- [ ] 3.10 Rebuild `message_parts` in its own explicit transaction, outside `executescript`, with `foreign_keys` off around it
-- [ ] 3.11 Replace the base DDL at `app/db/migrate.py:90` so a fresh install creates the new shape and satisfies the guard
-- [ ] 3.12 Record each part's own submit time, and stop using `INSERT OR REPLACE`
+- [x] 3.1 Test: recording a part under a reference another message already used leaves both records, each against its own message, and the earlier one keeps its status
+- [x] 3.2 Test: recording part 2 does not disturb part 1 of the same message
+- [x] 3.3 Test: part 2's recorded time is when part 2 was accepted, not the message's `sent_at`
+- [x] 3.4 Test: the migration carries existing part rows over with status intact and backfills submit time from the message
+- [x] 3.5 Test: the migration is idempotent, and the guard reads the **primary key shape** from `sqlite_master`, not the presence of a column
+- [x] 3.6 Test: **fresh install** — an empty database gets the new shape from the base DDL and the rebuild does not run, on the first start or the second. Without this, a base statement the guard cannot match rebuilds the table on every boot, invisibly
+- [x] 3.7 Test: legacy rows duplicating `(message_id, seq)` do not abort the migration, **and a duplicated pair holding `delivered` and `sent` survives as `delivered`** — a column-wise `MAX()` picks `sent` and silently downgrades a confirmed part, which then expires and tells the app a delivery failed
+- [x] 3.7a Test: a duplicate insert on the new key raises, is logged, and does **not** fail the message — it can only fire after a segment the network already accepted, and failing there invites a resend and a second delivery
+- [x] 3.8 Test: a database left holding `message_parts_v2` from a crashed run migrates cleanly instead of crash-looping
+- [x] 3.9 Test: both indexes exist after the rebuild — `DROP TABLE` takes them, and the base script that created one has already run
+- [x] 3.10 Rebuild `message_parts` in its own explicit transaction, outside `executescript`, with `foreign_keys` off around it
+- [x] 3.11 Replace the base DDL at `app/db/migrate.py:90` so a fresh install creates the new shape and satisfies the guard
+- [x] 3.12 Record each part's own submit time, and stop using `INSERT OR REPLACE`
 
 ## 4. Attribution, failing open
 

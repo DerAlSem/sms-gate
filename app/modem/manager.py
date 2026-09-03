@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import time
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -491,7 +492,19 @@ class ModemManager:
 
         async def on_part_sent(seq: int, ref: int) -> None:
             nonlocal reached_sent
-            await queries.add_message_part(msg.message_id, ref, seq, total)
+            try:
+                await queries.add_message_part(msg.message_id, ref, seq, total)
+            except sqlite3.IntegrityError:
+                # A part record for this message and segment already exists. On the old
+                # schema this was swallowed by `INSERT OR REPLACE`; it is a fault worth
+                # seeing, and it is not a reason to fail the message — it can only fire
+                # after the network already accepted this segment, and failing here would
+                # invite an operator resend and a second delivery to the recipient.
+                logger.error(
+                    "Part record conflict: message %d already has a record for part %d "
+                    "(new ref=%d discarded); the segment was sent regardless",
+                    msg.message_id, seq, ref,
+                )
             if seq == 1:
                 reached_sent = True
                 await queries.set_message_sent(msg.message_id, ref)

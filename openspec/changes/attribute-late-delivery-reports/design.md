@@ -297,9 +297,12 @@ CREATE TABLE message_parts_v2 (
 INSERT INTO message_parts_v2 (message_id, seq, modem_ref, total, status, sent_at)
 SELECT p.message_id, p.seq, p.modem_ref, p.total, p.status, m.sent_at
   FROM message_parts p JOIN messages m ON m.id = p.message_id
- WHERE p.rowid = (SELECT MAX(p2.rowid) FROM message_parts p2   -- ONE WHOLE ROW per pair:
+ WHERE p.rowid = (SELECT p2.rowid FROM message_parts p2        -- ONE WHOLE ROW per pair:
                    WHERE p2.message_id = p.message_id          -- the old key never enforced
-                     AND p2.seq        = p.seq);               -- (message_id, seq)
+                     AND p2.seq        = p.seq                 -- (message_id, seq)
+                   ORDER BY (p2.status = 'sent') ASC,          -- a reported row first,
+                            p2.rowid DESC                      -- then the later one
+                   LIMIT 1);
 DROP TABLE message_parts;                       -- takes its indexes with it
 ALTER TABLE message_parts_v2 RENAME TO message_parts;
 CREATE INDEX IF NOT EXISTS idx_message_parts_ref     ON message_parts(modem_ref);
@@ -324,13 +327,23 @@ at 256 rows.
 - **Idempotent on the fact that changed.** The guard reads the stored DDL for the primary
   key, not the presence of `sent_at` — a column anyone can add with
   `_add_column_if_missing`, which would make the guard lie for ever.
-- **One whole row per pair, never a blend.** A column-wise `GROUP BY` with `MAX()` per column
-  assembles a row that never existed: `MAX(status)` under BINARY collation orders
-  `'delivered' < 'failed' < 'sent'`, so a duplicated pair holding `delivered` and `sent`
-  collapses to **`sent`** — a confirmed part downgraded to outstanding, which then feeds the
-  sweep and turns a delivery into an expiry notification to the owning app. `MAX(modem_ref)`
-  is worse than useless on a counter that wraps: larger is not later. The surviving row is
-  chosen whole, by `rowid`.
+- **One whole row per pair, never a blend, and never the unreported one.** A column-wise
+  `GROUP BY` with `MAX()` per column assembles a row that never existed: `MAX(status)` under
+  BINARY collation orders `'delivered' < 'failed' < 'sent'`, so a duplicated pair holding
+  `delivered` and `sent` collapses to **`sent`** — a confirmed part downgraded to outstanding,
+  which then feeds the sweep and turns a delivery into an expiry notification to the owning
+  app. `MAX(modem_ref)` is worse than useless on a counter that wraps: larger is not later.
+
+  ⚠️ **A bare `MAX(rowid)` loses the same row, and this was written as `MAX(rowid)` until the
+  implementation tested it.** Picking a whole row stops the *blend*, not the *downgrade*: the
+  duplicate arises when a segment is transmitted twice, so the later row is the second
+  transmission and carries `sent`, while the report that confirmed the first arrived against
+  the **earlier** row. Taking the latest row therefore discards the confirmation just as
+  surely as `MAX(status)` does — a different mechanism reaching the identical harm the
+  paragraph above rules out. The surviving row is chosen whole by an ordering that prefers a
+  row a report actually reached, latest first within that: `ORDER BY (status = 'sent') ASC,
+  rowid DESC`. Task 3.7 is the test, and it inserts the confirmed row **first** so that a
+  `MAX(rowid)` implementation fails it.
 - **Tolerant of legacy data**, because the old schema keyed on
   `modem_ref` and never constrained the pair. The send path is not *expected* to produce a
   duplicate — `is_retryable(..., already_sent=…)` (`app/modem/errors.py:79`) refuses a retry
