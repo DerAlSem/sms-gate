@@ -205,3 +205,33 @@ def test_significant_digits():
     assert significant_digits("123456") is None, "fewer than ten digits is not comparable"
     assert significant_digits("") is None
     assert significant_digits(None) is None
+
+
+def test_a_foreign_address_the_canonicalizer_would_reject_eliminates_nothing():
+    """The rule that must NOT be implemented by canonicalizing.
+
+    `validate_and_normalize` needs a region and raises on anything it dislikes. With
+    `restrict_region=True` a valid foreign number raises — and a comparison built on it
+    would silently switch itself off, or eliminate the correct sole candidate on the
+    exception. This test pins the case that a canonicalizing implementation gets wrong
+    and a digit comparison gets right: the digits are what decide, whatever region either
+    number belongs to.
+    """
+    import pytest as _pytest
+    from app.phone import validate_and_normalize
+
+    german = "+4915112345678"
+    with _pytest.raises(ValueError):
+        validate_and_normalize(german, "RU")     # the trap, demonstrated
+
+    # agreeing: a foreign number on both sides is compared, not rejected
+    agreeing = _decide(_report(recipient=german), [_row(7, phone=german)], strict=True)
+    assert agreeing.outcome == "attributed", (
+        "a valid foreign number must not eliminate the candidate it agrees with"
+    )
+
+    # disagreeing: and it still eliminates when the digits really differ
+    disagreeing = _decide(
+        _report(recipient=german), [_row(9, phone="+4915199999999")], strict=True,
+    )
+    assert disagreeing.outcome == "unplaced"

@@ -84,7 +84,8 @@ Response on error:
 2. Wait for `>` prompt (timeout 5s)
 3. Write `message_text` + `\x1a`
 4. Wait for `+CMGS: <ref>` or `+CMS ERROR` (timeout 30s — network can be slow)
-5. Parse reference number, save to `messages.modem_ref`, set status = `sent`
+5. Parse reference number, record it against `(message_id, seq)` in
+   `message_parts` with that segment's own submit time, set status = `sent`
 6. On error → set status = `failed`, save error text
 
 ---
@@ -109,9 +110,9 @@ Text mode format: `+CDS: fo,mr,ra,tora,scts,dt,st`
 |-------|---------|
 | fo | First octet |
 | mr | **Message Reference** — matches `+CMGS` ref |
-| ra | Recipient address (phone) |
+| ra | Recipient address (phone) — **used**: it eliminates a candidate it contradicts |
 | tora | Type of recipient address |
-| scts | Service Centre Time Stamp |
+| scts | Service Centre Time Stamp of the original submit — **used**: it orders candidates. `YY/MM/DD,hh:mm:ss` plus an offset in **quarter-hours**, so `+12` is UTC+03:00, not UTC+12:00 |
 | dt | Discharge Time (when delivered) |
 | st | **Status** — 0 = delivered, >0 = error/pending |
 

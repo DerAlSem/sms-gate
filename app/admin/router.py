@@ -208,8 +208,10 @@ async def admin_message_resend(
     """Queue a fresh copy of a failed/expired message.
 
     A new row is created rather than the old one revived: the failed attempt stays
-    in the history (its error is the evidence of what went wrong), and delivery
-    reports key off `modem_ref`, which a re-send necessarily changes.
+    in the history — its error is the evidence of what went wrong — and a re-send puts
+    new segments on the wire under new references, which are recorded against the new
+    message. A delivery report is attributed to a part, by `(message_id, seq)`, so the
+    two attempts keep separate records and a report about either can still be placed.
     """
     row = await queries.get_message_any(message_id)
     if row is None:

@@ -405,3 +405,110 @@ def test_a_late_negative_report_moves_an_expired_message_to_failed(monkeypatch):
     assert [row["phone"] for row in bad] == [PHONE], (
         "a permanent status counts toward the destination's blacklist"
     )
+
+
+def test_every_parsed_field_crosses_the_boundary_into_the_record(monkeypatch):
+    """Task 7.3 — the gap no unit test can see.
+
+    The chain's tests build a `DeliveryReport` themselves and the parser's tests stop at
+    the dataclass, so between them they prove that each end is correct and nothing about
+    whether the values travel. A field the parser reads and `_handle_cds` drops would
+    leave both suites green and the ledger empty where it matters.
+    """
+    line = ('+CDS: 6,42,"+79031680015",145,"26/09/02,11:00:01+12",'
+            '"26/09/02,15:37:44+12",64')
+
+    async def body():
+        m, dispatched, alerts = _manager(monkeypatch)
+        mid = await _sent_message(phone=PHONE, ref=42)
+        await m._on_cds_line(line)
+        return mid, await _records()
+
+    mid, records = _run(body)
+    row = records[0]
+    assert row["raw_line"] == line, "the line itself"
+    assert row["modem_ref"] == 42
+    assert row["status_code"] == 64
+    assert row["recipient"] == "+79031680015"
+    # +12 quarter-hours is UTC+03:00, so 11:00:01 local is 08:00:01 UTC. An
+    # implementation reading the offset as hours would land nine hours away, and nothing
+    # else in the system would ever notice.
+    assert row["submitted_at"] == "2026-09-02 08:00:01"
+    assert row["discharged_at"] == "2026-09-02 12:37:44"
+    assert row["message_id"] == mid and row["seq"] == 1
+    assert row["decided_by"] == "sole"
+    assert row["window_hours"] == 168 and row["strict"] == 0
+
+
+def test_the_window_is_read_for_each_report(monkeypatch):
+    """The window is re-read per report, as `delivery_timeout_seconds` is re-read per
+    sweep. The strict switch has this test; without one here the window could be read
+    once at startup and nothing would say so until a change failed to take effect."""
+    async def body():
+        m, dispatched, alerts = _manager(monkeypatch)
+        first = await _sent_message(ref=42, age_seconds=7200)     # two hours old
+        await m._on_cds_line(_cds(42))
+        wide = (await _message(first))["status"]
+
+        await store.set_many({"delivery_report_max_age_hours": "1"})
+        second = await _sent_message(ref=43, age_seconds=7200)
+        await m._on_cds_line(_cds(43))
+        narrow = (await _message(second))["status"]
+        return wide, narrow, await _records()
+
+    wide, narrow, records = _run(body)
+    assert wide == "delivered", "inside the default window"
+    assert narrow == "sent", "outside a one-hour window, with no restart in between"
+    assert records[-1]["window_hours"] == 1
+
+
+def test_a_report_bounded_out_by_the_window_sends_no_second_notification(monkeypatch):
+    """`delivery-dispatch` promises an application that a correction *inside* the window
+    reaches it, not that one always arrives. Past the bound the report is recorded and
+    the application hears nothing further."""
+    async def body():
+        m, dispatched, alerts = _manager(monkeypatch)
+        mid = await _sent_message(ref=42, age_seconds=7200)
+        await m._expire_step()
+        after_sweep = list(dispatched)
+
+        await store.set_many({"delivery_report_max_age_hours": "1"})
+        await m._on_cds_line(_cds(42))
+        return mid, after_sweep, dispatched, await _message(mid), await _records()
+
+    mid, after_sweep, dispatched, message, records = _run(body)
+    assert after_sweep == [(mid, "expired", None)]
+    assert dispatched == after_sweep, "no second notification for a bounded-out report"
+    assert message["status"] == "expired"
+    assert records[0]["outcome"] == "unplaced"
+    candidates = json.loads(records[0]["candidates"])
+    assert candidates[0]["outcome"] == "outside_window", (
+        "and the record names the part it bounded out, not 'nothing matched'"
+    )
+
+
+def test_the_recency_carve_out_holds_on_the_late_negative_path(monkeypatch):
+    """Task 4.9a — the same carve-out, reached through `expired` rather than `sent`.
+
+    Blocking a destination 422s every later send to it, and unblocking deliberately does
+    not reset the count. The path that moves an expired message to `failed` must not be
+    the one that slips a tiebreak-chosen failure past the rule.
+    """
+    async def body():
+        m, dispatched, alerts = _manager(monkeypatch)
+        await _sent_message(phone=PHONE, ref=42, age_seconds=600)
+        await _sent_message(phone=PHONE, ref=42, age_seconds=600)
+        await m._expire_step()                     # both messages reach `expired`
+        db = await get_db()
+        await db.execute("UPDATE message_parts SET sent_at = '2026-09-02 11:00:00'")
+        await db.commit()
+
+        await m._on_cds_line(_cds(42, st=64, scts="not a timestamp"))
+        return await _records(), await queries.list_bad_numbers(), dispatched
+
+    records, bad, dispatched = _run(body)
+    assert records[0]["decided_by"] == "recency"
+    assert [status for _, status, _ in dispatched][-1] == "failed", (
+        "the message really was moved on, so this is not passing by doing nothing"
+    )
+    assert bad == [], "and the destination's failure count was not incremented"

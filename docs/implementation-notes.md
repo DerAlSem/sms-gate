@@ -34,16 +34,41 @@ class ModemManager:
 
 ## modem_ref Collision
 
-`AT+CMGS` returns a reference in the range 0–255, then wraps around. If more than 256 SMS messages are sent, the ref will repeat.
+`AT+CMGS` returns a reference in the range 0–255, then wraps around. At this
+gateway's volume it repeats roughly every three weeks — measured, not assumed:
+across 1765 messages the reference decreases eight times, seven of them exactly
+`255 -> 0`. The counter wraps; it has never been observed to restart.
 
-**Solution**: when matching a delivery report by modem_ref, look for the most recent `sent` message with that ref:
+A reference alone therefore does not identify a message, and "the most recent
+`sent` message with that ref" is not a solution — a report that arrives late,
+which is the normal case for a permanent failure, lands on whichever message
+holds the reference *now*.
 
-```sql
-SELECT id FROM messages
-WHERE modem_ref = ? AND status = 'sent'
-ORDER BY sent_at DESC
-LIMIT 1;
-```
+**What the gateway does instead** (`app/modem/attribution.py`): every part
+carrying the reference is collected, unfiltered, and then graded.
+
+1. A part whose message is already finished, or whose status a report has
+   already set, is `superseded` — ordinary traffic, recorded and silent.
+2. A part older than `delivery_report_max_age_hours` (default 168) is outside
+   the window. A part whose submit time is unknown counts as *inside* it:
+   unknown is not old, and a NULL compared in SQL answers "does not qualify",
+   which fails closed in a rule that must fail open.
+3. A part addressed to a different number than the report names is
+   `contradicted`. Numbers are compared by their last ten significant digits —
+   not by canonicalizing, which needs a region and can turn a national-format
+   address into a *different valid* number. This is the only rule that can
+   refuse a delivery, so it is the only one behind a switch
+   (`delivery_report_strict_attribution`, default off).
+4. Of what survives: one candidate wins outright; several are separated by
+   whichever submit time is nearest the report's `scts`; a remaining tie falls
+   to the most recent, and a report attributed that way does **not** count
+   toward the destination's blacklist. An irreversible penalty may not rest on a
+   tiebreak.
+
+The filters are applied in code rather than in the `WHERE` clause on purpose: a
+query that discards the rows cannot say what it excluded, and "one match, too
+old" would be recorded as "nothing matched". Every report and every candidate
+considered is written to `delivery_reports`.
 
 ---
 
@@ -122,8 +147,10 @@ Long messages are split into **UDH-concatenated** parts (8-bit reference =
 `message_id % 256`), so the recipient's handset reassembles them into one
 message. UCS2 splits never sever a surrogate pair; GSM7 splits never sever an
 escape sequence. Each part is sent with its own `AT+CMGS` and tracked in the
-`message_parts` table; the message becomes `delivered` only once every part's
-`+CDS` report arrives. The `max_sms_parts` setting (default 6) caps length;
+`message_parts` table, keyed on `(message_id, seq)` and carrying that segment's
+own submit time; the message becomes `delivered` only once every part's `+CDS`
+report arrives — and a message with no part records at all is *not* treated as
+having every part delivered. The `max_sms_parts` setting (default 6) caps length;
 longer text fails before anything is transmitted.
 
 Shared GSM7 alphabet tables live in `app/modem/gsm7.py` (used by both the

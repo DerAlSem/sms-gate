@@ -102,11 +102,48 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 7. Nothing left unwired, nothing left unmeasured
 
-- [ ] 7.1 Mini conformance sweep: every normative SHALL added or reworded by this change, matched to the test that would fail without it. Name the ones with no test
-- [ ] 7.2 `grep -rn` every function this change adds or renames; each must have a caller outside its own definition and its tests
-- [ ] 7.3 Confirm `_handle_cds` passes the new fields through — the boundary unit tests do not cross, since they build `DeliveryReport` themselves
+- [x] 7.1 Mini conformance sweep: every normative SHALL added or reworded by this change, matched to the test that would fail without it. Name the ones with no test
+      <!-- 73 SHALLs across the three deltas (58 outbound-send, 6 delivery-dispatch,
+           9 admin-sms-console). Every one is matched to a test EXCEPT the four found
+           bare, which have since been closed:
+           (1) "SHALL NOT be compared by canonicalizing" — a NEGATIVE structural claim.
+               Task 4.5 (89031680015 vs +79031680015) passes against a canonicalizing
+               implementation too: validate_and_normalize("8903…", "RU") resolves to the
+               same number. The distinguishing case is a valid FOREIGN address, which
+               raises under restrict_region=True. Closed by
+               test_a_foreign_address_the_canonicalizer_would_reject_eliminates_nothing,
+               which demonstrates the raise and then shows the digit comparison both
+               agreeing and eliminating.
+           (2) "delivery_report_max_age_hours ... SHALL be re-read for each report" —
+               the strict switch had this test (5.4) and the window did not. Closed by
+               test_the_window_is_read_for_each_report.
+           (3) delivery-dispatch, "SHALL NOT notify a status change arising from a report
+               it did not attribute", the WINDOW case specifically — 7.4 covered a
+               reference nothing carries, not a match bounded out. Closed by
+               test_a_report_bounded_out_by_the_window_sends_no_second_notification.
+           (4) task 4.9a — the recency carve-out reached through `expired` rather than
+               `sent`. Same function, so covered by construction, which is exactly the
+               reasoning that should not be trusted. Closed by
+               test_the_recency_carve_out_holds_on_the_late_negative_path. -->
+- [x] 7.2 `grep -rn` every function this change adds or renames; each must have a caller outside its own definition and its tests
+      <!-- 21 names checked (parse_scts, attribute, significant_digits,
+           AttributionDecision, record_delivery_report, prune_delivery_reports,
+           parts_matching_ref, set_part_delivered, set_part_failed,
+           _rebuild_message_parts, _parts_keyed_on_the_pair, _on_cds_line,
+           _record_report, _apply_report, _as_stored_time,
+           _DELIVERY_REPORT_RETENTION, notify_unplaced_reports,
+           delivery_report_max_age_hours, delivery_report_strict_attribution,
+           the "delivery_unplaced" event, the "posint" setting type).
+           Every one has at least one caller in `app/` outside its own definition. -->
+- [x] 7.3 Confirm `_handle_cds` passes the new fields through — the boundary unit tests do not cross, since they build `DeliveryReport` themselves
+      <!-- test_every_parsed_field_crosses_the_boundary_into_the_record drives a real
+           line through _on_cds_line and asserts every parsed field in the stored row,
+           including the quarter-hour conversion (11:00:01+12 -> 08:00:01 UTC). Bitten:
+           dropping submitted_at in _handle_cds reddens that test and NOTHING else — 40
+           other tests across the parser and chain suites stay green, which is the gap
+           this task exists for. -->
 - [x] 7.4 Test: no `delivered`/`failed` webhook is sent for a report that was not attributed
-- [ ] 7.5 Test: an `expired` message past the window still cannot be deleted, and deleting an eligible message leaves its ledger rows
+- [x] 7.5 Test: an `expired` message past the window still cannot be deleted, and deleting an eligible message leaves its ledger rows
 - [x] 7.6 Settle the reference-counter question — does `AT+CFUN=1,1` restart TP-MR?
       <!-- Measured on live data instead of a vendor doc, which answers it better: eight
            reference decreases in 1765 messages, seven exactly 255->0, the eighth (225->12,
@@ -123,8 +160,15 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
            messages (n=1544): mean 93s, max 13.0h, eleven over 1h, none over 24h.
            168h default stands — six times the worst verdict observed. -->
 - [ ] 7.9 Rehearse the migration on a **copy of the production database**, recording the part-row count before and after. The precedent in this repo rehearsed an `ADD COLUMN`; this one drops a table
-- [ ] 7.10 Full test suite green
-- [ ] 7.11 Update `docs/api.md` (**both language versions**, `:121` and `:305` — the only document addressed to the consumer of the contract), `docs/database.md`, `docs/modem.md`, `docs/implementation-notes.md`, and the resend docstring at `app/admin/router.py:212`, which explains itself by saying delivery reports key off `modem_ref`
+- [x] 7.10 Full test suite green
+      <!-- 682 passed. Four failures remain in tests/test_alert_send_sh.py and are
+           PRE-EXISTING and unrelated: verified by stashing this branch and running them
+           on master, where the same four fail. `encode()` in deploy/alert-send.sh uses
+           the GNU sed line-join `-e ':a' -e 'N' -e '$!ba'`, which BSD sed on macOS
+           answers with an empty string. A Linux host — which is where the unit runs —
+           is unaffected. Not fixed here: it is a different defect in a different file
+           and folding it in would hide it. -->
+- [x] 7.11 Update `docs/api.md` (**both language versions**, `:121` and `:305` — the only document addressed to the consumer of the contract), `docs/database.md`, `docs/modem.md`, `docs/implementation-notes.md`, and the resend docstring at `app/admin/router.py:212`, which explains itself by saying delivery reports key off `modem_ref`
 
 ## 8. Ship
 

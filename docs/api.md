@@ -118,7 +118,9 @@ Authorization: Bearer abc123def456
 | `failed` | Модем вернул ошибку или истёк тайм-аут отправки |
 | `expired` | Нет отчёта о доставке в пределах тайм-аута (настраивается, по умолчанию 24ч) |
 
-Запоздавший `+CDS`, пришедший **после** того, как сообщение было помечено как `expired`, всё равно обновит его статус на `delivered` или `failed` (логируется как "late +CDS").
+Запоздавший `+CDS`, пришедший **после** того, как сообщение было помечено как `expired`, всё равно обновит его статус на `delivered` или `failed` — но только пока сегмент, к которому относится отчёт, не старше `delivery_report_max_age_hours` (по умолчанию 168 часов, семь суток). За этой границей отчёт записывается в журнал, но статус сообщения уже не меняет, и повторного уведомления приложение не получает.
+
+Шлюз опознаёт сообщение не по одной ссылке модема: она умещается в один октет и повторяется каждые 256 отправок. Если отчёт не удалось отнести ни к одному сообщению, статус не меняется ни у одного — прежде такой отчёт применялся к тому сообщению, которое держало эту ссылку в момент его прихода.
 
 ### Response 404
 
@@ -302,7 +304,9 @@ Authorization: Bearer abc123def456
 | `failed` | Modem returned error or send timeout |
 | `expired` | No delivery report within timeout (configurable, default 24h) |
 
-A late `+CDS` arriving **after** a message has been marked `expired` will still update its status to `delivered` or `failed` (logged as "late +CDS").
+A late `+CDS` arriving **after** a message has been marked `expired` will still update its status to `delivered` or `failed` — but only while the segment the report names is no older than `delivery_report_max_age_hours` (168 hours, seven days, by default). Past that bound the report is recorded in the gateway's ledger and no longer changes the message's status, and no second notification is sent.
+
+A report is not attributed by the modem's reference alone: that reference is one octet and repeats every 256 sends. A report that cannot be attributed to any message changes nobody's status — previously such a report was applied to whichever message happened to hold that reference at the time.
 
 ### Response 404
 
