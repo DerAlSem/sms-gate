@@ -191,8 +191,36 @@ Phase 5 is the only one that can refuse a delivery, and it arrives switched off.
 
 ## 8. Ship
 
-- [ ] 8.1 Back up `data/sms-gate.db`, deploy, confirm the migration ran and the part-row count matches 7.9
-- [ ] 8.2 Rehearse the back-out once: restore the backup into a scratch copy and confirm the service starts on it. "Restore" is the whole rollback plan and it has never been executed
+- [x] 8.1 Back up `data/sms.db`, deploy, confirm the migration ran and the part-row count matches 7.9
+      <!-- Deployed 2026-09-03 13:42 MSK, 0.17.0 -> 0.18.0, by push-to-deploy to
+           `deploy-remote` (the host has no working tree of its own; the post-receive hook
+           checks out and restarts). Restart authorised by the owner.
+           Backup first: ~/sms-gate-backups/sms-20260903-134159.db, integrity_check ok,
+           256 parts / 1784 messages. Path in this task said `sms-gate.db`; the file is
+           `sms.db` (task 9.4).
+           Queue at restart: 0 pending, 0 sent — nothing was in flight to be dropped.
+           Journal: "Rebuilding message_parts onto (message_id, seq)", then every loop
+           started, no traceback.
+           AFTER, and identical to the rehearsal: 256 parts, 250 delivered / 1 failed /
+           5 sent, sent_at on all 256, the pair primary key, both part indexes plus both
+           ledger indexes, `delivery_reports` empty, integrity_check ok.
+           Settings seeded: delivery_report_max_age_hours=168,
+           delivery_report_strict_attribution=FALSE, notify_unplaced_reports=true. -->
+- [x] 8.2 Rehearse the back-out once: restore the backup into a scratch copy and confirm the service starts on it. "Restore" is the whole rollback plan and it has never been executed
+      <!-- Executed. The 0.17.0 tree (9010fdf, from the bare repo) started against the
+           restored backup on a scratch port with a modem path that does not exist:
+           `/docs` 200, `/admin/` 302 past auth, "Application startup complete", no
+           traceback. The old single-column `message_parts` key was intact afterwards with
+           256 rows and 1784 messages — the rollback really is "restore the file and put
+           the old code back".
+
+           ⚠️ The FIRST attempt reported the same green result and proved nothing: the
+           `.env` was written beside the tree rather than inside it, so pydantic-settings
+           never read it and the instance came up on a fresh empty database
+           (122KB, found by `find`). Caught by asking which file it had actually opened.
+           Redone with the values exported into the environment. This is the task's own
+           warning arriving a second time: a rollback nobody has executed, and then a
+           rehearsal that executed the wrong thing. -->
 - [ ] 8.3 Live: send a message and confirm it reaches `delivered` through the new lookup — the path is not proven by tests that build their own reports
 - [x] 8.4 Changelog entry saying plainly that a delivery report could land on a message it was not about, and that a positive one could manufacture a delivery; bump the version in `app/__init__.py`
 - [x] 8.5 Replace the file-only evidence tags in the spec deltas with the shipped line spans
