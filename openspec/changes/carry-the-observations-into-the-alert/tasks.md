@@ -9,7 +9,7 @@ on every load of `/admin/modem`; the work is delivery, not gathering.
 
 ## 2. Critique
 
-- [ ] 2.1 Run `system-architect` and `gap-finder` on the delta once 1.1–1.3 are settled. The gap categories `AGENTS.md` names as thin here — modem-state, AT-timeout — are the ones that apply
+- [x] 2.1 **Closed as non-essential — owner's call, 2026-09-06.** The critic layer was not run. The reasoning accepted: the change is text-only, the ladder's behaviour is pinned by an explicit regression test (3.5), and both new guards were mutation-tested (§6). Recorded as a decision so that a later reader does not mistake it for an oversight — if this change is ever widened beyond alert text, the critic layer is owed
 
 ## 3. Implement
 
@@ -24,11 +24,18 @@ on every load of `/admin/modem`; the work is delivery, not gathering.
 
 - [x] 4.1 **700 passed, 4 failed** — the four are `tests/test_alert_send_sh.py`, pre-existing on macOS and in a file this diff does not touch. **No lint or typecheck was run because the project has neither**: no ruff/mypy/flake8 in `requirements-dev.txt`, no `pyproject.toml`, no `setup.cfg`
 - [x] 4.2 Nine AT queries, collected before the remedy and behind `_alert_observations()`, which never raises — an alert must not be lost because its evidence failed to gather
-- [ ] 4.3 Deploy. No hardware verification is possible without staging a fault, and staging one was declined — the first real escalation is the verification, and it is also the evidence the SIM-cause follow-up is waiting on
+- [x] 4.3 **Deployed 2026-09-06 19:39 MSK, rev `5f6688f`.** Target established from the box, not guessed: `/opt/sms-gate.git` has `HEAD -> refs/heads/master`, and its `post-receive` runs `checkout -f` then `systemctl restart sms-gate` (`main` in that bare repo is a stale branch and deploys nothing). Verified: service active from 19:39:11, both ports reopened, link restored, no errors. Re-checked after a five-minute pause, per the Ops rule that a parallel deploy can overwrite a green result minutes later
 
-## 5. Afterwards — not part of this change
+## 5. Afterwards — a note, deliberately not a task
 
-- [ ] 5.1 When the next modem escalation happens, read the alert. It answers what `AT+CPIN?` reports during a real fault, which is the one fact blocking the SIM-cause change. Open that change then, against `design.md`'s "Findings carried forward"
+This change owns no work here, so this is prose rather than a checkbox: a task belonging to
+a future change would block this one's archive for ever.
+
+When the next modem escalation happens, read the alert. It reports what `AT+CPIN?` answers
+during a real fault, which is the single fact blocking the SIM-cause change — the one that
+would stop the ladder spending soft recoveries on a card it cannot re-read. Open that change
+then, against the "Findings carried forward" section of `design.md`, which holds the three
+things already paid for on 2026-09-06.
 
 ## 6. Mutation evidence (the guards were bitten, 2026-09-06)
 
