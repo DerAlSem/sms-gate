@@ -21,7 +21,7 @@ from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
-    decode_csca, decode_qnwinfo, decode_qcsq,
+    decode_csca, decode_qnwinfo, decode_qcsq, summarise_for_alert,
 )
 from app.db import queries
 from app.alerting import notify
@@ -1092,25 +1092,47 @@ class ModemManager:
             await self._recover(self._sender.soft_recover)
             return SOFT
         if action == COOLDOWN:
+            # The observations ride as an argument, never formatted in: TelegramAlertHandler
+            # dedups on `record.msg`, the template, so an interpolated snapshot would make
+            # every escalation a fresh signature and turn one alert per window into a wall.
             logger.error(
-                "Modem still unhealthy; hard reset on cooldown — check antenna/operator"
+                "Modem still unhealthy; hard reset on cooldown — %s",
+                await self._alert_observations(),
             )
             await self._recover(self._sender.soft_recover)
             return COOLDOWN
         # Two distinct ERROR templates, not one with a parameter: the Telegram handler
         # deduplicates on the template, so a shared one would hide whichever cause came
         # second behind the first.
+        observations = await self._alert_observations()
         if cause == STALL:
             logger.error(
-                "Modem cannot send and does not recover; hard reset + service restart"
+                "Modem cannot send and does not recover; hard reset + service restart — %s",
+                observations,
             )
         else:
-            logger.error("Modem unrecoverable; hard reset + service restart")
+            logger.error(
+                "Modem unrecoverable; hard reset + service restart — %s", observations
+            )
         _mark_hard_reset()
         # Not reopened: watchdog_loop sleeps for the settle period and then exits, and
         # nothing must touch a rebooting modem in the meantime.
         await self._recover(self._sender.hard_reset, reopen=False)
         return HARD
+
+    async def _alert_observations(self) -> str:
+        """What the modem said, for the alert that is about to wake someone.
+
+        Never raises. An alert that is lost because gathering its evidence failed is
+        strictly worse than one that says the evidence is unavailable — and this runs on
+        the path where the modem is, by definition, already misbehaving.
+
+        Collected before the remedy, because the remedy is what changes the answer.
+        """
+        try:
+            return summarise_for_alert(await self.collect_diagnostics())
+        except Exception as e:                      # noqa: BLE001 - see docstring
+            return f"observations unavailable: {type(e).__name__}: {e}"
 
     async def _wait_for_tick(self) -> None:
         """Wait for the next poll, or for someone to report the link gone.

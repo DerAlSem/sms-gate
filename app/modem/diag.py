@@ -73,3 +73,43 @@ def decode_qcsq(resp: str) -> dict:
     if sysmode.upper().endswith("LTE") and len(nums) >= 4:   # Quectel LTE order
         out.update(rssi=nums[0], rsrp=nums[1], sinr=nums[2], rsrq=nums[3])
     return out
+
+
+# The readings an alert carries. Four, not nine: `_bounded(record.getMessage(), 500)`
+# truncates what Telegram delivers, and a summary that needs truncating loses the reading
+# it was added for. These four are the ones that answer the question the operator actually
+# has — is this the radio, the network, or the card.
+_ALERT_READINGS = ("sim", "cs_reg", "signal", "operator")
+
+
+def summarise_for_alert(diag: list[dict]) -> str:
+    """One line of observations for an operator alert, from a collect_diagnostics() result.
+
+    Reports; does not conclude. On 2026-09-06 every alert of a two-hour outage read
+    "check antenna/operator" while the signal had never been read and the fault was the
+    SIM — a guess presented as a finding, and it was acted on. A reading the gateway does
+    not have is rendered `?` rather than left out, because a silently absent field reads
+    as a field that was fine.
+    """
+    by_key = {item.get("key"): item for item in diag}
+
+    alive = by_key.get("alive")
+    if alive is not None and alive.get("error"):
+        return f"observations unavailable: {alive['error']}".rstrip(": ")
+
+    def parsed(key: str) -> dict:
+        item = by_key.get(key) or {}
+        return item.get("parsed") or {}
+
+    sim = parsed("sim").get("state") or "?"
+    reg = parsed("cs_reg").get("status") or "?"
+
+    signal = parsed("signal")
+    dbm = signal.get("dbm")
+    signal_txt = f"{dbm}dBm" if dbm is not None else "?"
+
+    op = parsed("operator")
+    name = op.get("operator")
+    op_txt = f"{name}/{op.get('rat', '?')}" if name else "?"
+
+    return f"SIM={sim} reg={reg} signal={signal_txt} operator={op_txt}"
