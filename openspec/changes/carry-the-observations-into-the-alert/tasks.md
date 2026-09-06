@@ -39,9 +39,13 @@ things already paid for on 2026-09-06.
 
 ## 6. Mutation evidence (the guards were bitten, 2026-09-06)
 
-Per the verify gate, a new guard is proved by breaking what it guards. Script kept at
-`scratchpad/bite.sh`; the file was restored by copy, not `git checkout`, and
-`__pycache__` was cleared before each run.
+Per the verify gate, a new guard is proved by breaking what it guards. The script ran in a
+session scratchpad and is gone; it is not needed, because both mutations are one edit each
+to `app/modem/manager.py` and are named below. Two mechanics that are easy to get wrong and
+were not: the file was restored **by copying it back**, never `git checkout --` (which would
+have reverted the uncommitted change itself and made the guard bite empty air), and
+`app/modem/__pycache__` was cleared before every run (a mutation that only reorders lines
+leaves the file size unchanged, and Python judges a `.pyc` by size and mtime-to-the-second).
 
 ```
 [BASELINE]                             11 passed
