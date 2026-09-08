@@ -118,15 +118,35 @@ Text mode format: `+CDS: fo,mr,ra,tora,scts,dt,st`
 
 ### Status Values (st field)
 
-| st | Meaning |
-|----|---------|
-| 0 | Delivered successfully |
-| 1 | Forwarded, no delivery confirmation |
-| 32 | Still trying (temporary) |
-| 64 | Permanent error: remote procedure error |
-| 96 | Permanent error: incompatible destination |
+GSM 03.40 §9.2.3.15 splits the byte into **four** ranges, and the two temporary ones are
+not interchangeable — they disagree about whether the service centre will try again:
 
-**Key logic**: if `st == 0` → set message status = `delivered`, save `delivered_at`. If `st >= 64` → set status = `failed`.
+| Range | Class | What it means for us |
+|-------|-------|----------------------|
+| `0x00–0x1F` (0–31) | completed | delivered |
+| `0x20–0x3F` (32–63) | temporary, SC **still trying** | a verdict is still owed; not a failure yet |
+| `0x40–0x5F` (64–95) | permanent, SC stopped | failed, and counts toward the destination's blacklist |
+| `0x60–0x7F` (96–127) | temporary, SC **stopped** | failed at once, but **never** counts toward the blacklist — the cause is the network's |
+
+Common values:
+
+| st | Range | Meaning |
+|----|-------|---------|
+| 0 | completed | delivered successfully |
+| 1 | completed | forwarded, no delivery confirmation |
+| 32 | temporary, still trying | congestion |
+| 33 | temporary, still trying | recipient busy |
+| 64 | permanent | remote procedure error |
+| 65 | permanent | incompatible destination |
+| 70 | permanent | message validity period expired |
+| 96 | temporary, stopped | congestion |
+| 99 | temporary, stopped | service rejected — the most common failure this gateway sees |
+
+**Key logic**: `st == 0` → `delivered`, save `delivered_at`. `st >= 64` → `failed`. The
+blacklist is the part that is easy to get wrong: only `0x40–0x5F` may count toward it
+(`_is_permanent_status`), because a `0x60–0x7F` failure says nothing bad about the
+destination. Do not reach for the word "temporary" to make this decision — `_tp_status_class`
+returns it for both temporary ranges. Use the range.
 
 ---
 
