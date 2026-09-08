@@ -6,18 +6,27 @@ On a positive `+CDS` the part SHALL be marked delivered, and the message SHALL m
 `delivered` only once no part is outstanding.
 
 A `+CDS` SHALL be classified by the **range** its TP-status falls in, not by whether it is
-zero. GSM 03.40 §9.2.3.15 gives three classes and this gateway already implements the
-classifier (`_tp_status_class`); the decision point did not consult it.
+zero. GSM 03.40 §9.2.3.15 gives **four** ranges, and the two that both read "temporary"
+disagree about the only thing this decision turns on — whether the service centre will try
+again. The gateway's `_tp_status_class` returns one word for both, so consulting it is
+necessary but not sufficient: the decision point needs the range, not the label.
 
 - **Completed** (`0x00–0x1F`): the part is delivered, as above.
 - **Permanent** (`0x40–0x5F`): the message SHALL move to `failed` carrying the decoded
   TP-status, and SHALL count toward the destination's blacklist threshold — **except where
   attribution chose that part by recency alone**, because blocking a destination is
   irreversible in practice and may not rest on a tiebreak.
-- **Temporary** (`0x20–0x3F` and `0x60–0x7F`): the service centre is still trying. The
-  message SHALL NOT move to `failed`, and SHALL remain in a status the real verdict can
-  still be applied to. A temporary status SHALL NOT count toward the destination's
-  blacklist threshold.
+- **Temporary, still being attempted** (`0x20–0x3F`): the service centre is still trying.
+  The message SHALL NOT move to `failed`, and SHALL remain in a status the real verdict can
+  still be applied to. This range SHALL NOT count toward the destination's blacklist
+  threshold.
+- **Temporary, abandoned** (`0x60–0x7F`): the service centre has stopped trying. No further
+  report is owed and there is nothing to wait for, so the message SHALL move to `failed`
+  carrying the decoded TP-status. It SHALL NOT count toward the destination's blacklist
+  threshold: the cause is the network's, not the destination's. Holding a message on this
+  range would withhold the application's only true answer until `delivery_timeout_seconds`
+  and then record that the outcome was never learned — when in fact it was learned, at once,
+  and was a failure.
 
 A message SHALL NOT be left outstanding for ever because the network said it was still
 trying and then said nothing more. A held message SHALL reach a terminal state at
@@ -35,7 +44,7 @@ A message with no part records at all SHALL NOT be treated as having every part 
 "nothing is outstanding" and "nothing is known" are different answers, and only the first is
 a delivery.
 
-[normative · evidence: app/modem/parser.py, app/modem/manager.py, app/db/queries.py · conf: medium — the temporary-status branch is not yet implemented]
+[normative · evidence: app/modem/parser.py, app/modem/manager.py, app/db/queries.py · conf: high — the four ranges are GSM 03.40 §9.2.3.15; the still-trying branch is not yet implemented. Measured 07.09.2026 across the gateway's whole history: `0x63` 50 reports, `0x46` 21, `0x40` 1, and the `0x20–0x3F` range **0** — the branch this change was written to add has never yet had an input, while the range it must not hold is the most common failure the gateway sees.]
 
 #### Scenario: One part of two is reported delivered
 - **WHEN** part 1 is reported delivered and part 2 is outstanding
@@ -60,6 +69,14 @@ a delivery.
 #### Scenario: The network says it is still trying
 - **WHEN** a report arrives carrying a TP-status in the temporary band, such as `0x21` (recipient busy)
 - **THEN** the message does not become `failed`, and the destination's failure count is not incremented
+
+#### Scenario: The network says it has given up
+- **WHEN** a report arrives carrying a TP-status in the abandoned band, such as `0x63` (service rejected)
+- **THEN** the message becomes `failed` at once rather than being held, and the destination's failure count is not incremented
+
+#### Scenario: A whole operator is rejecting, and the destination is not at fault
+- **WHEN** every report for one operator's subscribers arrives as `0x63` while other operators deliver normally
+- **THEN** no destination accumulates failures toward the blacklist threshold, because an abandoned-temporary status never counts toward it
 
 #### Scenario: The verdict arrives after the network said it was still trying
 - **WHEN** a temporary report is followed by a definitive one for the same part
