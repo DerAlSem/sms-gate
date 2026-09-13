@@ -115,6 +115,25 @@ the linkage is still owed and is recorded in the proposal.
 - **THEN** the answer carries the route and the time
 - **AND** it names no application, carries no text and carries no count
 
+### Requirement: The door demands the credential a send demands
+
+The door SHALL require the same authenticated `app_id` that `POST /sms/send` requires, and
+SHALL refuse a caller without it, answering nothing.
+
+Every other requirement in this capability is satisfied by an implementation that exposes
+the door to anyone: the answer's fields are constrained, the vendor is never contacted, and
+the question is recorded — with the asker recorded as nobody. An open door lets a stranger
+ask whether a given number is reachable through this service and when it was last reached,
+which is a statement about a person made to someone with no relationship to them, and it
+turns the reachability record into a lookup service for anyone who can guess a number.
+
+[unbacked · the credential exists as `get_app_id` in app/api/dependencies.py, applied at
+app/api/router.py:19; no requirement in this capability demanded it until now]
+
+#### Scenario: The door is called without a credential
+- **WHEN** the door is called with no `app_id` credential, or one that is not recognised
+- **THEN** the call is refused and no reachability data is returned
+
 ### Requirement: Every question put to the door is recorded
 
 The gateway SHALL record every call to the door — the asking application, the number and

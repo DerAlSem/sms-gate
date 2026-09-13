@@ -90,9 +90,10 @@
       traffic.** The narrow alternative would tell an application only what it already
       knows. Normative in `number-reachability`; the legal question it raises is not
       closed by it and goes to the lawyer with the messenger accounts.
-- [ ] 6.2 `GET /reachability/{phone}`: per route, the last reach with its time and its
-      evidence strength, plus blacklist state and when it was blocked. No boolean anywhere
-      in the response.
+- [ ] 6.2 `GET /reachability/{phone}` behind `get_app_id`, the same credential
+      `POST /sms/send` demands, with a test that an uncredentialed call is refused. The
+      answer: per route, the last reach with its time and its evidence strength, plus
+      blacklist state and when it was blocked. No boolean anywhere in the response.
 - [ ] 6.3 Test that a number never offered to a route is answered differently from a
       number offered and never accepted. These are the two states with opposite remedies;
       an implementation that returns nothing for both satisfies a careless reading.
