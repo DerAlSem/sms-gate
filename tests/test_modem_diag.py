@@ -1,6 +1,6 @@
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
-    decode_csca, decode_qnwinfo, decode_qcsq,
+    decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
 )
 
 
@@ -112,3 +112,34 @@ def test_summary_fits_the_alert_budget():
         operator={"operator": "MegaFon-Long-Name", "act": 7, "rat": "LTE"},
     ))
     assert len(line) < 200
+
+
+# --- CLIP: the caller-ID question, asked of the firmware and of the network ---------
+# `AT+CLIP?` answers two different things in one line, and only the second is about us:
+# `+CLIP: <n>,<m>` — `n` is our own URC subscription, `m` is whether the NETWORK
+# provisions calling-line identification on this subscription. `m` is the reading that
+# would otherwise cost a phone call to the operator.
+
+def test_clip_reports_network_provisioning_not_just_our_setting():
+    assert decode_clip("\r\n+CLIP: 0,1\r\n\r\nOK\r\n") == {
+        "urc": 0, "provision": 1, "network": "provisioned",
+    }
+    assert decode_clip("+CLIP: 1,0") == {
+        "urc": 1, "provision": 0, "network": "not provisioned",
+    }
+    assert decode_clip("+CLIP: 0,2") == {
+        "urc": 0, "provision": 2, "network": "unknown",
+    }
+
+
+def test_clip_unparseable_is_empty_not_a_guess():
+    # A firmware without the command answers ERROR. That must not decode into a
+    # confident-looking zero — "not provisioned" and "never asked" are different facts.
+    assert decode_clip("ERROR") == {}
+    assert decode_clip("OK") == {}
+
+
+def test_clip_test_query_reports_whether_the_firmware_knows_the_command():
+    assert decode_clip_test("\r\n+CLIP: (0,1)\r\n\r\nOK\r\n") == {"supported": True}
+    assert decode_clip_test("+CLIP: (0-1)") == {"supported": True}
+    assert decode_clip_test("ERROR") == {}

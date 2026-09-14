@@ -21,7 +21,8 @@ from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
-    decode_csca, decode_qnwinfo, decode_qcsq, summarise_for_alert,
+    decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
+    summarise_for_alert,
 )
 from app.db import queries
 from app.alerting import notify
@@ -125,6 +126,14 @@ _DIAG_QUERIES = [
     ("smsc",       "AT+CSCA?",   decode_csca),
     ("net_info",   "AT+QNWINFO", decode_qnwinfo),
     ("signal_lte", "AT+QCSQ",    decode_qcsq),
+    # Calling-line identification, asked in two halves because they can fail
+    # independently. `AT+CLIP=?` asks the firmware whether it knows the command at all
+    # — a build with voice stripped answers ERROR and ends the question. `AT+CLIP?`
+    # then reports `<n>,<m>`, and `m` is the network's provisioning of caller ID on
+    # this subscription: the one reading that otherwise costs a call to the operator.
+    # Both are read-only, as this whole sweep is; neither changes modem state.
+    ("clip_caps",  "AT+CLIP=?",  decode_clip_test),
+    ("clip",       "AT+CLIP?",   decode_clip),
 ]
 
 
@@ -721,6 +730,16 @@ class ModemManager:
                     if index is not None:
                         logger.info("+CMTI: index=%d enqueued", index)
                         await self._inbound_indices.put(index)
+                else:
+                    # Every other thing the modem volunteers on this port. It used to
+                    # reach only the `logger.debug` above, and the service never raises
+                    # the level past INFO — so an event with no handler left no trace at
+                    # all, and "we have no handler for this" was indistinguishable from
+                    # "it never arrived". An incoming call is exactly that class of
+                    # event: `RING` needs no subscription, the modem volunteers it, and
+                    # today it would vanish. Unhandled is not the same as uninteresting,
+                    # and the port is quiet enough that saying so costs nothing.
+                    logger.info("Unhandled URC: %r", decoded)
 
     async def _await_link_restored(self) -> None:
         """Wait for the one coordinated recovery to put this port back.

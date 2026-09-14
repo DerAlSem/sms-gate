@@ -44,6 +44,39 @@ def decode_cops(resp: str) -> dict:
     return {"operator": m.group(1), "act": act, "rat": _ACT.get(act, str(act))}
 
 
+_CLIP_PROVISION = {0: "not provisioned", 1: "provisioned", 2: "unknown"}
+
+
+def decode_clip(resp: str) -> dict:
+    """`+CLIP: <n>,<m>` — two facts about calling-line identification, not one.
+
+    `n` is our own URC subscription: whether this port was told to report the caller's
+    number. `m` is the one that costs money to learn any other way — whether the
+    *network* provisions calling-line identification on this subscription.
+
+    An unparseable response returns `{}` rather than zeros: a firmware that does not
+    know the command answers `ERROR`, and "the operator does not provide caller ID"
+    and "we never managed to ask" are different facts that must not render alike.
+    """
+    m = re.search(r'\+CLIP:\s*(\d+)\s*,\s*(\d+)', resp)
+    if not m:
+        return {}
+    provision = int(m.group(2))
+    return {"urc": int(m.group(1)), "provision": provision,
+            "network": _CLIP_PROVISION.get(provision, "unknown")}
+
+
+def decode_clip_test(resp: str) -> dict:
+    """`AT+CLIP=?` — does this firmware know the command at all.
+
+    Asked separately from `AT+CLIP?` because it is the cheaper question and the one
+    that can end the enquiry: a build with voice stripped answers `ERROR` here, and no
+    amount of network provisioning would help. The accepted forms cover both list and
+    range notation (`(0,1)` and `(0-1)`) because firmwares differ on which they print.
+    """
+    return {"supported": True} if re.search(r'\+CLIP:\s*\(', resp) else {}
+
+
 def decode_csca(resp: str) -> dict:
     m = re.search(r'\+CSCA:\s*"([^"]*)"', resp)
     return {"smsc": m.group(1)} if m else {}
