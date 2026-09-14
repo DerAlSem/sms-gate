@@ -4,6 +4,24 @@ Description=Backup internet via Quectel EM06 (QMI data session)
 After=network-online.target
 Wants=network-online.target
 
+# The restart policy below needs a ceiling, and the default one cannot supply it. systemd
+# counts starts inside a window — StartLimitIntervalSec, 10s by default — and refuses after
+# StartLimitBurst of them, 5 by default. With RestartSec=30 no two restarts ever land in the
+# same 10s window, so the counter never reaches two and the limiter never trips: the unit
+# restarts for ever while looking like it is governed. Measured on 2026-09-14: 1122
+# consecutive restarts, roughly 35 hours, against a modem that answered every one of them.
+#
+# So the window has to be wide enough to hold a whole burst: 5 restarts spaced 30s span
+# 120s, and 600s holds that with room. On the fifth failure the unit stops and stays
+# `failed`, which is visible in `systemctl status` and does not lie about the channel.
+# Recovery is not lost with it — `wwan-watchdog.timer` keeps probing on its own schedule,
+# and a start that succeeds clears the allowance. Clearing the unit itself is
+# `systemctl reset-failed wwan-backup.service`.
+#
+# Both keys belong to [Unit]. Put them in [Service] and systemd ignores them without a word.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
 [Service]
 Type=oneshot
 RemainAfterExit=yes

@@ -152,15 +152,26 @@ ensure_client() {
     echo "$cid" > "$STATE_DIR/cid"
 }
 
+# `--client-no-release-cid` tells qmicli to allocate a client and deliberately leave it
+# behind. That is right only when we are keeping an id we can act on later — the session
+# has to stay addressable by a teardown. With no id recorded the same flag pins a client
+# that nothing on the host can name, so no teardown can ever free it and the modem holds
+# it until the module loses power: the leak this whole file is built to avoid, asked for
+# in so many words. Without the flag qmicli releases its client at exit, which is exactly
+# what an unremembered client should do.
 client_args() {
-    local cid
     ensure_client >/dev/null 2>&1 || true
+    client_args_recorded
+}
+
+# The same, without acquiring anything. Reading what a channel is doing must not cost a
+# client — least of all because the question gets asked most when the channel is already
+# in trouble and the pool is what is running out.
+client_args_recorded() {
+    local cid
     cid=$(cat "$STATE_DIR/cid" 2>/dev/null || true)
-    if [ -n "$cid" ]; then
-        printf -- '--client-cid=%s --client-no-release-cid' "$cid"
-    else
-        printf -- '--client-no-release-cid'
-    fi
+    [ -n "$cid" ] || return 0
+    printf -- '--client-cid=%s --client-no-release-cid' "$cid"
 }
 
 # Drop the descriptor-bound state and the proxy holding it. Called only after repeated
@@ -398,6 +409,30 @@ session_step() {
     return 1
 }
 
+# What systemd runs. `cmd_up` on its own is the mechanism, not the policy: it asks the
+# modem for a session and reports whether it got one, and nothing in it counts. Every
+# guard this script has — the allowance, the timeout tally, the renewal budget — lives in
+# `session_step`, and `session_step` was reachable only from the watchdog. So the one path
+# a supervisor drives on a timer of its own was the one path with no bound on it, which is
+# how a restart counter reached 1122: each restart was a fresh attempt as far as the script
+# was concerned, and the allowance it was supposed to spend never moved.
+#
+# The lock matters for the same reason. The timer fires every 30s and the unit's own
+# `Restart=` fires every 30s, so two runs can be inside session management at once against
+# one modem — and `ensure_client` is read-then-write on a single file, so both can find no
+# client, both allocate one, and only the loser's id is recorded. The other is held by the
+# modem with nothing on the host naming it.
+#
+# Losing the lock is not a failure: the run holding it is the watchdog, which owns the
+# session, carries the same allowance and raises the same alert. Saying so and standing
+# down is the honest answer, and `status` still reports what the channel is actually doing.
+cmd_up_supervised() {
+    mkdir -p "$STATE_DIR"
+    exec 9>"$STATE_DIR/lock"
+    flock -n 9 || { log "another wwan-backup run holds the lock — leaving the session to it"; return 0; }
+    session_step
+}
+
 cmd_watchdog() {
     mkdir -p "$STATE_DIR"
     exec 9>"$STATE_DIR/lock"
@@ -442,7 +477,7 @@ cmd_watchdog() {
 
 cmd_status() {
     echo "=== QMI ==="
-    qmi $(client_args) --wds-get-packet-service-status 2>&1 || true
+    qmi $(client_args_recorded) --wds-get-packet-service-status 2>&1 || true
     echo "=== state ==="
     for f in pdh cid gw fails oks failover session_fails timeouts renewals; do
         [ -e "$STATE_DIR/$f" ] && echo "$f: $(cat "$STATE_DIR/$f" 2>/dev/null)"
@@ -469,7 +504,7 @@ cmd_test_alert() {
 }
 
 case "${1:-}" in
-    up)         cmd_up ;;
+    up)         cmd_up_supervised ;;
     down)       cmd_down ;;
     watchdog)   cmd_watchdog ;;
     status)     cmd_status ;;

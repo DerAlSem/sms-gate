@@ -5,6 +5,11 @@
 # three ways it can answer — succeed, refuse, time out — so the stubs below record
 # every invocation and let each subcommand be scripted independently. Nothing here
 # touches a real modem, a real interface or the network.
+#
+# Run this on Linux. The script locks with flock(1), which macOS does not ship, so every
+# watchdog subcommand there exits at its first line and the suite reports a failure that
+# says nothing about the code: `docker run --rm -v "$PWD":/w -w /w debian:stable-slim
+# bash -c 'apt-get -qq update && apt-get -qq install -y util-linux && bash /w/tests/test_wwan_backup.sh'`
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/deploy/wwan-backup/wwan-backup.sh"
@@ -32,6 +37,7 @@ echo "qmicli $*" >> "$CALLS"
 mode_for() {
     case "$*" in
         *--wds-start-network*) echo "${QMI_START:-ok}" ;;
+        *--wds-noop*) echo "${QMI_NOOP:-ok}" ;;
         *--wds-get-packet-service-status*) echo "${QMI_STATUS:-ok}" ;;
         *--wds-get-current-settings*) echo "${QMI_SETTINGS:-ok}" ;;
         *--wds-stop-network*) echo "${QMI_STOP:-ok}" ;;
@@ -285,6 +291,138 @@ FAKE_CONN=connected FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null
 if called "--wds-get-current-settings"; then
     fail "1.4: a healthy channel was re-addressed on an ordinary pass"
 fi
+ok
+teardown
+
+# --- 4.4 the supervised entry point is bounded too ------------------------------
+
+setup
+# "up" is what systemd runs, and it runs it again on every failure. The allowance
+# tested in 4.1 lives in session_step, which only the watchdog reaches — so the path
+# the supervisor actually drives had no bound at all. That is what let a restart
+# counter reach 1122 while every attempt asked the modem for another client.
+for _ in $(seq 1 6); do QMI_START=refuse MAX_SESSION_FAILS=3 run up >/dev/null 2>&1; done
+attempts_before=$(grep -c -e "--wds-start-network" "$CALLS")
+QMI_START=refuse MAX_SESSION_FAILS=3 run up >/dev/null 2>&1
+attempts_after=$(grep -c -e "--wds-start-network" "$CALLS")
+[ "$attempts_after" -eq "$attempts_before" ] \
+    || fail "4.4: the supervised path is unbounded — attempt $attempts_after followed a long run of failures"
+ok
+teardown
+
+setup
+# The paired positive control: below the bound it must still be trying, or 4.4 above
+# would pass just as well against an "up" that never does anything at all.
+for _ in 1 2; do QMI_START=refuse MAX_SESSION_FAILS=3 run up >/dev/null 2>&1; done
+[ "$(grep -c -e "--wds-start-network" "$CALLS")" -ge 2 ] \
+    || fail "4.4: the supervised path stopped trying before its allowance was spent"
+ok
+teardown
+
+# --- 2.4 the supervised path does not manage the session behind the watchdog ----
+
+setup
+# Both run on a 30s cadence: the timer, and the unit's own Restart=. The watchdog
+# takes a lock before touching the session; "up" did not, so the two could allocate
+# a client each against one modem, and only one of them could be recorded as held.
+mkdir -p "$STATE"
+exec 9>"$STATE/lock"
+flock -n 9 || fail "2.4: the harness could not take the lock it means to hold"
+QMI_START=refuse run up >/dev/null 2>&1
+exec 9>&-
+if called "--wds-start-network"; then
+    fail "2.4: the supervised path managed the session while another run held the lock"
+fi
+ok
+teardown
+
+setup
+# Paired positive control: with the lock free, "up" must go ahead as before.
+QMI_START=refuse run up >/dev/null 2>&1
+called "--wds-start-network" || fail "2.4: the supervised path refused to work with the lock free"
+ok
+teardown
+
+# --- 4.5 the supervisor's own restart policy can actually reach its limit -------
+
+# Not a check that the keys are spelled somewhere: the arithmetic is the defect.
+# systemd counts starts in a window (StartLimitIntervalSec, default 10s) and gives up
+# after StartLimitBurst of them (default 5). With RestartSec=30 no two restarts ever
+# land in one 10s window, so the default limiter cannot trip and the unit restarts for
+# ever. The window has to be wide enough to hold a whole burst of them.
+# Both keys are [Unit]-section settings; systemd ignores them in [Service] silently.
+UNIT="$(cd "$(dirname "$0")/.." && pwd)/deploy/wwan-backup/wwan-backup.service"
+unit_key() { awk -F= -v k="$1" '$1==k {print $2; exit}' "$UNIT"; }
+if [ -n "$(unit_key Restart)" ]; then
+    restart_sec=$(unit_key RestartSec)
+    burst=$(unit_key StartLimitBurst)
+    window=$(unit_key StartLimitIntervalSec)
+    [ -n "$burst" ] && [ -n "$window" ] \
+        || fail "4.5: the unit restarts on failure with no start limit — nothing stops the loop"
+    awk -v s="${restart_sec:-0}" -v b="$burst" -v w="$window" \
+        'BEGIN { exit !(w > s * (b - 1)) }' \
+        || fail "4.5: RestartSec=$restart_sec x StartLimitBurst=$burst does not fit in StartLimitIntervalSec=$window — the limiter can never trip"
+    if awk '/^\[Service\]/ {svc=1} svc && /^StartLimit/ {found=1} END {exit !found}' "$UNIT"; then
+        fail "4.5: StartLimit* sits in [Service], where systemd ignores it"
+    fi
+    ok
+fi
+
+# --- 2.5 a client that cannot be recorded is not held either --------------------
+
+setup
+# When the allocation itself fails there is no id to reuse, and the fallback asked for
+# the next best thing: a client qmicli allocates and is told not to release. Nothing
+# on the host then names it, so no teardown can ever free it — the modem holds it until
+# the module loses power. The flag only earns its keep when we have an id to preserve.
+# --wds-noop is the one call allowed to pin without naming an id: it is the allocator,
+# and it exists precisely to read that id back and write it down. Every other call has
+# to carry a recorded id or not pin at all.
+QMI_NOOP=refuse QMI_START=refuse run up >/dev/null 2>&1
+while read -r line; do
+    case "$line" in
+        *--wds-noop*|*--client-cid=*) ;;
+        *--client-no-release-cid*)
+            fail "2.5: a client was pinned with nothing recorded to release it later: $line" ;;
+    esac
+done < "$CALLS"
+ok
+teardown
+
+setup
+# Paired positive control: when the id *is* known, the flag must still be used — that is
+# what keeps the session addressable by a later teardown.
+run up >/dev/null 2>&1
+grep -F -e "--wds-start-network" "$CALLS" | grep -q -e "--client-no-release-cid" \
+    || fail "2.5: a recorded client must still be preserved across invocations"
+ok
+teardown
+
+# --- 2.6 asking for status does not consume a client ----------------------------
+
+setup
+# The command that exists to diagnose a modem must not be a way to exhaust it. Status
+# ran through the same allocator as everything else, so reading the state of a channel
+# whose client could not be recorded cost another one each time it was asked — and it
+# gets asked most when things are already going wrong.
+QMI_NOOP=refuse run status >/dev/null 2>&1
+if called "--wds-noop"; then
+    fail "2.6: status allocated a client just to report what the session is doing"
+fi
+while read -r line; do
+    case "$line" in
+        *--wds-noop*|*--client-cid=*) ;;
+        *--client-no-release-cid*) fail "2.6: status pinned a client it cannot release: $line" ;;
+    esac
+done < "$CALLS"
+ok
+teardown
+
+setup
+# Paired positive control: status must still ask the modem something, or 2.6 would pass
+# against a status command that had quietly stopped working.
+run status >/dev/null 2>&1
+called "--wds-get-packet-service-status" || fail "2.6: status stopped asking the modem anything"
 ok
 teardown
 
