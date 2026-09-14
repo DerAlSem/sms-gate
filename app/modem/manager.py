@@ -116,24 +116,36 @@ def _mark_hard_reset() -> None:
         pass
 
 
+# The budget most of these deserve: a register read the firmware answers out of its own
+# memory, where two seconds is already generous.
+_DIAG_LOCAL = 2.0
+# And the budget for a query the modem cannot answer alone. Bounded well under any send
+# timeout because this sweep runs on the alert path too and holds the command port while
+# it does — during an incident, which is when an outgoing SMS can least afford to wait.
+_DIAG_NETWORK = 8.0
+
+# (key, command, decoder, timeout). The timeout is per row rather than one flat number
+# for the sweep because the rows are not alike: most are local reads, one is a network
+# interrogation, and a single value can only be wrong for one of those two.
 _DIAG_QUERIES = [
-    ("sim",        "AT+CPIN?",   decode_cpin),
-    ("eps_reg",    "AT+CEREG?",  decode_reg),
-    ("cs_reg",     "AT+CREG?",   decode_reg),
-    ("ps_reg",     "AT+CGREG?",  decode_reg),
-    ("signal",     "AT+CSQ",     decode_csq),
-    ("operator",   "AT+COPS?",   decode_cops),
-    ("smsc",       "AT+CSCA?",   decode_csca),
-    ("net_info",   "AT+QNWINFO", decode_qnwinfo),
-    ("signal_lte", "AT+QCSQ",    decode_qcsq),
-    # Calling-line identification, asked in two halves because they can fail
-    # independently. `AT+CLIP=?` asks the firmware whether it knows the command at all
-    # — a build with voice stripped answers ERROR and ends the question. `AT+CLIP?`
-    # then reports `<n>,<m>`, and `m` is the network's provisioning of caller ID on
-    # this subscription: the one reading that otherwise costs a call to the operator.
+    ("sim",        "AT+CPIN?",   decode_cpin,      _DIAG_LOCAL),
+    ("eps_reg",    "AT+CEREG?",  decode_reg,       _DIAG_LOCAL),
+    ("cs_reg",     "AT+CREG?",   decode_reg,       _DIAG_LOCAL),
+    ("ps_reg",     "AT+CGREG?",  decode_reg,       _DIAG_LOCAL),
+    ("signal",     "AT+CSQ",     decode_csq,       _DIAG_LOCAL),
+    ("operator",   "AT+COPS?",   decode_cops,      _DIAG_LOCAL),
+    ("smsc",       "AT+CSCA?",   decode_csca,      _DIAG_LOCAL),
+    ("net_info",   "AT+QNWINFO", decode_qnwinfo,   _DIAG_LOCAL),
+    ("signal_lte", "AT+QCSQ",    decode_qcsq,      _DIAG_LOCAL),
+    # Calling-line identification, asked in two halves because they fail — and cost —
+    # differently. `AT+CLIP=?` asks the firmware whether it knows the command at all; it
+    # answers out of its own tables, so it stays on the local budget. `AT+CLIP?` reports
+    # `<n>,<m>`, and `m` is the NETWORK's provisioning of caller ID on this subscription
+    # — the modem has to go and ask, which is why the live modem timed out on it at two
+    # seconds while the capability query answered at once.
     # Both are read-only, as this whole sweep is; neither changes modem state.
-    ("clip_caps",  "AT+CLIP=?",  decode_clip_test),
-    ("clip",       "AT+CLIP?",   decode_clip),
+    ("clip_caps",  "AT+CLIP=?",  decode_clip_test, _DIAG_LOCAL),
+    ("clip",       "AT+CLIP?",   decode_clip,      _DIAG_NETWORK),
 ]
 
 
@@ -1250,10 +1262,10 @@ class ModemManager:
                              "error": f"modem not responding: {type(e).__name__}: {e}"}]
 
         out: list[dict] = list(state)
-        for key, cmd, decoder in _DIAG_QUERIES:
+        for key, cmd, decoder, timeout in _DIAG_QUERIES:
             item = {"key": key, "cmd": cmd}
             try:
-                raw = await self._sender.command(cmd, timeout=2.0)
+                raw = await self._sender.command(cmd, timeout=timeout)
                 item["raw"] = raw.strip()
                 item["parsed"] = decoder(raw)
             except ModemFailure as e:

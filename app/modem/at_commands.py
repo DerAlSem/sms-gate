@@ -25,6 +25,18 @@ INIT_COMMANDS = [
     'AT+CSMP=49,167,0,0',
 ]
 
+# The caller's number on an incoming call. `RING` the modem volunteers on its own; the
+# number attached to it only arrives once this is set, and the setting is per-port, which
+# is why it runs as part of initialising *each* link rather than once somewhere central.
+#
+# Deliberately NOT a member of `INIT_COMMANDS`: a command that fails there takes the
+# whole initialisation with it, the port is handed back unusable, and the gateway stops
+# sending SMS. Caller ID is not worth a port. Firmware support was confirmed on the live
+# modem on 2026-09-14 (`AT+CLIP=?` → `+CLIP: (0,1)`), but "supported now, on this modem,
+# in this radio state" is not a promise, and a recovery is exactly when the modem is in
+# an unusual state.
+CLIP_SUBSCRIBE = 'AT+CLIP=1'
+
 CTRL_Z = b'\x1a'
 ESC = b'\x1b'
 PROMPT = b'> '
@@ -691,6 +703,16 @@ class ATSerial:
         for cmd in INIT_COMMANDS:
             await self._command_unlocked(cmd)
             logger.info("AT init: %s OK", cmd)
+        # After the sequence that may not fail, and outside it. See `CLIP_SUBSCRIBE`:
+        # this one is allowed to fail, and the port stays usable when it does. The
+        # warning is the whole report — a silent skip would leave an anonymous `RING`
+        # looking like a modem that cannot name callers at all.
+        try:
+            await self._command_unlocked(CLIP_SUBSCRIBE)
+            logger.info("AT init: %s OK", CLIP_SUBSCRIBE)
+        except ModemFailure as e:
+            logger.warning("Could not subscribe to caller ID (%s): %s",
+                           CLIP_SUBSCRIBE, e)
 
     async def init(self) -> None:
         """Run modem initialization sequence.

@@ -143,3 +143,32 @@ def test_clip_test_query_reports_whether_the_firmware_knows_the_command():
     assert decode_clip_test("\r\n+CLIP: (0,1)\r\n\r\nOK\r\n") == {"supported": True}
     assert decode_clip_test("+CLIP: (0-1)") == {"supported": True}
     assert decode_clip_test("ERROR") == {}
+
+
+# --- A query whose answer comes from the network needs longer than a local one -------
+
+def test_the_diagnostic_sweep_gives_each_query_its_own_budget():
+    """`AT+CLIP?` timed out on the live modem on 2026-09-14 while `AT+CLIP=?` answered
+    instantly. That is the shape of the difference: the test query is answered out of
+    the firmware, the read query reports `<m>` — the *network's* provisioning of caller
+    ID — and the modem interrogates the network to learn it. One flat timeout across a
+    sweep of local queries and network queries can only be wrong for one of them.
+    """
+    from app.modem.manager import _DIAG_QUERIES
+
+    budgets = {key: timeout for key, _cmd, _dec, timeout in _DIAG_QUERIES}
+    assert budgets["clip"] > budgets["signal"], (
+        "the network round-trip must get more than a local register read")
+    assert budgets["clip_caps"] == budgets["signal"], (
+        "the capability query is answered locally and must stay cheap")
+
+
+def test_no_diagnostic_query_may_hold_the_serial_lock_indefinitely():
+    """The sweep runs on the alert path too (`_alert_observations`), so it holds the
+    command port during an incident — exactly when an outgoing SMS is least able to
+    wait. Every budget is bounded, and the bound is stated here rather than left to
+    whoever adds the next row."""
+    from app.modem.manager import _DIAG_QUERIES
+
+    for key, cmd, _dec, timeout in _DIAG_QUERIES:
+        assert 0 < timeout <= 10.0, f"{key} ({cmd}) may stall the lock for {timeout}s"

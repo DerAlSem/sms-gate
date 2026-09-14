@@ -112,7 +112,7 @@ def test_a_reopen_runs_the_whole_init_sequence_including_the_urc_subscription(mo
     s = _serial()
 
     assert asyncio.run(s.reconnect()) is True
-    assert port.commands == at.INIT_COMMANDS
+    assert port.commands == at.INIT_COMMANDS + [at.CLIP_SUBSCRIBE]
     assert CNMI_SUBSCRIBE in port.commands
     assert s.usable is True
     assert s.reopens == 1
@@ -145,7 +145,7 @@ def test_a_missing_node_then_a_permission_error_then_success(monkeypatch):
     s = _serial()
 
     assert asyncio.run(s.reconnect()) is True
-    assert port.commands == at.INIT_COMMANDS
+    assert port.commands == at.INIT_COMMANDS + [at.CLIP_SUBSCRIBE]
     assert s.reopens == 1
 
 
@@ -176,7 +176,7 @@ def test_a_failing_init_makes_the_attempt_fail(monkeypatch):
     s = _serial()
 
     assert asyncio.run(s.reconnect()) is True
-    assert good.commands == at.INIT_COMMANDS
+    assert good.commands == at.INIT_COMMANDS + [at.CLIP_SUBSCRIBE]
     assert bad.closed is True, "the port that would not initialise must be let go of"
 
 
@@ -206,7 +206,7 @@ def test_the_budget_outlasts_a_device_that_takes_its_time(monkeypatch):
 
     assert asyncio.run(s.reconnect()) is True, "gave up while the device was still coming"
     assert len(calls) == 13
-    assert port.commands == at.INIT_COMMANDS
+    assert port.commands == at.INIT_COMMANDS + [at.CLIP_SUBSCRIBE]
 
 
 def test_exhausted_budget_leaves_the_link_explicitly_unusable(monkeypatch):
@@ -322,3 +322,56 @@ def test_init_failures_still_surface_as_at_failures(monkeypatch):
 
     with pytest.raises(ATCommandError):
         asyncio.run(run())
+
+
+# --- Caller ID: subscribed, but never at the cost of the port ------------------------
+
+class _PortRefusing(_FakePort):
+    """Answers OK to everything except one command, which it rejects.
+
+    A modem that dislikes exactly one command is the case that matters here: a uniform
+    ERROR port is already covered, and it cannot tell apart "init is fragile" from
+    "init is fine and one optional extra failed".
+    """
+
+    def __init__(self, refuse: str):
+        super().__init__()
+        self._refuse = refuse.encode()
+
+    def write(self, data):
+        self.writes.append(data)
+        self._buf += b"\r\nERROR\r\n" if self._refuse in data else b"\r\nOK\r\n"
+
+
+def test_a_reopen_subscribes_to_the_callers_number(monkeypatch):
+    """`RING` arrives unasked; the number attached to it does not. Without this
+    subscription an incoming call is anonymous, and a caller we cannot name is useless
+    to anything built on top of it."""
+    port = _FakePort()
+    _opener(monkeypatch, [port])
+    s = _serial()
+
+    assert asyncio.run(s.reconnect()) is True
+    assert at.CLIP_SUBSCRIBE in port.commands
+
+
+def test_a_modem_that_refuses_caller_id_still_gets_a_usable_port(monkeypatch):
+    """The reason `AT+CLIP=1` is not in `INIT_COMMANDS`. A command that fails there takes
+    the whole initialisation with it, the port is handed back unusable, and the gateway
+    stops sending SMS — over an optional extra. Caller ID is not worth a port."""
+    port = _PortRefusing(at.CLIP_SUBSCRIBE)
+    _opener(monkeypatch, [port])
+    s = _serial()
+
+    assert asyncio.run(s.reconnect()) is True, "an optional extra must not fail the port"
+    assert s.usable is True
+    assert at.CLIP_SUBSCRIBE in port.commands, "it must still have been attempted"
+    for cmd in at.INIT_COMMANDS:
+        assert cmd in port.commands, f"the required sequence still ran: {cmd}"
+
+
+def test_the_caller_id_subscription_is_not_in_the_sequence_that_may_not_fail():
+    """Stated as its own guard because the tempting edit is a one-liner: dropping
+    `AT+CLIP=1` into `INIT_COMMANDS` looks tidier and quietly makes an optional extra
+    load-bearing for every recovery the gateway performs."""
+    assert at.CLIP_SUBSCRIBE not in at.INIT_COMMANDS
