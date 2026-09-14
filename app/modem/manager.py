@@ -22,7 +22,7 @@ from app.modem import assembler
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
     decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
-    summarise_for_alert,
+    decode_servicedomain, decode_cireg, summarise_for_alert,
 )
 from app.db import queries
 from app.alerting import notify
@@ -119,14 +119,13 @@ def _mark_hard_reset() -> None:
 # The budget most of these deserve: a register read the firmware answers out of its own
 # memory, where two seconds is already generous.
 _DIAG_LOCAL = 2.0
-# And the budget for a query the modem cannot answer alone. Bounded well under any send
-# timeout because this sweep runs on the alert path too and holds the command port while
-# it does — during an incident, which is when an outgoing SMS can least afford to wait.
-_DIAG_NETWORK = 8.0
-
 # (key, command, decoder, timeout). The timeout is per row rather than one flat number
-# for the sweep because the rows are not alike: most are local reads, one is a network
-# interrogation, and a single value can only be wrong for one of those two.
+# so that a row which genuinely costs more has somewhere to say so. No row needs that
+# today: `clip` was given a larger budget on the theory that it was interrogating the
+# network, and the measurement refuted it — given eight seconds it spent all eight and
+# still did not answer. It is back on the local budget, because a query that never
+# answers must not cost more than one that does, and this sweep also runs on the alert
+# path, holding the command port during an incident.
 _DIAG_QUERIES = [
     ("sim",        "AT+CPIN?",   decode_cpin,      _DIAG_LOCAL),
     ("eps_reg",    "AT+CEREG?",  decode_reg,       _DIAG_LOCAL),
@@ -145,7 +144,16 @@ _DIAG_QUERIES = [
     # seconds while the capability query answered at once.
     # Both are read-only, as this whole sweep is; neither changes modem state.
     ("clip_caps",  "AT+CLIP=?",  decode_clip_test, _DIAG_LOCAL),
-    ("clip",       "AT+CLIP?",   decode_clip,      _DIAG_NETWORK),
+    ("clip",       "AT+CLIP?",   decode_clip,      _DIAG_LOCAL),
+    # Why a modem that is registered, reports caller ID and receives SMS is still never
+    # paged for a voice call. Measured 2026-09-14: inbound SMS lands, an incoming call
+    # reaches this modem never, and the caller hears voicemail without one ring — so the
+    # two domains have parted, and these read where. `servicedomain` says which domains
+    # the module registers for at all; `CIREG` says whether VoLTE is even available as a
+    # route; `CEER` may name the last failure in the network's own words.
+    ("svc_domain", 'AT+QCFG="servicedomain"', decode_servicedomain, _DIAG_LOCAL),
+    ("ims_reg",    "AT+CIREG?",  decode_cireg,     _DIAG_LOCAL),
+    ("last_error", "AT+CEER",    lambda r: {},     _DIAG_LOCAL),
 ]
 
 

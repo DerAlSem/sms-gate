@@ -77,6 +77,46 @@ def decode_clip_test(resp: str) -> dict:
     return {"supported": True} if re.search(r'\+CLIP:\s*\(', resp) else {}
 
 
+_SERVICE_DOMAIN = {0: "CS only", 1: "PS only", 2: "CS & PS"}
+
+
+def decode_servicedomain(resp: str) -> dict:
+    """`AT+QCFG="servicedomain"` — which domains the module registers for at all.
+
+    Vendor manual (EC25/EC21 AT commands, shared by the EP06 series): 0 CS only,
+    1 PS only, 2 CS & PS. `1` would end an enquiry on its own — a module that never
+    registers for circuit-switched service cannot be paged for a voice call, however
+    healthy its data registration looks and however willingly it reports caller ID.
+
+    An unreadable response returns `{}`. `0` is itself a meaningful value here, so a
+    failed read must not render as one: that would report the opposite of the case
+    under suspicion.
+    """
+    m = re.search(r'\+QCFG:\s*"servicedomain"\s*,\s*(\d+)', resp)
+    if not m:
+        return {}
+    domain = int(m.group(1))
+    return {"domain": domain, "service": _SERVICE_DOMAIN.get(domain, "unknown")}
+
+
+def decode_cireg(resp: str) -> dict:
+    """`AT+CIREG?` — IMS registration, the other way an incoming call could land.
+
+    On LTE a voice call arrives either over VoLTE, which needs the module registered to
+    IMS, or by falling back to circuit-switched service. The EP06-E datasheet marks
+    VoLTE `Optional`, so this is a real question rather than a formality: not registered
+    to IMS leaves CS fallback as the only remaining route.
+
+    3GPP 27.007: `+CIREG: <n>,<reg_info>[,<ext_info>]`. `<n>` is only the URC
+    subscription; `<reg_info>` is the answer.
+    """
+    m = re.search(r'\+CIREG:\s*\d+\s*,\s*(\d+)', resp)
+    if not m:
+        return {}
+    reg = int(m.group(1))
+    return {"ims": reg, "state": "registered" if reg else "not registered"}
+
+
 def decode_csca(resp: str) -> dict:
     m = re.search(r'\+CSCA:\s*"([^"]*)"', resp)
     return {"smsc": m.group(1)} if m else {}

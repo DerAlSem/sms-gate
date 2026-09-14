@@ -1,6 +1,7 @@
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
     decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
+    decode_servicedomain, decode_cireg,
 )
 
 
@@ -148,19 +149,22 @@ def test_clip_test_query_reports_whether_the_firmware_knows_the_command():
 # --- A query whose answer comes from the network needs longer than a local one -------
 
 def test_the_diagnostic_sweep_gives_each_query_its_own_budget():
-    """`AT+CLIP?` timed out on the live modem on 2026-09-14 while `AT+CLIP=?` answered
-    instantly. That is the shape of the difference: the test query is answered out of
-    the firmware, the read query reports `<m>` — the *network's* provisioning of caller
-    ID — and the modem interrogates the network to learn it. One flat timeout across a
-    sweep of local queries and network queries can only be wrong for one of them.
+    """The per-row budget exists so the sweep is not forced to price every query alike.
+
+    It was introduced on a hypothesis that the measurement then refuted: `AT+CLIP?` timed
+    out at two seconds, and the guess was that the modem needed longer to interrogate the
+    network for `<m>`. Given eight seconds it consumed all eight and still did not answer
+    — this modem does not answer `AT+CLIP?` at all. Raising the number again would be the
+    move the neighbouring guard exists to prevent, so `clip` went back to the local
+    budget and the mechanism stays: the next row that genuinely needs its own price has
+    somewhere to say so.
     """
     from app.modem.manager import _DIAG_QUERIES
 
+    assert all(len(row) == 4 for row in _DIAG_QUERIES), "every row prices itself"
     budgets = {key: timeout for key, _cmd, _dec, timeout in _DIAG_QUERIES}
-    assert budgets["clip"] > budgets["signal"], (
-        "the network round-trip must get more than a local register read")
-    assert budgets["clip_caps"] == budgets["signal"], (
-        "the capability query is answered locally and must stay cheap")
+    assert budgets["clip"] == budgets["signal"], (
+        "a query that never answers may not cost more than one that does")
 
 
 def test_no_diagnostic_query_may_hold_the_serial_lock_indefinitely():
@@ -172,3 +176,38 @@ def test_no_diagnostic_query_may_hold_the_serial_lock_indefinitely():
 
     for key, cmd, _dec, timeout in _DIAG_QUERIES:
         assert 0 < timeout <= 10.0, f"{key} ({cmd}) may stall the lock for {timeout}s"
+
+
+# --- Why a registered modem is still unreachable for a voice call -------------------
+# Measured 2026-09-14: the gateway is registered, inbound SMS arrives, and an incoming
+# call reaches it never — no RING, no disturbance, and the caller hears voicemail
+# without a single ring. SMS lands and voice does not, so the two domains have parted.
+# These read the two settings that decide whether a voice call can land at all.
+
+def test_service_domain_names_which_domains_the_module_registers_for():
+    # Vendor manual (EC25/EC21 AT commands, AT+QCFG="servicedomain"): 0 CS only,
+    # 1 PS only, 2 CS & PS. `1` is the reading that would end the enquiry — a module
+    # that never registers for CS cannot be paged for a call, whatever else is true.
+    assert decode_servicedomain('+QCFG: "servicedomain",2') == {
+        "domain": 2, "service": "CS & PS"}
+    assert decode_servicedomain('\r\n+QCFG: "servicedomain",1\r\n\r\nOK\r\n') == {
+        "domain": 1, "service": "PS only"}
+    assert decode_servicedomain('+QCFG: "servicedomain",0') == {
+        "domain": 0, "service": "CS only"}
+
+
+def test_an_unreadable_service_domain_does_not_decode_into_a_confident_zero():
+    # `0` is a real and meaningful value here ("CS only"), so a failed read must never
+    # render as one: that would report the opposite of the case under suspicion.
+    assert decode_servicedomain("ERROR") == {}
+    assert decode_servicedomain("OK") == {}
+
+
+def test_ims_registration_is_the_other_way_a_call_could_have_landed():
+    # On LTE an incoming call arrives either over VoLTE (IMS) or by falling back to CS.
+    # The EP06-E datasheet marks VoLTE `Optional`, so "is it registered to IMS" is a
+    # real question and not a formality. 3GPP 27.007: `+CIREG: <n>,<reg_info>`.
+    assert decode_cireg("+CIREG: 0,0") == {"ims": 0, "state": "not registered"}
+    assert decode_cireg("\r\n+CIREG: 1,1\r\n\r\nOK\r\n") == {
+        "ims": 1, "state": "registered"}
+    assert decode_cireg("ERROR") == {}
