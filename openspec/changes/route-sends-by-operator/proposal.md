@@ -321,15 +321,11 @@ than questions:
    verification fails with that reason. The argument for escalating is that the refund makes it
    nearly free, and it is a real argument — which is why this is an open question and not an
    omission. Nothing may be built as escalation until it is decided.
-2. **Which word survives for the flash-call route.** This change calls it `call`; the messenger
-   ladder proposed on 12.09.2026 calls it `flash_call` and puts it on a second axis beside a
-   direction of `outbound`/`inbound`. This change adopts `tg_gateway` and `modem` from that list
-   verbatim, so exactly one word is contested, and it is contested across two changes and one
-   contract already at the developer.
-
-The third thing that is not a question but is not ours either: **what share of these numbers is
-reachable in Telegram has never been measured.** It is cheap and needs no message sent, but it
-means running live customer numbers through a vendor, and that is the owner's to permit.
+2. ~~**Which word survives for the flash-call route.**~~ ✅ **Decided by the owner 18.09.2026:**
+   one flat field, names disambiguated — `flash_call` (the vendor dials), `call_in` (the
+   subscriber calls our SIM), `sms_out` (our SIM sends), `sms_in` (the subscriber texts us),
+   `tg_gateway`, `tg_user`, `max_user`, `app_bot`. `call` is retired outright and `modem` is
+   retired in favour of `sms_out`. Applied throughout this change.
 
 ## Status
 

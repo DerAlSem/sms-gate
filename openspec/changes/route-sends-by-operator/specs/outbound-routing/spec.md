@@ -13,7 +13,7 @@ reachable by configuration rather than by deploying code during an outage.
 
 ### Requirement: Every outbound attempt is assigned exactly one route before it leaves
 
-A message or a verification SHALL be assigned a route — `modem`, `tg_gateway` or `call` —
+A message or a verification SHALL be assigned a route — `sms_out`, `tg_gateway` or `flash_call` —
 before any transmission is attempted, and that assignment SHALL be recorded against it. It
 SHALL NOT be carried by a route other than the one recorded, and SHALL NOT be carried by two
 at once.
@@ -36,13 +36,18 @@ route by a mapping this capability owns and states, and no other capability SHAL
 second vocabulary for the same decision. Two words for one choice agree while there are
 exactly two routes and disagree on the day there is a third.
 
-**That day arrived on 18.09.2026**, and the disagreement it predicted is real rather than
-hypothetical: the messenger ladder proposed on 12.09.2026 names the same three ways out
-`tg_gateway`, `modem` and `flash_call`, on a second axis separate from a direction of
-`outbound`/`inbound`. This capability adopts `tg_gateway` and `modem` from that list verbatim,
-so that the contest is down to one word — `call` here against `flash_call` there. Which of the
-two survives is the owner's decision across both changes, not this one's, and until it is
-taken the gateway SHALL hold exactly one of them in code.
+**That day arrived on 18.09.2026**, and the disagreement it predicted was real rather than
+hypothetical: the messenger ladder proposed on 12.09.2026 named the same ways out on a second
+axis separate from a direction of `outbound`/`inbound`, while a third change named the
+subscriber's own incoming call `call` as well — two mechanisms, one word, in which the modem
+either does everything or does not participate at all.
+
+✅ **The owner settled it on 18.09.2026: one flat field, names disambiguated.** The values are
+`sms_out` (the gateway's SIM sends), `sms_in` (the subscriber texts the gateway), `call_in`
+(the subscriber calls the gateway's SIM), `flash_call` (the vendor dials), `tg_gateway`,
+`tg_user`, `max_user` and `app_bot`. **`call` is retired outright** and `modem` is retired in
+favour of `sms_out`, which states the direction the old name left to be inferred. The gateway
+SHALL hold exactly this vocabulary, and SHALL NOT carry a second one for the same choice.
 
 [unbacked · no route concept exists in the code today]
 
@@ -51,8 +56,8 @@ taken the gateway SHALL hold exactly one of them in code.
 - **THEN** its route is decided and stored before any transmission is attempted
 
 #### Scenario: The recorded route is the one used
-- **WHEN** an item carries a recorded route of `call`
-- **THEN** the modem sender does not pick it up, and the reverse for `modem`
+- **WHEN** an item carries a recorded route of `flash_call`
+- **THEN** the modem sender does not pick it up, and the reverse for `sms_out`
 
 ### Requirement: The route is chosen by a configured rule keyed on the recipient's operator
 
@@ -105,15 +110,15 @@ differently.
 
 #### Scenario: An operator with a configured route
 - **WHEN** the rule routes МегаФон to `[tg_gateway, call]` and a verification is requested for a МегаФон number
-- **THEN** the verification is routed `tg_gateway` first, and `call` only if that rung declines it
+- **THEN** the verification is routed `tg_gateway` first, and `flash_call` only if that rung declines it
 
 #### Scenario: The ladder's order is data, not code
 - **WHEN** the entry for an operator is rewritten as `[call, tg_gateway]` while the service is running
-- **THEN** subsequent verifications for that operator try `call` first, with no restart and no code change
+- **THEN** subsequent verifications for that operator try `flash_call` first, with no restart and no code change
 
 #### Scenario: An operator with no entry in the rule
 - **WHEN** an item is addressed to an operator the rule does not mention
-- **THEN** it is routed `modem`, the configured default
+- **THEN** it is routed `sms_out`, the configured default
 
 #### Scenario: An entry naming a route that does not exist
 - **WHEN** a rule entry naming an unknown route is saved
@@ -152,7 +157,7 @@ this capability where a configuration gap costs money rather than traffic, and i
 down so that it is a decision rather than a discovery.
 
 **A ladder every one of whose rungs was skipped SHALL fail the verification with a reason
-naming the missing credentials, and SHALL NOT fall back to `modem`.** Advancing past the last
+naming the missing credentials, and SHALL NOT fall back to `sms_out`.** Advancing past the last
 rung leaves nothing to advance to, and the quiet answer — sending it over the modem — is the
 silent fallback this capability forbids everywhere else, reached here by exhausting a list
 rather than by deciding anything.
@@ -240,8 +245,8 @@ the default route is a guess.
 
 ### Requirement: A route carries only what it is capable of carrying
 
-Each route SHALL declare what it can carry. The `modem` route carries arbitrary text. The
-`call` route carries a verification code and nothing else: the code is the last four digits of
+Each route SHALL declare what it can carry. The `sms_out` route carries arbitrary text. The
+`flash_call` route carries a verification code and nothing else: the code is the last four digits of
 the calling number, so there is no field in which words, a link or a second sentence could
 travel. The `tg_gateway` route carries a verification code and nothing else either, for a
 different reason — `sendVerificationMessage` accepts a `code` and a `code_length` and no
@@ -263,11 +268,11 @@ failover this change refuses, arrived at by accident rather than by decision.
 [unbacked]
 
 #### Scenario: Free text addressed to an operator routed to the call route
-- **WHEN** an application sends arbitrary text to a number whose operator is routed `call`
+- **WHEN** an application sends arbitrary text to a number whose operator is routed `flash_call`
 - **THEN** the message is refused with a reason naming the route, and no AT command is issued
 
 #### Scenario: A verification addressed to an operator routed to the modem
-- **WHEN** a verification is requested for a number whose operator is routed `modem`
+- **WHEN** a verification is requested for a number whose operator is routed `sms_out`
 - **THEN** it is carried as an SMS, because the modem route can carry a code
 
 ### Requirement: A paid ladder tries its rungs in order, and nothing is bought before every gate that could refuse has been passed
@@ -278,7 +283,7 @@ the next rung only when the current one **declines to carry** the verification �
 carries it and then fails.
 
 On `tg_gateway`, declining is `checkSendAbility` reporting that the subscriber cannot be
-reached, or not answering within the acceptance bound. On `call`, there is no declining rung
+reached, or not answering within the acceptance bound. On `flash_call`, there is no declining rung
 below it; a ladder SHALL end in a route that either carries or fails.
 
 🔴 **`checkSendAbility` is not a free probe, and the design must not be built as though it
@@ -291,7 +296,7 @@ specified `ttl`, the request fee will be refunded automatically."*
 
 So the ladder is cheap for exactly two reasons, and neither is "the check is free": an
 **unreachable** subscriber costs nothing, and a **confirmed but undelivered** one is refunded.
-Against that, the `call` rung is charged for a call that was *placed*, whether or not anyone
+Against that, the `flash_call` rung is charged for a call that was *placed*, whether or not anyone
 read the digits.
 
 Two consequences follow, and both are normative:
@@ -312,7 +317,7 @@ cannot be spent and cannot be refunded, and without a count an unexplained fall 
 reported balance has no name to look for.
 
 **Whether a message the Gateway accepted and then failed to deliver within its `ttl` escalates
-to the `call` rung is not decided by this change.** Until the owner decides it, such a
+to the `flash_call` rung is not decided by this change.** Until the owner decides it, such a
 verification SHALL fail with that reason and SHALL NOT be escalated. The safe default is the
 one that cannot spend money on a decision nobody has taken; the argument for the other is that
 the fee is refunded anyway, and it is a real argument, which is why this is an open question
@@ -322,7 +327,7 @@ and not an omission.
 
 #### Scenario: The subscriber is not reachable in Telegram
 - **WHEN** `checkSendAbility` reports the subscriber cannot be reached
-- **THEN** nothing is charged for it, the ladder advances to `call`, and the decline is recorded against the `tg_gateway` rung
+- **THEN** nothing is charged for it, the ladder advances to `flash_call`, and the decline is recorded against the `tg_gateway` rung
 
 #### Scenario: The subscriber is reachable in Telegram
 - **WHEN** `checkSendAbility` confirms the subscriber
@@ -330,7 +335,7 @@ and not an omission.
 
 #### Scenario: The ability check does not answer in time
 - **WHEN** `checkSendAbility` has not answered within the acceptance bound
-- **THEN** the ladder advances to `call` and the check is counted as possibly charged rather than as a decline
+- **THEN** the ladder advances to `flash_call` and the check is counted as possibly charged rather than as a decline
 
 #### Scenario: A gate that would refuse is reached after the money
 - **WHEN** a verification would be refused by the spend ceiling or by the application's entitlement
@@ -354,7 +359,7 @@ billed rather than logged.
 
 A refusal for want of the entitlement SHALL place no vendor call and make no ability check,
 SHALL NOT be reported to the application as a vendor failure, and SHALL NOT be quietly carried
-over the `modem` route instead — for a МегаФон subscriber that is the route that has been
+over the `sms_out` route instead — for a МегаФон subscriber that is the route that has been
 refusing, so the fallback would read as a delivery and behave as a silence.
 
 The entitlement SHALL NOT be part of the routing rule. The rule answers what reaches a
@@ -447,7 +452,7 @@ The count SHALL NOT be relied upon as evidence that the route has recovered. Onc
 force, the modem route to that operator receives no attempts at all — codes leave by the other
 route and text is refused before any AT command — so the one source of proof that the refusal
 has ended is the thing the rule switches off. The gateway SHALL therefore retain a way to
-observe recovery: either a rate-bounded probe send to that operator over the `modem` route,
+observe recovery: either a rate-bounded probe send to that operator over the `sms_out` route,
 counted separately, or an alert once a rule entry has been in force longer than a configured
 review period.
 

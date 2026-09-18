@@ -41,7 +41,7 @@ codes unsafe.
 
 A code SHALL be four digits, by the owner's decision of 07.09.2026. Every route **that carries
 a code** SHALL be able to carry it: `sendVerificationMessage` accepts a caller-supplied `code`
-of four to eight numeric characters, so four is within it, and the `modem` route composes it
+of four to eight numeric characters, so four is within it, and the `sms_out` route composes it
 into text. Two verifications open at the same time for the same number SHALL NOT carry the
 same code, because an answer could then not be attributed to either with certainty.
 
@@ -56,14 +56,14 @@ binds a person to a number is the origin of the event, on every route without ex
 longer code would not add one.
 
 **A route that carries no code at all SHALL be permitted, and SHALL NOT be given one for the
-sake of uniformity.** The `inbound_call` rung introduced by this change carries nothing but the
+sake of uniformity.** The `call_in` rung introduced by this change carries nothing but the
 caller's number: there is no text, no digits and nowhere to put them. Its attribution rests on
 the pair of the calling number and the single open window, which is why that rung is separately
 forbidden from having two windows open on one number. Requiring a code there would mean either
 inventing a channel to carry it or recording a code that nothing ever compares against, and
 the second is the one that would actually happen.
 
-[unbacked · `inbound_call` capture 18.09.2026 carried `RING` and `+CLIP` and nothing else]
+[unbacked · `call_in` capture 18.09.2026 carried `RING` and `+CLIP` and nothing else]
 
 #### Scenario: An application tries to choose the code
 - **WHEN** a verification request supplies its own code
@@ -87,7 +87,7 @@ application lets that application confirm a verification without the code ever r
 person. The gateway also has live paths that would carry it out — notifications relay message
 text to Telegram, and the admin console renders it.
 
-**There is exactly one exception, and it is a route, not an application.** On the `inbound_sms`
+**There is exactly one exception, and it is a route, not an application.** On the `sms_in`
 rung the person is the sender: they read the code from the screen in front of them and text it
 to the gateway from the number being verified. The code must therefore be returned to the
 owning application, which has no other way to display it. On that rung, and only there, the
@@ -96,7 +96,7 @@ and SHALL still be absent from every operator notification and every log line.
 
 **Where the exception applies, the guarantee this requirement otherwise makes does not exist,
 and the spec says so rather than leaving it to be discovered.** A code the requester can read
-is a code an attacker who opened the verification can read. That is why `inbound_sms`
+is a code an attacker who opened the verification can read. That is why `sms_in`
 confirmation requires **both** halves — the code and the originating number — and why the
 number is the half that does the binding. It is also part of why that rung sits last on the
 ladder: it is the weakest of them on evidence as well as the only one the subscriber pays for.
@@ -115,7 +115,7 @@ verification on any other route SHALL NOT be given the code.
 - **THEN** the alert and the log name the verification and the reason, and not the code
 
 #### Scenario: The route where the person must type the code back
-- **WHEN** a verification is created on the `inbound_sms` rung
+- **WHEN** a verification is created on the `sms_in` rung
 - **THEN** the creation response carries the code to the owning application, and the operator notification and the log still do not
 
 #### Scenario: The same application on another rung
@@ -273,7 +273,7 @@ when the voice route was last successfully measured; this capability is the cons
 time, and the bound on it belongs here because it is a decision about how stale a proof may be
 before a person is sent down a route that no longer works.
 
-⚠️ **Two rungs depend on egress, and egress is not stable.** `ucaller` and `telegram_gateway`
+⚠️ **Two rungs depend on egress, and egress is not stable.** `flash_call` and `tg_gateway`
 are calls to `api.ucaller.ru` and `gatewayapi.telegram.org`. Telegram is blocked on this host's
 backup uplink — measured, not supposed — and reaches it today only through a relay that the
 sibling change `carry-telegram-on-any-uplink` records as working but nowhere normalises. The
@@ -343,17 +343,19 @@ SHALL be refused with that reason rather than attempted.
 
 ### Requirement: An inbound call to the gateway's own modem confirms by the caller's number alone
 
-A verification carried by the `inbound_call` rung SHALL be confirmed by an incoming call to the
+A verification carried by the `call_in` rung SHALL be confirmed by an incoming call to the
 gateway's own SIM whose caller number is the number being verified and which arrives before the
 verification expires. Nothing else about the call SHALL be required, because nothing else is
 carried.
 
-This rung SHALL NOT be called `call`. That name is already taken in this capability by
-uCaller's flash call, where the vendor dials and this gateway's modem does not participate at
-all; two different mechanisms under one name is how an implementer builds the wrong one.
+This rung's value is `call_in`, and **the name `call` SHALL NOT be used for any route.** By the
+owner's decision of 18.09.2026 it is retired outright: it named this rung in one change and
+uCaller's flash call in another — one where the modem does everything, one where *"our modem
+does not participate at all"* — and two mechanisms under one name is how an implementer builds
+the wrong one. The vendor's rung is `flash_call`.
 
 Because a call carries no code, attribution rests entirely on the number and the window.
-The gateway SHALL NOT hold two `inbound_call` verifications open for the same number at the
+The gateway SHALL NOT hold two `call_in` verifications open for the same number at the
 same time: where one is already open, a second request for that number SHALL be answered
 without that rung, so that any arriving call belongs to exactly one verification.
 
@@ -361,17 +363,28 @@ A single call SHALL confirm at most once. The modem reports one call as many rep
 fifteen `RING` / `+CLIP` pairs in sixteen seconds was measured on 18.09.2026 — and every
 repetition after the first SHALL change nothing.
 
-**The gateway SHALL NOT answer the call.** Answering costs the caller money and needs an audio
-path this module does not have. Whether the gateway actively ends an unanswered call is
-outside this change: `ATH` needs the command port, which the sender holds, and that it rejects
-an unanswered incoming call on this firmware is an assertion about the device rather than a
-measurement.
+**The gateway SHALL NOT answer the call, and SHALL end it as soon as the caller's number has
+been read.** Answering costs the caller money and needs an audio path this module does not
+have; letting it ring on costs the caller too, because an unanswered call runs to the carrier's
+voicemail and voicemail is a connection. Ending it is the owner's decision of 18.09.2026 and it
+is what makes this rung's "free to the subscriber" true rather than hoped.
 
-🔴 **The consequence is that an unanswered call goes to the carrier's voicemail, and whether
-that is a connection the subscriber pays for is NOT established.** This rung sits first on the
-ladder because it is believed free to both sides; if the subscriber is charged, the premise
-that orders the ladder is wrong for its first rung. The cost claim SHALL NOT be published to
-consumers until it is measured.
+The number is read from the **first** `+CLIP`. Ending the call there is therefore also what
+stops the repetitions at their source — but the gateway SHALL still collapse them in software,
+because the hang-up may lose the race or fail outright, and confirmation may not depend on
+winning it.
+
+**Confirmation SHALL NOT depend on the call being ended.** The verification is confirmed by the
+number, which the gateway already holds by the time it tries. A hang-up that fails SHALL be
+recorded and SHALL NOT fail the verification, and it SHALL NOT delay or displace a send: `ATH`
+needs the command port, which the sender holds, and a person waiting at a barrier must not be
+made to wait behind a six-part message so the gateway can be polite.
+
+🔴 **That `ATH` ends an unanswered incoming call on this firmware is an assertion, not a
+measurement**, and so is the carrier's behaviour afterwards — a rejected call may still reach
+voicemail on some networks. The norm above states what the gateway does; the cost claim that
+follows from it SHALL NOT be published to consumers until the sequence has been observed
+end to end on the live modem.
 
 **The window for this rung SHALL be configurable separately from the capability's default, and
 SHALL default to no longer than it.** The rung's residual risk scales with the window: an
@@ -384,10 +397,10 @@ inbound-message rung and the reason the window is worth shortening here and nowh
 network's caller ID can be trusted, and no better. That is stated here rather than buried,
 because this rung is first and will carry most verifications.
 
-[normative · live capture 18.09.2026: fifteen `RING`/`+CLIP` pairs in sixteen seconds from the production EP06-E after `AT+QCFG="ims",1` and `AT+CFUN=1,1` · conf: high that the URCs arrive and carry the number; the withheld-number case and the voicemail charge are unmeasured]
+[normative · live capture 18.09.2026: fifteen `RING`/`+CLIP` pairs in sixteen seconds from the production EP06-E after `AT+QCFG="ims",1` and `AT+CFUN=1,1` · conf: high that the URCs arrive and carry the number; the withheld-number case is unmeasured, and so is every step of ending the call — `ATH` from a contended command port, its effect on an unanswered incoming call on this firmware, and what the carrier does with a rejected call]
 
 #### Scenario: A call from the number being verified
-- **WHEN** a call arrives from the number of an open `inbound_call` verification, before it expires
+- **WHEN** a call arrives from the number of an open `call_in` verification, before it expires
 - **THEN** the verification is confirmed, and the method recorded is the inbound call
 
 #### Scenario: One call repeated by the modem
@@ -395,22 +408,30 @@ because this rung is first and will carry most verifications.
 - **THEN** the verification is confirmed once and the repetitions change nothing
 
 #### Scenario: A second verification for a number already being called
-- **WHEN** a verification is requested for a number that already has an open `inbound_call` verification
+- **WHEN** a verification is requested for a number that already has an open `call_in` verification
 - **THEN** that rung is absent from the offered routes, and two are never open for one number
 
 #### Scenario: A call from an unknown number
 - **WHEN** a call arrives from a number with no open verification
 - **THEN** nothing is confirmed and the call is recorded as unattributed
 
-#### Scenario: The call is not answered
-- **WHEN** any call arrives at the gateway's SIM
-- **THEN** the gateway does not answer it, and confirmation does not depend on the call being ended
+#### Scenario: The call is ended as soon as the number is read
+- **WHEN** the caller's number is read from the first `+CLIP` of an arriving call
+- **THEN** the gateway does not answer the call and ends it, so that it does not run on to voicemail
+
+#### Scenario: The hang-up fails
+- **WHEN** the gateway cannot end the call, because the command port is held or the firmware refuses
+- **THEN** the verification is confirmed anyway on the number already read, and the failure is recorded
+
+#### Scenario: A send is not displaced by a hang-up
+- **WHEN** a call arrives while the sender holds the command port
+- **THEN** the send is not interrupted or delayed by the attempt to end the call
 
 ### Requirement: The caller-ID subscription is a fact the gateway holds, not one it reads back
 
 The gateway SHALL treat the caller-ID subscription as **its own recorded state**: whether
 `AT+CLIP=1` was last issued successfully on the link generation now in service. That record,
-and not a query to the modem, SHALL be the `inbound_call` rung's precondition on this point.
+and not a query to the modem, SHALL be the `call_in` rung's precondition on this point.
 
 The reason is that the modem will not answer the question. `AT+CLIP?` reports the subscription
 and the network's provisioning of caller ID, and the live modem does not reply to it — given
@@ -450,7 +471,7 @@ parser cannot read is recorded under its own outcome rather than dropped.
 
 #### Scenario: The subscription could not be issued
 - **WHEN** `AT+CLIP=1` fails on the link now in service
-- **THEN** the recorded precondition does not hold and the `inbound_call` rung is not offered
+- **THEN** the recorded precondition does not hold and the `call_in` rung is not offered
 
 #### Scenario: A caller who withheld their number
 - **WHEN** a call arrives with no usable caller number while the subscription is recorded as held
@@ -479,7 +500,7 @@ behave as though it could be recovered.** Inbound SMS has a buffer: messages acc
 modem memory while the link is down and are reconciled by a scan when it returns. A call has
 none — it exists nowhere in the modem, nowhere in the log, and the caller hears the carrier's
 voicemail. The asymmetry is a property of the bearer and cannot be engineered away here; what
-this requirement forbids is concealing it. A verification carried by `inbound_call` across an
+this requirement forbids is concealing it. A verification carried by `call_in` across an
 outage SHALL end with a reason naming the outage, so the person is told to try again rather
 than left waiting for an acknowledgement that no longer exists anywhere.
 
@@ -492,7 +513,7 @@ Every writer of a verification's terminal state SHALL notify, on this path as on
 - **THEN** the verification ends with that reason and the application is notified, rather than expiring silently
 
 #### Scenario: The person called during a recovery
-- **WHEN** a recovery takes the modem out of service for the remainder of an `inbound_call` verification's window
+- **WHEN** a recovery takes the modem out of service for the remainder of an `call_in` verification's window
 - **THEN** the verification ends naming the outage, and the arriving call is not claimed to be recoverable
 
 #### Scenario: Inbound SMS is still reconciled
@@ -501,7 +522,7 @@ Every writer of a verification's terminal state SHALL notify, on this path as on
 
 ### Requirement: An inbound message confirms only by the pair of number and code
 
-A verification carried by the `inbound_sms` rung SHALL be confirmed only by a message that
+A verification carried by the `sms_in` rung SHALL be confirmed only by a message that
 **both** originates from the number being verified **and** carries that verification's code.
 Neither half alone SHALL confirm anything.
 
@@ -617,8 +638,8 @@ offered without its precondition. Removing a route from the configuration SHALL 
 never offered, whatever its precondition would have said.
 
 The shipped order is the owner's decision of 18.09.2026 and is recorded as a decision rather
-than a measurement: `inbound_call`, then the gateway's own outbound SMS, then `ucaller`, then
-`telegram_gateway`, and `inbound_sms` last. uCaller ranks above Telegram Gateway even though
+than a measurement: `call_in`, then the gateway's own outbound SMS, then `flash_call`, then
+`tg_gateway`, and `sms_in` last. uCaller ranks above Telegram Gateway even though
 Telegram refunds an undelivered code, which would otherwise make a failure there free; the
 counter-argument was raised and declined.
 

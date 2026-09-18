@@ -64,7 +64,7 @@ codes unsafe.
 
 A code SHALL be four digits, by the owner's decision of 07.09.2026. Every route SHALL be able
 to carry it: `sendVerificationMessage` accepts a caller-supplied `code` of four to eight
-numeric characters, so four is within it, and the `modem` route composes it into text. Two
+numeric characters, so four is within it, and the `sms_out` route composes it into text. Two
 verifications open at the same time for the same number SHALL NOT carry the same code, because
 an answer could then not be attributed to either with certainty.
 
@@ -73,7 +73,7 @@ Where a route's vendor can also generate a code of its own, the gateway SHALL NO
 delegating generation puts the secret at the vendor and leaves the matcher here with nothing
 to compare against, which is the same split this requirement forbids on the application's side.
 
-The `call` route is the one exception, and it runs the other way: there the code is the last
+The `flash_call` route is the one exception, and it runs the other way: there the code is the last
 four digits of a number the vendor allocates, so what the gateway supplies is a request rather
 than a decision. That case is governed below.
 
@@ -116,10 +116,12 @@ free to drift:
   per-number limits. Every minute a verification stays open is a minute in which the person
   asks again, and asking again is what walks into that block.
 
-🔴 **This diverges from the contract already in the parking developer's hands**, which states
-ten minutes to the end user and carries an `expires_at`. The divergence is deliberate and it is
-the contract that moves, not this norm — but sending that letter is the owner's, and task 3.1
-carries it. Nothing here may be built as though the developer had already agreed.
+⚠️ **This diverges from the integration contract drafted for the parking developer**, which
+states ten minutes to the end user and carries an `expires_at`. 🔴 **That draft was never sent** —
+the owner's word, 18.09.2026 — so there is no agreement to renegotiate and no party waiting on
+one: the draft moves to meet this norm before it is handed over, which the owner will do once
+the shape is settled. Task 3.1 carries it. Nothing here may be built as though a developer had
+agreed to anything.
 
 Where a route's vendor holds its own expiry, the gateway SHALL set it from the verification's
 remaining lifetime rather than from a constant of its own. On `tg_gateway` that is `ttl`, whose
@@ -184,8 +186,8 @@ The gateway SHALL bound how long it waits for `-1` to resolve and SHALL record a
 outcome as unknown rather than as either success or failure. The vendor's documentation gives
 a resolution time of one second to one minute.
 
-The rest of this requirement governs the `call` route alone, and SHALL NOT be carried across to
-the other routes. On `tg_gateway` and on `modem` the code is the gateway's own from end to end,
+The rest of this requirement governs the `flash_call` route alone, and SHALL NOT be carried across to
+the other routes. On `tg_gateway` and on `sms_out` the code is the gateway's own from end to end,
 and a rule that prefers a vendor-reported code there would prefer a value no vendor sets.
 
 The code a verification is matched against SHALL be the one the vendor reports for that call,
@@ -252,7 +254,7 @@ is still sitting in a chat. What is lost without a working revocation is tidines
 shared-device case, not the guarantee.
 
 **The asymmetry between the two paid rungs is worth stating rather than discovering.** This
-route can prove that a code arrived; the `call` route cannot, and says so above. The change's
+route can prove that a code arrived; the `flash_call` route cannot, and says so above. The change's
 own unproven link — whether a paid route reaches a МегаФон subscriber at all — is therefore
 answerable on this rung from the vendor's own report, and on the other rung only by asking the
 person. That does not make the rungs interchangeable, and it does not reorder the ladder: it
@@ -338,7 +340,7 @@ costs the subscriber ten hours.
 absence.** The gate this change works under says a vendor's reference binds what we may assert
 about it, and silence is not a statement that a limit does not exist — it is the absence of one.
 The per-number limits configured here SHALL therefore be applied to the **ladder as a whole**
-rather than to the `call` rung alone. They exist to keep a person from being blocked by a
+rather than to the `flash_call` rung alone. They exist to keep a person from being blocked by a
 vendor, and a rung whose block conditions are unpublished is the one to be more careful with,
 not less. If a live sample later shows the Gateway publishing or enforcing its own, the limits
 become the stricter of the two, exactly as they already do for a calendar day.
@@ -625,7 +627,7 @@ standing requirement.
 
 ### Requirement: The text of an SMS-carried verification comes from the application's own template, and there is no default
 
-Where a verification is carried on the `modem` route, its text SHALL be composed from a
+Where a verification is carried on the `sms_out` route, its text SHALL be composed from a
 template configured **per application**, in the manner `delivery-dispatch` already configures a
 dispatch route per application. A request from an application that has no template SHALL be
 refused, with a reason naming the missing template, at the moment the request is accepted
@@ -647,15 +649,15 @@ code, and a template carrying none, carrying it twice, or carrying an unknown pl
 be refused at save time. A template that silently drops the code sends a person a message with
 nothing in it to type.
 
-The template governs the `modem` route only. `tg_gateway` has no message body to supply —
-`sendVerificationMessage` takes a `code` and no text — and `call` carries no text at all, so an
+The template governs the `sms_out` route only. `tg_gateway` has no message body to supply —
+`sendVerificationMessage` takes a `code` and no text — and `flash_call` carries no text at all, so an
 application without a template SHALL still be served by those rungs. The refusal follows the
 rung, not the application.
 
 [unbacked · per-application configuration precedent: the dispatch-route setting in delivery-dispatch]
 
 #### Scenario: An application with no template asks for an SMS-carried verification
-- **WHEN** a verification is requested by an application with no template, for a number whose operator is routed `modem`
+- **WHEN** a verification is requested by an application with no template, for a number whose operator is routed `sms_out`
 - **THEN** it is refused at accept with a reason naming the missing template, and no message is composed
 
 #### Scenario: The same application on a paid rung
@@ -668,7 +670,7 @@ rung, not the application.
 
 ### Requirement: A verification carried by the modem takes that message's outcome
 
-A verification on the `modem` route SHALL own the message it creates: the message SHALL be
+A verification on the `sms_out` route SHALL own the message it creates: the message SHALL be
 marked as belonging to a verification, and its status changes SHALL NOT be pushed to the
 application as message statuses. The verification's own outcome SHALL be derived from them —
 `sent` leaves it open, `failed` or `expired` fails it with that reason and notifies the

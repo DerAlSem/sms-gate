@@ -69,12 +69,12 @@ routes that can actually carry it right now, cheapest first.
   silent switching survives the ladder: a list to choose from is not a licence to hop.
 - **A confirmation names the method that proved it**, because the methods are not equally
   strong and the consumer is entitled to refuse the weak one.
-- **Two rungs are added here**: `inbound_call` — the subscriber calls the gateway's own SIM,
-  free to both sides — and `inbound_sms` — the subscriber texts the code back, last on the
+- **Two rungs are added here**: `call_in` — the subscriber calls the gateway's own SIM,
+  free to both sides — and `sms_in` — the subscriber texts the code back, last on the
   ladder because it is the only route the subscriber pays for.
 
 Not in this change: `/sms/send` keeps working unchanged for messages that are not
-verifications. The rungs `modem`, `ucaller` and `tg_gateway` are specified by
+verifications. The rungs `sms_out`, `flash_call` and `tg_gateway` are specified by
 `route-sends-by-operator` and are not re-specified here.
 
 ## The load-bearing norm: a route must prove itself, or it is not offered
@@ -111,7 +111,7 @@ is a withheld number and nothing is wrong. With the record lost, the rung was ne
 subscription without a `CFUN` cycle — is made visible by counting calls that carry no number,
 so it shows up as a rate change instead of as nothing.
 
-⚠️ **Two rungs depend on egress, and egress is not stable.** `ucaller` and `telegram_gateway`
+⚠️ **Two rungs depend on egress, and egress is not stable.** `flash_call` and `tg_gateway`
 are calls to `api.ucaller.ru` and `gatewayapi.telegram.org`. Telegram is blocked on this
 host's backup uplink — measured, not supposed — and reaches it today only through a relay
 that `carry-telegram-on-any-uplink` records as working but nowhere normalises. The moment the
@@ -163,22 +163,49 @@ requires, and a window configurable **shorter for this rung than for the ladder*
 reduce to zero, and an application whose stakes do not tolerate it should read the returned
 method and refuse it.
 
+## What this is actually for, which bounds nearly everything below
+
+**The owner's answer of 18.09.2026: a person verifies a number ONCE, at onboarding, and is then
+let into the project; from there the application authenticates them by email.** This is not a
+login factor that fires on every session.
+
+Three things follow, and they are why the numbers in this change are the size they are.
+
+- **Volume is one per user, not one per login.** A paid rung at ≈0,80 ₽ is a one-off cost of
+  acquiring a customer, not a running cost of serving one. That is a very different thing to
+  weigh a ladder against.
+- **Which makes the one rung the subscriber pays for harder to justify, not easier.** `sms_in`
+  exists to be reached when everything cheaper failed to prove itself. If the whole event
+  happens once in a customer's life, spending 0,80 ₽ of ours rather than a message of theirs is
+  a small price for not asking a new customer to text a robot. The ladder keeps `sms_in` last
+  because the owner ordered it so; it is worth knowing it may be worth dropping entirely.
+- **It sets what the residual risk buys an attacker**: not a session, but a project account
+  bound to someone else's number — after which email takes over and the phone stops being the
+  key. Whether that is tolerable is task 1.4, and the answer is now a narrower question than it
+  looked while this was thought to be an authentication factor.
+
 ## Cost
 
 | Rung | Ours | Subscriber's | Precondition that must be proven |
 |---|---|---|---|
-| `inbound_call` | 0 | **0 — unproven, see below** | `AT+CLIP=1` recorded as held, IMS registered, evidence fresh |
-| `outbound_sms` (`modem`) | ≈0 (flat ~100 ₽/мес) | 0 | operator not on the undeliverable list |
-| `ucaller` | 0,80 ₽ | 0 | balance; vendor reachable on the current uplink |
-| `telegram_gateway` | $0.01 ≈ 0,80 ₽ | 0 | balance; vendor reachable; Telegram can reach the number |
-| `inbound_sms` | 0 | **1 SMS at their tariff** | the modem receives |
+| `call_in` | 0 | **0, once the call is ended before voicemail** | `AT+CLIP=1` recorded as held, IMS registered, evidence fresh |
+| `sms_out` (`sms_out`) | ≈0 (flat ~100 ₽/мес) | 0 | operator not on the undeliverable list |
+| `flash_call` | 0,80 ₽ | 0 | balance; vendor reachable on the current uplink |
+| `tg_gateway` | $0.01 ≈ 0,80 ₽ | 0 | balance; vendor reachable; Telegram can reach the number |
+| `sms_in` | 0 | **1 SMS at their tariff** | the modem receives |
 
-🔴 **The first rung's "0 to the subscriber" is not established.** The gateway does not answer
-the call — answering costs the caller money and needs an audio path this module does not
-have — so the call runs to the carrier's voicemail, and voicemail is a connection. Whether
-the subscriber is charged for it is unmeasured. If they are, the premise that puts this rung
-first is wrong for the rung it puts first. The spec forbids publishing the cost claim to
-consumers until it is measured; task 1.2 carries the measurement.
+**The first rung is free to the subscriber because the gateway hangs up.** The owner decided
+this on 18.09.2026, and it is what closes the hole the draft left open: the gateway neither
+answers the call — answering costs the caller money and needs an audio path this module does
+not have — nor lets it ring on into the carrier's voicemail, which is a connection somebody
+pays for. The number is read from the first `+CLIP` and the call is ended there.
+
+🔴 **Every step of that is still an assertion.** That `ATH` ends an unanswered incoming call
+on this firmware is not measured; neither is taking the command port from the sender to do it,
+nor what the carrier does with a rejected call. So the spec separates the two: **confirmation
+rests on the number, which is already in hand, and never on the hang-up succeeding** — a failed
+hang-up is recorded, not fatal, and it may not delay a send. The cost claim stays unpublished to
+consumers until the sequence is seen end to end on the live modem; task 1.2 carries it.
 
 **Owner's decision, 18.09.2026: uCaller ranks above Telegram Gateway.** Recorded as a
 decision, not a measurement. The counter-argument was raised and declined: Telegram Gateway
@@ -186,15 +213,15 @@ refunds undelivered codes automatically, so a failed attempt there costs nothing
 otherwise make it the cheaper of two routes priced the same.
 
 The honest objection to the old design — that it moved a charge onto the customer — is
-answered by the ladder rather than defended: `inbound_sms` is now the last resort, reached
+answered by the ladder rather than defended: `sms_in` is now the last resort, reached
 only when every cheaper rung failed to prove itself.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `phone-verification`: gains the two rungs the gateway itself bears (`inbound_call`,
-  `inbound_sms`), the norm that a rung is offered only on fresh proof, the consumer's
+- `phone-verification`: gains the two rungs the gateway itself bears (`call_in`,
+  `sms_in`), the norm that a rung is offered only on fresh proof, the consumer's
   selection and the prohibition on silent switching, and the two boundaries the critics
   found — the caller-ID subscription as recorded state, and the end of a verification whose
   route died under it.
@@ -228,10 +255,21 @@ now carries are not all codes. Normative references to the old name have been re
 Impact.** That item is discharged here and that change should drop it; its files are owned by
 a sibling session and are deliberately untouched.
 
-⚠️ **`reach-people-in-messengers` task 1.1 defers the method vocabulary to this change.** It
-now points at task 1.1 below. The vocabulary is genuinely cross-cutting — `call` in
-`route-sends-by-operator` is uCaller's flash call, in which *"our modem does not participate
-at all"*, so this change's rung is `inbound_call` and never `call`.
+✅ **The method vocabulary is settled by the owner, 18.09.2026: one flat field, names
+disambiguated.** `sms_out` (our SIM sends), `sms_in` (the subscriber texts us), `call_in` (the
+subscriber calls us), `flash_call` (uCaller dials, *"our modem does not participate at all"*),
+`tg_gateway`, `tg_user`, `max_user`, `app_bot`. The name `call` is retired outright, because it
+meant two different mechanisms in two changes and that is how an implementer builds the wrong
+one. `modem` is retired in favour of `sms_out`, which says the direction the old name left to
+be inferred.
+
+The decision is applied here and in `route-sends-by-operator`, whose `outbound-routing` spec
+posed the contest and deferred it. It is **not** applied inside `reach-people-in-messengers` —
+its files belong to a sibling session; its task 1.1 records the decision so that session can
+apply `modem` → `sms_out` in its own deltas. Its other three values are adopted unchanged.
+
+⚠️ **The flat form buys simplicity and pays for it with a convention.** Nothing structural
+stops a later change re-introducing `call`; only the fact that this paragraph exists does.
 
 ⚠️ **`route-sends-by-operator` tasks 3.1–3.2 rest on a premise the owner withdrew**: they
 speak of a contract "already in the parking developer's hands" and of a sent artifact. The
@@ -246,11 +284,13 @@ day reconciling with a party that does not exist.
    number-to-account binding — and not confirmed. **It is deliberately absent from the spec.**
    The critic's structural objection stands: its precondition cannot be proven before the list
    is issued, so it does not obey the load-bearing norm. Task 1.1 settles whether it exists.
-2. **Whether the subscriber pays for the unanswered call.** See Cost. Task 1.2.
-3. **Whether the gateway hangs up.** `ATH` needs the command port, which the sender holds, and
-   that it rejects an unanswered incoming call on this firmware is an assertion about the
-   device, not a measurement. Left outside this change by the spec.
-4. **Whether the SIM's inbox can fill** under sustained `inbound_sms` traffic. Less urgent than
+2. ~~**Whether the gateway hangs up.**~~ **Settled by the owner 18.09.2026: it does**, as soon
+   as the number is read, so the call never reaches voicemail. What remains is not a decision
+   but a measurement — that `ATH` works from a contended command port on this firmware, and
+   what the carrier does with a rejected call. Task 1.2.
+3. ~~**Whether the subscriber pays for the unanswered call.**~~ Dissolved by the answer above:
+   there is no unanswered call to pay for once the gateway ends it. Contingent on 2.
+4. **Whether the SIM's inbox can fill** under sustained `sms_in` traffic. Less urgent than
    before, since that rung is now last.
 
 ## Status

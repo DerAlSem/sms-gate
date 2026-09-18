@@ -1,34 +1,38 @@
 # Tasks
 
-## 1. Settle what only the owner can settle
+## 1. Settled by the owner, and what each answer left behind
 
-- [ ] 1.1 **The method vocabulary, across three changes at once.** `route-sends-by-operator`
-      calls uCaller's flash call `call`; this change's rung is `inbound_call` and must never
-      be `call`, because in the vendor's rung *"our modem does not participate at all"*.
-      `reach-people-in-messengers` task 1.1 defers to this decision and holds its own deltas
-      provisional until it lands. Two axes, not one flat list: direction
-      (`outbound`/`inbound`) and bearer (`modem`, `ucaller`, `tg_gateway`, `app_bot`,
-      `tg_user`, `max_user`). These are normative values exposed to consumers.
-- [ ] 1.2 **Does the subscriber pay for the unanswered call?** The gateway does not answer,
-      so the call runs to the carrier's voicemail, and voicemail is a connection. The whole
-      ladder is ordered by cost and this is its first rung: if the answer is "yes", the
-      ordering premise is wrong where it matters most. Measurable from a real subscriber's
-      itemised bill or the carrier's own tariff, not from this gateway.
-- [ ] 1.3 **Does the `telegram_bot` rung exist at all?** Recorded as the author's reading of
-      the owner's words on 18.09.2026 and deliberately kept out of the spec: the critic's
-      objection is structural — its precondition cannot be proven before the list is issued,
-      so it does not obey the load-bearing norm. Either it is dropped or the norm needs an
-      exception written for it, and the second needs the owner.
+- [x] 1.1 **Method vocabulary — decided 18.09.2026: one flat field, names disambiguated.**
+      `sms_out`, `sms_in`, `call_in`, `flash_call`, `tg_gateway`, `tg_user`, `max_user`,
+      `app_bot`. `call` is retired (it meant two mechanisms in two changes); `modem` is retired
+      in favour of `sms_out`. Applied in this change and in `route-sends-by-operator`.
+- [ ] 1.2 **The hang-up sequence, measured end to end on the live modem.** The owner decided
+      18.09.2026 that the gateway ends the call as soon as the number is read, which is what
+      makes this rung free to the subscriber. Every step is still an assertion: that `ATH` ends
+      an *unanswered incoming* call on this firmware; that the command port can be taken from
+      the sender to do it without displacing a send; and what the carrier does with a rejected
+      call. 🔴 The cost claim stays unpublished to consumers until all three are observed.
+      Confirmation does not depend on any of them — that is already normative.
+- [x] 1.3 **`telegram_bot` — not in this change.** Recorded as the author's reading of the
+      owner's words and kept out of the spec: the critic's objection is structural — its
+      precondition cannot be proven before the list is issued, so it does not obey the
+      load-bearing norm. It returns as its own proposal or not at all.
 - [ ] 1.4 **Is the residual risk acceptable per consuming application?** An attacker opens a
       verification on a victim's number and, inside the window, gives the victim a reason to
-      call. Mitigated by one open call-verification per number, the rate limits and a shorter
-      window for this rung; it does not reduce to zero. The spec returns the method so an
-      application may refuse it — somebody has to decide which will.
-- [ ] 1.5 **The window for `inbound_call`.** `phone-verification` ships five minutes for the
-      ladder by the owner's decision of 18.09.2026. Two minutes was proposed here on the
-      grounds that the person is standing at a barrier, and never measured. The spec makes
-      the rung's window separately configurable and no longer than the default; what it
-      should actually be is a decision, and 1.4 is the reason it is a short one.
+      call. Narrower than it looked: verification happens **once, at onboarding**, after which
+      the application authenticates by email — so what the attack buys is a project account
+      bound to someone else's number, not a session. Mitigated by one open `call_in`
+      verification per number, the rate limits, and a shorter window for this rung. It does not
+      reduce to zero; the spec returns the method so an application may refuse it.
+- [ ] 1.5 **The window for `call_in`.** `phone-verification` ships five minutes for the ladder
+      by the owner's decision of 18.09.2026. Two minutes was proposed here and never measured.
+      The spec makes the rung's window separately configurable and no longer than the default;
+      1.4 is the reason it should be a short one.
+- [ ] 1.6 **Is `sms_in` worth keeping at all?** Raised by the onboarding answer, not yet put to
+      the owner. It is the only rung the subscriber pays for, and it exists to be reached when
+      everything cheaper failed. If the event happens once in a customer's life, spending
+      0,80 ₽ of ours beats asking a new customer to text a robot. The ladder keeps it last
+      because the owner ordered it so; dropping it is a decision, not a cleanup.
 
 ## 2. Hold the archiving order, because the validator will not
 
@@ -96,7 +100,7 @@
       precondition has since lapsed, is refused with that reason.
 - [ ] 6.5 No silent hop. A failed rung fails the verification with its reason and re-offers
       what is left; moving on is the consumer's act.
-- [ ] 6.6 One open `inbound_call` verification per number; a second request for that number is
+- [ ] 6.6 One open `call_in` verification per number; a second request for that number is
       answered without that rung.
 - [ ] 6.7 Refuse the verification when no rung can prove itself, in the same answer, rather
       than opening one that can only expire.
@@ -108,16 +112,16 @@
       Do not invent a second store.
 - [ ] 7.2 A verification whose selected rung loses its precondition ends with that reason and
       notifies, rather than reaching its deadline. Every writer of a terminal state notifies.
-- [ ] 7.3 The `inbound_call` window, configurable separately and defaulting to no longer than
+- [ ] 7.3 The `call_in` window, configurable separately and defaulting to no longer than
       the ladder's.
-- [ ] 7.4 Return the code to the owning application **only** on `inbound_sms`, and never in an
+- [ ] 7.4 Return the code to the owning application **only** on `sms_in`, and never in an
       operator notification or a log line on any rung.
 - [ ] 7.5 The confirmation names the method, in the push and in the poll.
 
 ## 8. The two rungs this change bears
 
-- [ ] 8.1 `inbound_call` — confirmed by the caller's number alone, within one open window.
-- [ ] 8.2 `inbound_sms` — confirmed only by the pair of originating number and code; last on
+- [ ] 8.1 `call_in` — confirmed by the caller's number alone, within one open window.
+- [ ] 8.2 `sms_in` — confirmed only by the pair of originating number and code; last on
       the ladder, and not offered when a cheaper rung proved itself.
 - [ ] 8.3 Inbound traffic that confirms nothing stays stored and visible exactly as today
       (`app/admin/router.py:351`) — verification neither deletes, hides nor reclassifies it.

@@ -1,11 +1,15 @@
 ## 1. Vocabulary, configuration and their refusals
 
-- [ ] 1.1 Settle the method vocabulary with `verify-by-inbound-contact` task 1.1 **before the
-      deltas are frozen** (that change was renamed from `verify-by-inbound-code` on 18.09.2026
-      and its vocabulary task renumbered): direction (`outbound`/`inbound`) and route (`app_bot`,
-      `tg_user`, `max_user`, `modem`) are two axes, not one flat list. The names are
-      normative values exposed to an application whose contract is already sent, so until
-      the owner decides, the deltas SHALL say the wire values are provisional.
+- [x] 1.1 **Method vocabulary — SETTLED by the owner on 18.09.2026.** One flat field, names
+      disambiguated; not the two axes this task proposed. The values are `sms_out` (the
+      gateway's SIM sends), `sms_in` (the subscriber texts the gateway), `call_in` (the
+      subscriber calls the gateway's SIM), `flash_call` (uCaller dials — our modem does not
+      participate), `tg_gateway`, `tg_user`, `max_user`, `app_bot`. Three of this change's four
+      values are adopted verbatim; **only `modem` changes, to `sms_out`.** The deltas here stop
+      being provisional on the wire values and SHALL be updated to that name — this session did
+      not touch this change's spec files, because they belong to whoever is driving it.
+      Decided in `verify-by-inbound-contact` task 1.1 and applied there and in
+      `route-sends-by-operator`.
 - [ ] 1.2 Typed setting: per message class, the ordered list of routes. Refused at save
       time with the offending part named. Absent or empty means the modem alone.
 - [ ] 1.3 Typed setting: `app_id` → permitted brands with one default; brand → exactly one

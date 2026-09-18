@@ -34,7 +34,7 @@ and one alert per refused message teaches the operator to ignore the channel tha
 [unbacked · shape mirrors the existing part-budget refusal at app/modem/manager.py:109-121; the default-off toggle is notify_send_errors in app/settings_store.py]
 
 #### Scenario: Free text addressed to an operator routed to the call route
-- **WHEN** an application sends arbitrary text to a МегаФон number while the rule routes МегаФон to `call`
+- **WHEN** an application sends arbitrary text to a МегаФон number while the rule routes МегаФон to `flash_call`
 - **THEN** the message is `failed` with an error naming МегаФон and the route, the app is notified, an alert is raised, and no `AT+CMGS` is sent
 
 #### Scenario: The refusal does not consume the retry ladder
