@@ -181,3 +181,46 @@ allowance.
 - **WHEN** the bound is reached
 - **THEN** the modem's client pool is no more depleted than the bound allows
 
+
+### Requirement: Failover switches only to a backup that can carry traffic
+
+The uplink SHALL establish, from the live state of its network interface, that the backup
+can carry traffic before it moves the default route onto it, and SHALL refuse to switch
+otherwise. A record written when the channel was last configured SHALL NOT be read as
+evidence that the channel is up now.
+
+This does not withdraw the failover duty described above: the watchdog still reaches the
+failover decision on every pass where the primary is down, whatever session management
+did. What is specified here is the answer that decision is allowed to give.
+
+The gateway address is recorded once, when addressing is applied, and nothing clears it
+while the host is up. After the session dies the record stays and reads as fresh —
+observed on 2026-09-18 with the session gone, the retry allowance spent, and the status
+command still printing a gateway. State written separately from the event it describes
+goes stale silently, so the interface's own addressing is the state that SHALL be read.
+
+Routing offers no feedback to lean on instead: an `onlink` default route installs onto an
+interface that carries no address, and the command reports success. The evidence SHALL
+therefore be the addressing, not the exit status of the routing command.
+
+The check SHALL be a local read rather than a request to the modem. It runs on every
+watchdog pass for as long as the primary is down, and on a wedged stack a QMI transaction
+is thirteen seconds of no answer.
+
+A refused switch SHALL be reported to the operator, once per outage. Announcing a switch
+that did not happen is worse than not switching, because a false "handled" takes hands
+away from the one place they are needed; but putting silence in place of that false alert
+would leave the state where neither channel carries traffic as the quietest state the
+channel has.
+
+#### Scenario: The session died but its gateway record remains
+- **WHEN** the primary uplink fails while the backup interface carries no address and a gateway recorded by an earlier session is still on disk
+- **THEN** the default route is not moved to the backup and no successful switch is announced
+
+#### Scenario: Neither channel can carry traffic
+- **WHEN** failover is refused because the backup has no usable channel
+- **THEN** the operator is told, once for that outage, that no failover is possible
+
+#### Scenario: The backup is addressed and the primary is down
+- **WHEN** the primary uplink fails while the backup interface carries its addressing
+- **THEN** the default route is moved to the backup as before

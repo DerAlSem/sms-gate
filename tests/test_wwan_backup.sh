@@ -193,18 +193,72 @@ teardown
 
 setup
 # The counters must actually reach the threshold while the session is broken — that is
-# what proves the failover duty ran rather than being skipped. (Failover itself cannot
-# complete without a session: there is no route to switch to, and enter_failover
-# correctly refuses. What must not happen is never getting that far.)
+# what proves the failover duty ran rather than being skipped. What failover then does
+# with a dead backup is 3.3's question, not this one; this sandbox had never brought a
+# session up at all, so it could not have told the two apart.
 for _ in 1 2 3; do QMI_START=refuse PING_RESULT=1 run watchdog >/dev/null; done
 [ "$(cat "$STATE/fails")" -ge 3 ] || fail "3.2: failure counters stalled while the session was broken"
 ok
 teardown
 
 setup
-# And with a working session, failover still happens as before.
-for _ in 1 2 3; do PING_RESULT=1 run watchdog >/dev/null; done
+# And with a working session — one whose interface actually carries its addressing —
+# failover still happens as before.
+for _ in 1 2 3; do PING_RESULT=1 FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null; done
 [ -f "$STATE/failover" ] || fail "3.2: failover regressed for a healthy session with a down primary"
+ok
+teardown
+
+# --- 3.3 failover needs a backup that can actually carry traffic ----------------
+
+setup
+# The gateway address the old precondition read is written once, when addressing is
+# applied, and nothing ever clears it — so a session that came up and later died leaves
+# it on disk reading as fresh. Prod, 2026-09-18 07:37: session gone, session_fails 10,
+# and `status` still printing gw: 100.84.1.56.
+#
+# Nothing here had ever brought a session up, which is why the branch went untested for
+# so long: "never up" and "up an hour ago, dead now" were the same sandbox. So this test
+# starts by bringing one up, and only then breaks it.
+FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null
+[ -s "$STATE/gw" ] || fail "3.3: the session never came up, so there is no stale gw to test against"
+# Now it dies the way it died in prod — the start refused, the netdev with no address —
+# and three passes later the primary goes down too.
+blackout=$(for _ in 1 2 3; do QMI_START=refuse FAKE_WWAN_ADDR="" PING_RESULT=1 run watchdog; done)
+[ -f "$STATE/failover" ] && fail "3.3: switched to a backup whose interface carries no address"
+# Asserted on the address, not on the exit status of the routing command: `onlink` is
+# there precisely so a route can be installed towards a gateway the interface cannot
+# reach, and `ip route replace` returns zero either way.
+grep -F -e "route replace default" "$CALLS" | grep -q -e "metric 50 onlink" \
+    && fail "3.3: a default route was installed via an interface that carries no address"
+grep -q "switched to backup" <<<"$blackout" \
+    && fail "3.3: the operator was told the switch had succeeded when nothing was switched"
+ok
+teardown
+
+setup
+# And having refused, it says so. The false "switched to backup" being removed here at
+# least made someone look; replacing it with silence would leave the one state where
+# nothing works at all as the quietest state this channel has.
+FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null
+blackout=$(for _ in 1 2 3 4 5; do QMI_START=refuse FAKE_WWAN_ADDR="" PING_RESULT=1 run watchdog; done)
+grep -q "no failover possible" <<<"$blackout" \
+    || fail "3.3: neither channel carries traffic and the operator was told nothing"
+said=$(grep -c "no failover possible" <<<"$blackout")
+[ "$said" -eq 1 ] \
+    || fail "3.3: the blackout was announced $said times over five passes — one every 30s is noise, not an alert"
+ok
+teardown
+
+setup
+# The paired positive control: with the interface addressed, failover must still happen —
+# and be a route, not merely a marker file. Without this line the assertions above would
+# hold just as well against a failover that had stopped working altogether.
+FAKE_WWAN_ADDR="10.0.0.2/30" run watchdog >/dev/null
+for _ in 1 2 3; do FAKE_CONN=connected FAKE_WWAN_ADDR="10.0.0.2/30" PING_RESULT=1 run watchdog >/dev/null; done
+[ -f "$STATE/failover" ] || fail "3.3: failover did not happen for a backup that can carry traffic"
+grep -F -e "route replace default" "$CALLS" | grep -q -e "metric 50 onlink" \
+    || fail "3.3: failover left no default route via the backup"
 ok
 teardown
 

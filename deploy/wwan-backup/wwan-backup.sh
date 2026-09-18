@@ -311,9 +311,38 @@ main_uplink_ok() {
 }
 
 enter_failover() {
-    local gw
+    local gw fails
+    # The precondition is asked of the live interface, never of a file. $STATE_DIR/gw is
+    # written once, by apply_addressing, and nothing clears it short of `down` removing the
+    # whole state directory — so once a session has come up and later died, the file stays
+    # on disk and reads as fresh. Prod, 2026-09-18 07:37: session gone, session_fails at
+    # the bound of 10, and `status` still printing gw: 100.84.1.56.
+    #
+    # Switching on that file puts the default route on an interface with no address, which
+    # `onlink` permits by design and `ip route replace` reports as success — and then tells
+    # the operator the switch worked. No traffic path at all, announced as a completed
+    # failover: worse than not switching, because a false "handled" takes hands away from
+    # the one place they are needed.
+    #
+    # Cleaning gw when the session drops would be the same defect from the other side — a
+    # second record to keep in step with reality, going stale the moment something forgets
+    # to update it. The address on the interface IS the state. Reading it is a local,
+    # free read: deliberately not session_connected, which is a QMI transaction and on a
+    # wedged stack costs 13 seconds of no answer — see the bound gate in session_step.
+    if ! ip -4 -br addr show "$IFACE" 2>/dev/null | grep -q "[0-9]"; then
+        log "failover refused: $IFACE carries no address — the backup cannot carry traffic either"
+        # Both channels are down. The false alert removed above at least made someone look;
+        # silence in its place would make the one state where nothing works the quietest
+        # this channel has. Raised once per outage rather than every pass: `fails` is reset
+        # the moment the primary answers, so the threshold pass re-arms itself and no
+        # second bookkeeping file is needed to remember that we have already spoken.
+        fails=$(read_counter fails)
+        [ "$fails" -eq "$FAIL_THRESHOLD" ] \
+            && alert "primary internet is down and the backup has no usable channel — no failover possible"
+        return 1
+    fi
     gw=$(cat "$STATE_DIR/gw" 2>/dev/null || true)
-    [ -n "$gw" ] || { log "failover: no gw in state — session not up?"; return 1; }
+    [ -n "$gw" ] || { log "failover: $IFACE is addressed but no gw recorded — refusing"; return 1; }
     ip route replace default via "$gw" dev "$IFACE" metric "$FAILOVER_METRIC" onlink
     resolvectl default-route "$MAIN_IFACE" false 2>/dev/null || true
     resolvectl default-route "$IFACE" true 2>/dev/null || true
