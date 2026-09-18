@@ -340,6 +340,36 @@ session_step() {
     timeouts=$(read_counter timeouts)
     renewals=$(read_counter renewals)
 
+    # Past the bound the uplink stops trying on its normal schedule. Unbounded retrying is
+    # what exhausted the modem's client pool: a mechanism that can neither succeed nor stop
+    # makes the problem it was built to solve strictly worse. It still probes occasionally,
+    # because a channel that has stopped trying entirely can never notice it could recover.
+    #
+    # The gate stands ABOVE the liveness check deliberately. That check is a QMI
+    # transaction, and on a wedged stack it is 13 seconds of no answer — so asking it on
+    # every pass while the bound said stop is the very unbounded retrying this gate exists
+    # to prevent, wearing the name of a read. Prod, 2026-09-14, long after the alert had
+    # fired: session_fails 85 against a bound of 10, and timeouts 1439 to show the cost.
+    # What the bound paces is the probe's frequency, not its existence: a skipped pass asks
+    # the modem nothing at all, and the slow-retry pass runs whole — recovery branch and
+    # its alert included.
+    #
+    # It does not delay renewal. `renewals` is capped at MAX_RENEWALS and cleared only by a
+    # success, and the passes before the bound are ungated, so both renewals are already
+    # spent by the time the bound is reached — which is what `renewals: 2` in that same
+    # measurement says. Gating stops burning transactions against a budget that is already
+    # gone, so STALE_AFTER_TIMEOUTS stays as it is.
+    if [ "$fails" -ge "$MAX_SESSION_FAILS" ]; then
+        local since
+        since=$(read_counter since_giveup)
+        since=$((since + 1))
+        echo "$since" > "$STATE_DIR/since_giveup"
+        if [ "$since" -lt "$SLOW_RETRY_EVERY" ]; then
+            return 1
+        fi
+        echo 0 > "$STATE_DIR/since_giveup"
+    fi
+
     if session_connected; then
         # A live session is not a working channel. A re-enumeration recreates the netdev
         # and its address goes with it, while the QMI session survives and keeps
@@ -358,28 +388,17 @@ session_step() {
             alert "backup uplink recovered after $fails failed attempt(s)"
         fi
         # A success clears the allowance, so a later unrelated outage gets a full one.
+        # since_giveup needs no clearing here, and that is a consequence of the gate order
+        # above rather than luck: the gate now runs on every pass, so this branch is only
+        # ever reached with it already zeroed. When the liveness check came first, a
+        # recovery noticed here skipped the gate entirely and left the count standing —
+        # the next outage to reach the bound then got its first slow retry early.
         echo 0 > "$STATE_DIR/session_fails"
         echo 0 > "$STATE_DIR/timeouts"
         echo 0 > "$STATE_DIR/renewals"
         return 0
     fi
     [ "$(qmi_last_status)" = timeout ] && timeouts=$((timeouts + 1))
-
-    # Past the bound the uplink stops trying on its normal schedule. Unbounded retrying is
-    # what exhausted the modem's client pool: a mechanism that can neither succeed nor stop
-    # makes the problem it was built to solve strictly worse. It still probes occasionally,
-    # because a channel that has stopped trying entirely can never notice it could recover.
-    if [ "$fails" -ge "$MAX_SESSION_FAILS" ]; then
-        local since
-        since=$(read_counter since_giveup)
-        since=$((since + 1))
-        echo "$since" > "$STATE_DIR/since_giveup"
-        echo "$timeouts" > "$STATE_DIR/timeouts"
-        if [ "$since" -lt "$SLOW_RETRY_EVERY" ]; then
-            return 1
-        fi
-        echo 0 > "$STATE_DIR/since_giveup"
-    fi
 
     # Renew only on repeated timeouts, never on refusals — see qmi_last_status.
     if [ "$timeouts" -ge "$STALE_AFTER_TIMEOUTS" ] && [ "$renewals" -lt "$MAX_RENEWALS" ]; then

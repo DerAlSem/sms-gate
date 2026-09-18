@@ -244,6 +244,51 @@ resumed=$(grep -c -e "--wds-start-network" "$CALLS")
 ok
 teardown
 
+# --- 4.5 past the bound, a skipped pass asks the modem nothing ------------------
+
+setup
+# The bound exists to stop talking to a modem that cannot answer — and the liveness
+# check talks to it. It used to be asked before the gate, so a wedged stack still got
+# one QMI transaction per pass: 13s of nothing, every 30s, for as long as the fault
+# lasted. Measured in prod on 2026-09-14, long after the alert had fired —
+# session_fails 85 against a bound of 10, and timeouts 1439 to show what that cost.
+for _ in $(seq 1 10); do QMI_START=refuse SLOW_RETRY_EVERY=3 run watchdog >/dev/null; done
+probes=$(grep -c -e "--wds-get-packet-service-status" "$CALLS")
+QMI_START=refuse SLOW_RETRY_EVERY=3 run watchdog >/dev/null
+[ "$(grep -c -e "--wds-get-packet-service-status" "$CALLS")" -eq "$probes" ] \
+    || fail "4.5: a skipped pass past the bound still asked the modem for its status"
+ok
+teardown
+
+setup
+# The paired positive control: a pass below the bound must leave a status request in the
+# call log, or the assertion above — "the count did not move" — would hold just as well
+# in a sandbox that never records one. It controls the harness, not the branch: cmd_up
+# asks for the status too, so this count does not say which caller made the request.
+QMI_START=refuse run watchdog >/dev/null
+[ "$(grep -c -e "--wds-get-packet-service-status" "$CALLS")" -ge 1 ] \
+    || fail "4.5: the liveness check is not made below the bound at all"
+ok
+teardown
+
+setup
+# And the gate must not close the road back: gating the probe is meant to change its
+# frequency, not remove it. So past the bound the recovery branch is still reached — on
+# the slow-retry pass, and not before it.
+#
+# Asserted on the recovery alert, not on a probe count. cmd_up asks for the status too,
+# on its own idempotency path, so a probe in the call log does not say which branch made
+# it — and a version that removed the probe past the bound instead of pacing it counted
+# just the same. The alert only one branch raises is the value this line feeds directly.
+for _ in $(seq 1 10); do QMI_START=refuse SLOW_RETRY_EVERY=3 run watchdog >/dev/null; done
+FAKE_CONN=connected QMI_START=refuse SLOW_RETRY_EVERY=3 run watchdog | grep -q "session recovered" \
+    && fail "4.5: a skipped pass past the bound noticed a recovery — so it asked the modem"
+recovered=$(for _ in 1 2; do FAKE_CONN=connected QMI_START=refuse SLOW_RETRY_EVERY=3 run watchdog; done)
+grep -q "session recovered" <<<"$recovered" \
+    || fail "4.5: the recovery was never noticed past the bound — the road back is closed"
+ok
+teardown
+
 # --- 5.4 a refusal does not restart the proxy ----------------------------------
 
 setup
