@@ -108,6 +108,69 @@ arrived, and none of them show up until tried.
 It costs one call to `+79851600019` (an operator-confirmed МегаФон number the owner has
 released for probes) once an API key exists. **Task 1.1, before anything else is built.**
 
+## Checked against the messenger work, 12.09.2026
+
+The owner parked this change on 11.09 to deliver codes over Telegram and MAX instead, with a
+standing instruction to check with that work before returning here. Done 12.09; the facts below
+came from that session, not from this code, and none of them is a decision.
+
+**By mechanism, the messenger path covers the parking app completely.** It carries arbitrary
+text including links (4096 characters on Telegram, 4000 on MAX), needs no prior binding — a
+user account addresses a subscriber by phone number directly — and therefore works for a
+*first* login, which is the parking case. It needs **no change in `sp_app` at all**: the ladder
+sits behind the existing `POST /sms/send`, and the answer merely gains an optional "carried by"
+field. Where a flash call serves `sp_app` and cannot serve `gmp_app` at all, this serves both.
+
+**By share, nobody has measured it.** How many parking numbers are actually reachable on
+Telegram or MAX is unknown. It is cheap to measure without sending anything, but it means
+running live customer numbers through a third-party unofficial API, and that is the owner's
+decision to give.
+
+**This change's endpoint is not made redundant by it.** `POST /verifications` exists for one
+reason that does not go away: with uCaller the code is born at the vendor — it is the last four
+digits of the calling number — so the application cannot know it. For a messenger or an SMS
+there is no such need.
+
+⚠️ **Two conflicts the owner has to settle, and neither is resolvable from code:**
+
+1. **Telegram's Gateway API is a direct competitor to uCaller and was not in this proposal.**
+   Official, delivers a code by phone number with no bot and no binding, `checkSendAbility`
+   *before* sending, `checkVerificationStatus` for the code the person typed, a TTL of 30–3600
+   seconds, and roughly a dollar a month at the measured 111 МегаФон messages — the same order
+   of price as uCaller's 0,80 ₽.
+
+   Read from the vendor's own reference on 12.09.2026, because the first draft of this paragraph
+   got it wrong and a peer session caught it. A confirmed sendability check is **not** free —
+   *"If the ability to send is confirmed, a fee will apply according to the pricing plan"* — but
+   it is not a second charge either: *"Within the scope of a `request_id`, only one fee can be
+   charged. Calling `sendVerificationMessage` once with the returned `request_id` will be free
+   of charge"*, and *"If a message is **not** delivered within the specified `ttl`, the request
+   fee will be refunded automatically"*.
+
+   So the axis that matters here survives the correction, in a narrower form: **an unreachable
+   subscriber costs nothing either way** — a negative check is free, and a positive check whose
+   message then fails to arrive is refunded. Against that, this change pays for a *placed call*
+   and learns nothing about whether the person read the digits: `call_status: 1` means the call
+   was made, which this proposal already states says nothing about the subscriber seeing the
+   number. And the single unverified link above — whether a flash call reaches a МегаФон
+   subscriber at all — is answerable here only by buying a balance and trying.
+
+   The owner has seen this option and chose user accounts for the *messenger* work; that does
+   not settle it for the paid fallback, which is this change.
+2. **The messenger ladder's bottom rung is "SMS / uCaller" — automatic escalation into a paid
+   channel.** This change forbids exactly that, by the owner's decision of 07–08.09, on the
+   grounds that escalation without a spend ceiling turns a fault into an unbounded bill. The
+   ceiling now exists as a norm here (see `outbound-routing`), so the two can be reconciled —
+   but as written the two designs contradict each other, and the reconciliation is a decision.
+
+**A new legal branch appeared that this change's Telegram note does not cover.** The user-account
+route carries its own exposure — Telegram restricts an account on spam reports, naming links
+among the triggers, first for days and on repeat permanently; the MAX library in question
+declares itself an unofficial internal API; MAX's official client surface is an application-only
+programme. Our own open branch (a bot asking for a phone number as grounds for login) is
+untouched by their design and remains unresolved and waiting on a lawyer — both belong in front
+of the same lawyer.
+
 ## Capabilities
 
 ### New Capabilities
