@@ -227,11 +227,29 @@ for it was refunded, which the vendor reports as `is_refunded` on the same objec
 assuming either that it was or that it was not.
 
 **When a verification becomes terminal — confirmed, expired, or out of attempts — the gateway
-SHALL revoke any message still outstanding for it** with `revokeVerificationMessage`. This is
-the same rule as "a finished verification stops holding a usable secret", applied to the copy
-of the secret that is not here: a code still deliverable after the verification it belongs to
-has closed is a code that reaches a person who then has nowhere to type it, and on a shared
-device it is a code that reaches somebody else.
+SHALL ask the vendor to revoke any message still outstanding for it** with
+`revokeVerificationMessage`, because the call is free and may yet do something. It SHALL NOT
+treat the vendor's answer as evidence that the code stopped being readable, and **no guarantee
+of this capability SHALL rest on revocation succeeding.**
+
+🔴 **Measured 18.09.2026, twice, and it is the reason this requirement is worded that way.**
+`revokeVerificationMessage` answered `{"ok": true, "result": true}` both for a message the
+subscriber had already read and for one revoked within a second of delivery, before it could be
+read. In both trials the message stayed visibly in the chat, and `delivery_status.status`
+remained `read` and `delivered` respectively — it never became `revoked`. The vendor's `true`
+therefore reports that the request was accepted, not that anything was withdrawn, and the two
+are indistinguishable through the API.
+
+⚠️ The trials ran on an unfunded account using free messages to the account holder's own
+number. Whether a **paid** message to a third party revokes differently is not known and SHALL
+NOT be assumed in either direction; a live sample decides it, not this paragraph.
+
+This is the same shape as `call_status: 1` on the other rung, and it earns the same treatment:
+a vendor's acknowledgement is a fact about our request, never about the subscriber's screen.
+The guarantee that a finished verification stops being usable is therefore carried **here** —
+the code is matched by this gateway, and a terminal verification refuses it regardless of what
+is still sitting in a chat. What is lost without a working revocation is tidiness and the
+shared-device case, not the guarantee.
 
 **The asymmetry between the two paid rungs is worth stating rather than discovering.** This
 route can prove that a code arrived; the `call` route cannot, and says so above. The change's
@@ -241,7 +259,7 @@ person. That does not make the rungs interchangeable, and it does not reorder th
 means the two rungs will never be equally well evidenced, and a comparison of their success
 rates is comparing two different measurements.
 
-[unbacked · vendor reference: Telegram Gateway API, `DeliveryStatus`, `RequestStatus.is_refunded`, `revokeVerificationMessage`, read 18.09.2026 — no live sample captured]
+[normative · live sample captured 18.09.2026 in `captures/` — `sendVerificationMessage`, `checkVerificationStatus`, `revokeVerificationMessage` against the account holder's own number. Delivery `sent`→`delivered` in one second, `read` at 71 s; `request_cost: 0` with `remaining_balance: 0`; the number echoed back without its leading `+`; `verification_status`, `is_refunded` and `remaining_balance` absent from responses that do not need them; revocation observably inert · conf: high for the free self-send path, unknown for paid third-party sends]
 
 #### Scenario: The message is delivered
 - **WHEN** the vendor reports `delivery_status.status` of `delivered`
@@ -255,9 +273,13 @@ rates is comparing two different measurements.
 - **WHEN** the vendor reports `delivery_status.status` of `expired`
 - **THEN** the verification fails with that reason, and the refund the vendor reports is recorded against it
 
-#### Scenario: A finished verification's message is withdrawn
+#### Scenario: A finished verification asks for its message back
 - **WHEN** a verification carried by `tg_gateway` is confirmed, expires or runs out of attempts while its message is still outstanding
-- **THEN** the message is revoked at the vendor
+- **THEN** revocation is requested at the vendor, and the verification is terminal whether or not the request changes anything
+
+#### Scenario: The vendor says it revoked and the message is still there
+- **WHEN** revocation answers `true` but the message remains readable by the subscriber
+- **THEN** the code is still refused by this gateway, because the terminal state decides it and the vendor's answer does not
 
 ### Requirement: A vendor callback changes nothing until its signature verifies
 
