@@ -15,22 +15,35 @@ how. The gateway SHALL choose the method from the routing rule, SHALL return tha
 the same response together with the verification's id, and SHALL NOT accept a request it
 already knows it cannot fulfil in order to fail it afterwards.
 
-The response SHALL describe what the person must do — expect a call and read its last four
-digits, or expect an SMS — and SHALL NOT expose which SIM, modem or vendor is involved. The
-application SHALL NOT have to look up an operator or hold a table of which networks work.
+The response SHALL describe what the person must do — expect a message in Telegram, or expect a
+call and read its last four digits, or expect an SMS — and SHALL NOT expose which SIM, modem or
+vendor account is involved. The application SHALL NOT have to look up an operator or hold a
+table of which networks work.
 
-The bar on disclosure is on identity, not on address: a method that requires the person to
-address the gateway SHALL carry the number to address and nothing else about the estate. The
-reserve path `verify-by-inbound-code` is that case — it must name the number the subscriber
-texts — and this capability SHALL remain the single owner of `POST /verifications`,
-`POST /verifications/{id}/check` and `GET /verifications/{id}`, a method being a variant
-within it rather than a capability of its own.
+The bar on disclosure is on identity, not on address: a method that requires the person to look
+somewhere, or to address the gateway, SHALL carry what they need to do that and nothing else
+about the estate. "Open Telegram" is the address; which Gateway account paid for it is the
+identity. The reserve path `verify-by-inbound-code` is the same case in the other direction —
+it must name the number the subscriber texts — and this capability SHALL remain the single
+owner of `POST /verifications`, `POST /verifications/{id}/check` and
+`GET /verifications/{id}`, a method being a variant within it rather than a capability of its
+own.
+
+Because the paid route is a ladder, the method named in the response is the rung that actually
+accepted the verification, not the first rung attempted. An application told to expect a
+Telegram message for a person the Gateway declined would put the wrong instruction on the
+screen, which is worse than no instruction: the person waits in the wrong place while a phone
+they are holding rings.
 
 [unbacked · the public API today is `/sms/send` and `/sms/{id}` only]
 
 #### Scenario: A number on an operator routed to the call
-- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `call`
+- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, call]` and the Gateway declines the subscriber
 - **THEN** the response carries the verification id and names the call method, and the call is placed
+
+#### Scenario: The rung that accepted is the method reported
+- **WHEN** the same request is made for a subscriber the Gateway confirms
+- **THEN** the response names the Telegram method rather than the call, and no call is placed
 
 #### Scenario: A number on an operator routed to the modem
 - **WHEN** a verification is requested for a number on any other operator
@@ -45,14 +58,24 @@ within it rather than a capability of its own.
 The gateway SHALL generate the code. A request that supplies its own code SHALL be rejected
 rather than silently honoured.
 
-The reason is not tidiness. The code has to be the last four digits of the number the vendor
-calls from, which the vendor allocates; and the party that answers "is this code correct" must
-be the party that knows what to compare against. Splitting the secret from its matcher is what
-makes short codes unsafe.
+The reason is not tidiness. The party that answers "is this code correct" must be the party
+that knows what to compare against; splitting the secret from its matcher is what makes short
+codes unsafe.
 
-A code SHALL be four digits, by the owner's decision of 07.09.2026. Two verifications open at
-the same time for the same number SHALL NOT carry the same code, because an answer could then
-not be attributed to either with certainty.
+A code SHALL be four digits, by the owner's decision of 07.09.2026. Every route SHALL be able
+to carry it: `sendVerificationMessage` accepts a caller-supplied `code` of four to eight
+numeric characters, so four is within it, and the `modem` route composes it into text. Two
+verifications open at the same time for the same number SHALL NOT carry the same code, because
+an answer could then not be attributed to either with certainty.
+
+Where a route's vendor can also generate a code of its own, the gateway SHALL NOT let it. On
+`tg_gateway` this means `code` SHALL always be supplied and `code_length` SHALL NOT be used:
+delegating generation puts the secret at the vendor and leaves the matcher here with nothing
+to compare against, which is the same split this requirement forbids on the application's side.
+
+The `call` route is the one exception, and it runs the other way: there the code is the last
+four digits of a number the vendor allocates, so what the gateway supplies is a request rather
+than a decision. That case is governed below.
 
 [unbacked]
 
@@ -75,6 +98,40 @@ A verification SHALL expire, and SHALL allow a bounded number of wrong answers b
 accepting any. Four digits is a small space and the only thing standing between it and a
 guessing attack is the attempt limit; without one, a caller reaches the right answer in a few
 thousand requests.
+
+**Both bounds SHALL be settings, and their shipped defaults SHALL be five minutes and five
+attempts — the owner's decision of 18.09.2026.** Neither number is arbitrary and neither is
+free to drift:
+
+- five minutes is `delivery_timeout_seconds`, which is 300 in `app/settings_store.py`. A
+  verification that outlives the message carrying it would sit open waiting on an outcome the
+  sender has already abandoned;
+- five attempts is `blacklist_threshold`, which is 5 in the same table. A person who has
+  exhausted an operator's patience five times over is the same person either way, and two
+  different numbers for "enough" is two support answers to one question;
+- from below, five minutes is propped by the vendor's free repeat, which cannot be used sooner
+  than sixty seconds after the original: a window shorter than a few multiples of that leaves
+  the free remedy unreachable;
+- from above, it is propped by the vendor's ten-hour block on a number that exceeds its
+  per-number limits. Every minute a verification stays open is a minute in which the person
+  asks again, and asking again is what walks into that block.
+
+🔴 **This diverges from the contract already in the parking developer's hands**, which states
+ten minutes to the end user and carries an `expires_at`. The divergence is deliberate and it is
+the contract that moves, not this norm — but sending that letter is the owner's, and task 3.1
+carries it. Nothing here may be built as though the developer had already agreed.
+
+Where a route's vendor holds its own expiry, the gateway SHALL set it from the verification's
+remaining lifetime rather than from a constant of its own. On `tg_gateway` that is `ttl`, whose
+supported range is 30 to 3600 seconds, so five minutes sits inside it; setting it to anything
+longer than the verification would also forfeit the automatic refund on non-delivery, which is
+tied to that same `ttl`.
+
+The attempt count SHALL be kept here and SHALL NOT be delegated to a vendor that offers to keep
+it. Telegram's `checkVerificationStatus` will match a code and report
+`code_max_attempts_exceeded` on a counter of its own; using it would mean two authorities
+counting the same thing, on different routes, with different limits, and a person exhausting
+one while the other still says four left. The gateway matches the code it generated.
 
 Confirming a verification and consuming an attempt SHALL each be decided by a single
 conditional update, on the rows it changed, and SHALL NOT be decided by reading the state and
@@ -104,6 +161,14 @@ double-taps `Confirm` as a matter of course.
 - **WHEN** the correct code is checked after the verification expired
 - **THEN** it is not confirmed, and the answer says it expired
 
+#### Scenario: The vendor's expiry follows the verification's
+- **WHEN** a verification is handed to `tg_gateway`
+- **THEN** the `ttl` sent with it is the verification's remaining lifetime, not a constant of the adapter's own
+
+#### Scenario: The attempt limit is not the vendor's
+- **WHEN** a verification carried by `tg_gateway` is checked with a wrong code
+- **THEN** the attempt is consumed against this gateway's limit, and the vendor's own code-checking endpoint is not called
+
 ### Requirement: A placed call is not a delivered code, and the two are not reported as one
 
 On the call route the vendor reports whether it managed to place the call. That is all it
@@ -118,6 +183,10 @@ it. A verification SHALL become confirmed only through the check above.
 The gateway SHALL bound how long it waits for `-1` to resolve and SHALL record an unresolved
 outcome as unknown rather than as either success or failure. The vendor's documentation gives
 a resolution time of one second to one minute.
+
+The rest of this requirement governs the `call` route alone, and SHALL NOT be carried across to
+the other routes. On `tg_gateway` and on `modem` the code is the gateway's own from end to end,
+and a rule that prefers a vendor-reported code there would prefer a value no vendor sets.
 
 The code a verification is matched against SHALL be the one the vendor reports for that call,
 not the one requested. `code` is optional on `initCall` and `getInfo` reports a `code` of its
@@ -145,6 +214,85 @@ from every subscriber suddenly typing the wrong code, and every instance of it i
 - **WHEN** `call_status` is still `-1` when the wait bound is reached
 - **THEN** the outcome is recorded as unknown, and it is neither counted as a placed call nor as a failure
 
+### Requirement: Telegram's delivery report says more than a call's, and still does not say the code was used
+
+On `tg_gateway` the vendor reports a `delivery_status` whose `status` is one of `sent`,
+`delivered`, `read`, `expired` or `revoked`. The gateway SHALL record it and SHALL treat
+`delivered` as the analogue of a delivery report on the modem route — evidence the message
+arrived — and `read` as evidence it was opened. It SHALL treat neither as confirmation: a
+verification SHALL become confirmed only through a correct code at `POST /verifications/{id}/check`.
+
+`expired` SHALL fail the verification with that reason. The gateway SHALL record that the fee
+for it was refunded, which the vendor reports as `is_refunded` on the same object, rather than
+assuming either that it was or that it was not.
+
+**When a verification becomes terminal — confirmed, expired, or out of attempts — the gateway
+SHALL revoke any message still outstanding for it** with `revokeVerificationMessage`. This is
+the same rule as "a finished verification stops holding a usable secret", applied to the copy
+of the secret that is not here: a code still deliverable after the verification it belongs to
+has closed is a code that reaches a person who then has nowhere to type it, and on a shared
+device it is a code that reaches somebody else.
+
+**The asymmetry between the two paid rungs is worth stating rather than discovering.** This
+route can prove that a code arrived; the `call` route cannot, and says so above. The change's
+own unproven link — whether a paid route reaches a МегаФон subscriber at all — is therefore
+answerable on this rung from the vendor's own report, and on the other rung only by asking the
+person. That does not make the rungs interchangeable, and it does not reorder the ladder: it
+means the two rungs will never be equally well evidenced, and a comparison of their success
+rates is comparing two different measurements.
+
+[unbacked · vendor reference: Telegram Gateway API, `DeliveryStatus`, `RequestStatus.is_refunded`, `revokeVerificationMessage`, read 18.09.2026 — no live sample captured]
+
+#### Scenario: The message is delivered
+- **WHEN** the vendor reports `delivery_status.status` of `delivered`
+- **THEN** the verification is open and awaiting a code, and it is not reported as confirmed
+
+#### Scenario: The message is read
+- **WHEN** the vendor reports `delivery_status.status` of `read`
+- **THEN** the verification is still not confirmed, and only a correct code confirms it
+
+#### Scenario: The message expires unread
+- **WHEN** the vendor reports `delivery_status.status` of `expired`
+- **THEN** the verification fails with that reason, and the refund the vendor reports is recorded against it
+
+#### Scenario: A finished verification's message is withdrawn
+- **WHEN** a verification carried by `tg_gateway` is confirmed, expires or runs out of attempts while its message is still outstanding
+- **THEN** the message is revoked at the vendor
+
+### Requirement: A vendor callback changes nothing until its signature verifies
+
+Where a vendor delivers outcomes by callback, the gateway SHALL verify that the callback is the
+vendor's before it changes any state. Telegram's Gateway signs each callback with an
+`X-Request-Signature` (HMAC-SHA-256) over a body timestamped by `X-Request-Timestamp`; the
+gateway SHALL check both, SHALL reject a callback whose signature does not verify or whose
+timestamp is outside a configured tolerance, and SHALL change no verification's state on a
+rejected one.
+
+An unauthenticated callback endpoint that moves a verification's state is a way to confirm a
+verification without the code ever reaching the person — the same guarantee the code-secrecy
+requirement protects, given away at a different door. The endpoint is public by necessity: the
+vendor has to reach it.
+
+This does not reopen the uCaller webhook. `inboundCallWaiting` stays out of this change because
+its payload is not documented, and a parser may not be written from guesses; the difference here
+is that the Gateway's callback body, its headers and its signature scheme are all in the
+vendor's reference. A rejected callback SHALL be counted, because a run of them is either an
+attack or a rotated secret, and both need to be visible.
+
+[unbacked · vendor reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026]
+
+#### Scenario: A callback that does not verify
+- **WHEN** a callback arrives whose signature does not verify
+- **THEN** no verification changes state, and the rejection is counted
+
+#### Scenario: A callback replayed later
+- **WHEN** a correctly signed callback arrives with a timestamp outside the configured tolerance
+- **THEN** it is rejected on the same terms
+
+#### Scenario: A callback that verifies
+- **WHEN** a correctly signed and timely callback reports a delivery outcome
+- **THEN** the verification's recorded delivery outcome is updated from it
+
 ### Requirement: The vendor's per-number limits are enforced here, before the vendor enforces them
 
 uCaller allows four authorisations per number per minute with at least fifteen seconds between
@@ -164,7 +312,16 @@ vendor is Russian, so a calendar day read in the wrong zone leaves a three-hour 
 our counter has reset and theirs has not — and the gateway confidently places the call that
 costs the subscriber ten hours.
 
-[unbacked · vendor reference, read 08.09.2026]
+**Telegram's reference publishes no rate limits at all, and that SHALL NOT be read as their
+absence.** The gate this change works under says a vendor's reference binds what we may assert
+about it, and silence is not a statement that a limit does not exist — it is the absence of one.
+The per-number limits configured here SHALL therefore be applied to the **ladder as a whole**
+rather than to the `call` rung alone. They exist to keep a person from being blocked by a
+vendor, and a rung whose block conditions are unpublished is the one to be more careful with,
+not less. If a live sample later shows the Gateway publishing or enforcing its own, the limits
+become the stricter of the two, exactly as they already do for a calendar day.
+
+[unbacked · vendor reference, uCaller read 08.09.2026, Telegram Gateway read 18.09.2026]
 
 #### Scenario: A second attempt too soon
 - **WHEN** a verification is requested for a number eight seconds after the previous one
@@ -246,14 +403,38 @@ The gateway SHALL record the vendor's reported cost of each paid verification an
 an operator alert when the vendor's reported balance falls below a configured floor.
 
 A prepaid vendor fails by running out, and it fails at the worst moment: the balance is fine
-until it is not, and the first symptom is every verification failing at once. `getInfo`
-returns both `cost` and `balance` on every enquiry, so this costs nothing extra to know.
+until it is not, and the first symptom is every verification failing at once. Both vendors
+report it for nothing: uCaller's `getInfo` returns `cost` and `balance` on every enquiry, and
+Telegram's `RequestStatus` returns `request_cost` and `remaining_balance`.
 
-[unbacked · vendor reference: `getInfo` returns `cost` and `balance`, read 08.09.2026]
+**There are two balances now, and the floor SHALL be held against each of them separately.** A
+single floor over a sum would be satisfied by one funded account while the other is empty, and
+the empty one is a rung of the same ladder. Every alert SHALL name which vendor it is about.
+
+**A refund SHALL lower the recorded spend, not be left as an asterisk.** Telegram reports
+`is_refunded` on the request it refunded, and a verification whose fee came back cost nothing;
+a ledger that records the charge and ignores the refund overstates the bill in the one
+direction that makes the route look worse than it is, and it does so silently.
+
+The gateway SHALL also record, separately from both, what it spent **without getting anything
+for it**: an ability check that did not answer within the bound may have been confirmed and
+charged at the vendor without our ever learning the `request_id`. Such a fee cannot be spent
+and cannot be refunded. It is the only class of spend this design cannot attribute to a
+verification, and if it is not counted it appears as a balance that drifts for no reason.
+
+[unbacked · vendor references: uCaller `getInfo` (`cost`, `balance`) read 08.09.2026; Telegram Gateway `RequestStatus` (`request_cost`, `is_refunded`, `remaining_balance`) read 18.09.2026]
 
 #### Scenario: The balance runs low
-- **WHEN** the vendor's reported balance falls below the configured floor
-- **THEN** the operator is alerted once within the dedup window, before verifications start failing
+- **WHEN** one vendor's reported balance falls below the configured floor while the other's is healthy
+- **THEN** the operator is alerted once within the dedup window, with that vendor named, before verifications start failing
+
+#### Scenario: A refunded request
+- **WHEN** the vendor reports a request as refunded
+- **THEN** the recorded spend for that verification falls to nothing, rather than keeping the charge with a note beside it
+
+#### Scenario: A fee that bought nothing
+- **WHEN** an ability check does not answer within the bound
+- **THEN** it is counted as possibly-charged spend attributable to no verification, and the count is readable beside the attributed spend
 
 #### Scenario: A month's spend is answerable
 - **WHEN** an operator asks what the call route cost last month
@@ -266,8 +447,14 @@ returns both `cost` and `balance` on every enquiry, so this costs nothing extra 
 ### Requirement: A verification is a stored thing with an owner, a deadline and a secret that stops existing
 
 A verification SHALL be persisted before the vendor is called, carrying at minimum its id, the
-application that requested it, the normalised number, the route assigned to it, the code, the
-attempts spent, the deadline, its state, and the vendor's identifiers and reported cost.
+application that requested it, the normalised number, the code, the attempts spent, the
+deadline, its state, and — per rung attempted — that rung's route, the vendor's identifiers for
+it, its reported cost and whether that cost was refunded.
+
+Per rung rather than per verification, because a ladder has more than one: a verification that
+tried Telegram and then placed a call holds two vendor identifiers, two costs and one code, and
+a row shaped for a single route answers "what did this person's login cost" by overwriting half
+of it. The verification SHALL name which rung carried the code it is matching against.
 
 It SHALL belong to the application that created it. `GET /verifications/{id}` and
 `POST /verifications/{id}/check` SHALL answer only to that application, and SHALL be
@@ -362,6 +549,21 @@ SHALL answer with the verification's id and its method within that bound; a vend
 not answered SHALL leave the verification in a stated in-flight state rather than failing the
 request, and its outcome SHALL reach the application by the ordinary push or poll.
 
+**The ladder's rung SHALL be decided within that same bound**, and the bound SHALL cover the
+ladder as a whole rather than each rung separately — otherwise two rungs of a slow day take
+twice the time the application was promised. A rung that has not answered when the bound is
+reached SHALL be abandoned in favour of the next, and the last rung's silence SHALL leave the
+verification in flight as above.
+
+The method SHALL NOT be answered as unknown or as pending. It is the only part of the response
+the person acts on: an application that cannot say whether to watch Telegram or the phone has
+nothing to put on the screen, and the whole reason the method travels in the creation response
+is that the person is already standing at the barrier.
+
+That is why the abandoned check is counted rather than shrugged at. A Gateway that answers
+slowly instead of refusing turns the cheap rung off silently: every verification still
+completes, by call, at full price, and the only visible symptom is the bill.
+
 The gateway already refuses to make acceptance wait on a slow thing it does not control —
 `outbound-send` states that acceptance does not wait for the modem — and it already bounds its
 one existing outbound lookup for the same reason. Without a bound the parking app's HTTP
@@ -373,6 +575,10 @@ and the call may well have been placed and charged in the meantime.
 #### Scenario: The vendor is slow
 - **WHEN** the vendor has not answered within the configured bound
 - **THEN** the request is answered with the verification's id and method, and the verification is in flight rather than failed
+
+#### Scenario: A slow rung does not extend the promise
+- **WHEN** the first rung of a ladder consumes most of the bound before the second is tried
+- **THEN** the response still arrives within the one bound, naming a method
 
 ### Requirement: An open verification ends by itself, and its end is announced
 
@@ -393,6 +599,49 @@ standing requirement.
 #### Scenario: Nobody ever comes back with a code
 - **WHEN** a verification passes its deadline with no check attempted
 - **THEN** the sweep expires it and the application is notified once
+
+### Requirement: The text of an SMS-carried verification comes from the application's own template, and there is no default
+
+Where a verification is carried on the `modem` route, its text SHALL be composed from a
+template configured **per application**, in the manner `delivery-dispatch` already configures a
+dispatch route per application. A request from an application that has no template SHALL be
+refused, with a reason naming the missing template, at the moment the request is accepted
+rather than when the message is composed.
+
+There SHALL be no built-in default text, and the gateway SHALL NOT compose wording of its own.
+This is the owner's decision of 18.09.2026, and the reason is that a default is a wording
+decision taken silently on behalf of applications that do not share a voice: `sp_app` sends
+`SokolParking: ####` and nothing else — 446 of 448 messages since 01.08 — while the others are
+free text under other names. A person reading a code signed by something they do not recognise
+treats it as the fraud it resembles.
+
+Refusing at accept rather than at compose matters for money as much as for tidiness: by compose
+time the request has passed the entitlement and the ceiling, and on a ladder it may already have
+bought a rung. A missing template is knowable before any of that.
+
+A template SHALL be validated when it is saved: it SHALL carry exactly one placeholder, the
+code, and a template carrying none, carrying it twice, or carrying an unknown placeholder SHALL
+be refused at save time. A template that silently drops the code sends a person a message with
+nothing in it to type.
+
+The template governs the `modem` route only. `tg_gateway` has no message body to supply —
+`sendVerificationMessage` takes a `code` and no text — and `call` carries no text at all, so an
+application without a template SHALL still be served by those rungs. The refusal follows the
+rung, not the application.
+
+[unbacked · per-application configuration precedent: the dispatch-route setting in delivery-dispatch]
+
+#### Scenario: An application with no template asks for an SMS-carried verification
+- **WHEN** a verification is requested by an application with no template, for a number whose operator is routed `modem`
+- **THEN** it is refused at accept with a reason naming the missing template, and no message is composed
+
+#### Scenario: The same application on a paid rung
+- **WHEN** the same application requests a verification for a number whose operator is routed to a paid ladder
+- **THEN** the absence of a template does not refuse it, because neither paid rung carries text of ours
+
+#### Scenario: A template that would drop the code
+- **WHEN** a template with no code placeholder is saved
+- **THEN** the save is refused with that reason
 
 ### Requirement: A verification carried by the modem takes that message's outcome
 

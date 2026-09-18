@@ -1,20 +1,29 @@
 ## Purpose
 
-Which way out the gateway reaches a subscriber. There are two — the local modem, which
-carries arbitrary text, and a vendor flash call, which carries four digits and nothing else —
-and this capability owns the choice between them, the rule that expresses it, what a route is
-capable of carrying, and what happens when the choice cannot be honoured. It exists because
-the modem route has been withdrawn by operators before, at whole-estate scale, and the
-replacement must be reachable by configuration rather than by deploying code during an
-outage.
+Which way out the gateway reaches a subscriber. There are three — the local modem, which
+carries arbitrary text; Telegram's Gateway API, which carries a verification code to a
+subscriber reachable in Telegram; and a vendor flash call, which carries four digits as the
+last digits of a calling number. This capability owns the choice between them, the rule that
+expresses it, the order in which the paid ones are tried, what a route is capable of carrying,
+and what happens when the choice cannot be honoured. It exists because the modem route has
+been withdrawn by operators before, at whole-estate scale, and the replacement must be
+reachable by configuration rather than by deploying code during an outage.
 
 ## ADDED Requirements
 
 ### Requirement: Every outbound attempt is assigned exactly one route before it leaves
 
-A message or a verification SHALL be assigned a route — `modem` or `call` — before any
-transmission is attempted, and that assignment SHALL be recorded against it. It SHALL NOT be
-carried by a route other than the one recorded, and SHALL NOT be carried by two.
+A message or a verification SHALL be assigned a route — `modem`, `tg_gateway` or `call` —
+before any transmission is attempted, and that assignment SHALL be recorded against it. It
+SHALL NOT be carried by a route other than the one recorded, and SHALL NOT be carried by two
+at once.
+
+Where a ladder advances a verification from one paid rung to the next, each rung SHALL be a
+recorded attempt of its own, carrying its own route, its own vendor identifiers and its own
+cost. The verification SHALL name the route that actually carried the code it is matching
+against. A ladder written as one attempt whose route changes underneath it cannot answer what
+the second rung cost or why the first was abandoned, and both questions are asked the first
+time a bill looks wrong.
 
 The recorded route SHALL be readable afterwards, because the cost, the outcome vocabulary and
 the meaning of success all differ by route, and none of them can be reconstructed afterwards
@@ -26,6 +35,14 @@ The route names the way out. The method an application is told about SHALL be de
 route by a mapping this capability owns and states, and no other capability SHALL define a
 second vocabulary for the same decision. Two words for one choice agree while there are
 exactly two routes and disagree on the day there is a third.
+
+**That day arrived on 18.09.2026**, and the disagreement it predicted is real rather than
+hypothetical: the messenger ladder proposed on 12.09.2026 names the same three ways out
+`tg_gateway`, `modem` and `flash_call`, on a second axis separate from a direction of
+`outbound`/`inbound`. This capability adopts `tg_gateway` and `modem` from that list verbatim,
+so that the contest is down to one word — `call` here against `flash_call` there. Which of the
+two survives is the owner's decision across both changes, not this one's, and until it is
+taken the gateway SHALL hold exactly one of them in code.
 
 [unbacked · no route concept exists in the code today]
 
@@ -43,22 +60,37 @@ Route selection SHALL be expressed as configuration read at send time, keyed on 
 recipient's operator as recorded in `number_operators`. Adding, changing or removing an
 operator's route SHALL NOT require a code change or a deploy.
 
+An entry's value SHALL be an **ordered list** of routes rather than a single one, and the
+gateway SHALL try them in the order written. A single-route entry is the list of length one,
+so the modem's own entries are unaffected. The order is the thing being configured: which
+paid way out is attempted first is a money decision, it changes as vendors' prices and
+reachability change, and it is precisely the decision that must not need a deploy.
+
 No operator name SHALL appear in a branch in the sending path. The rule's initial content —
-МегаФон to `call`, everything else to `modem` — is data, and the change that introduces it is
-not permitted to hard-code it, because the event this capability exists for is the next
-withdrawal rather than this one.
+МегаФон to `[tg_gateway, call]`, everything else to `[modem]` — is data, and the change that
+introduces it is not permitted to hard-code it, because the event this capability exists for
+is the next withdrawal rather than this one. Nor SHALL the ladder's order be hard-coded: an
+implementation that tries Telegram first because the code says so, rather than because the
+entry says so, satisfies the letter of this requirement and defeats it.
 
 The rule SHALL NOT be keyed on the originating application. An `app_id` in the rule is the
 same hard-coding moved into configuration, and it would route by who is asking rather than by
 what is reachable. Who is allowed to spend on a paid route is a separate question from which
 route reaches a subscriber, and it is answered below rather than by the rule.
 
-The rule SHALL be held as a typed setting of its own, validated when it is saved: each entry
-SHALL name an operator and a route drawn from the known routes, entries SHALL be stripped of
-surrounding whitespace on write as well as on read, and an entry naming an unknown route SHALL
-be refused at save time rather than discovered at send time. It SHALL NOT be carried by the
-existing dispatch-route setting, which requires a webhook URL on every entry and would reject
-this rule outright.
+The rule SHALL be held in `settings` as a typed setting of its own, validated when it is
+saved: each entry SHALL name an operator and a non-empty ordered list of routes drawn from the
+known routes, entries SHALL be stripped of surrounding whitespace on write as well as on read,
+and an entry naming an unknown route, or naming the same route twice, SHALL be refused at save
+time rather than discovered at send time. It SHALL NOT be carried by the existing
+dispatch-route setting, which requires a webhook URL on every entry and would reject this rule
+outright.
+
+**`settings` rather than `.env`, by the owner's decision of 18.09.2026**, and the code had
+already shown why: `seed_from_env()` copies an environment variable into `settings` only for a
+key that has no row yet, so `.env` is a one-time seed and never the place a value lives. A
+rule kept in `.env` would also need a restart to change, and a restart drops sending sessions
+— which is the deploy this requirement exists to avoid, merely spelled differently.
 
 A stored rule that cannot be parsed SHALL raise an operator alert and SHALL NOT be treated as
 an empty rule. Read as empty, a broken rule sends the whole of an operator's traffic back to
@@ -72,16 +104,76 @@ differently.
 [unbacked]
 
 #### Scenario: An operator with a configured route
-- **WHEN** the rule routes МегаФон to `call` and a verification is requested for a МегаФон number
-- **THEN** the verification is routed `call`
+- **WHEN** the rule routes МегаФон to `[tg_gateway, call]` and a verification is requested for a МегаФон number
+- **THEN** the verification is routed `tg_gateway` first, and `call` only if that rung declines it
+
+#### Scenario: The ladder's order is data, not code
+- **WHEN** the entry for an operator is rewritten as `[call, tg_gateway]` while the service is running
+- **THEN** subsequent verifications for that operator try `call` first, with no restart and no code change
 
 #### Scenario: An operator with no entry in the rule
 - **WHEN** an item is addressed to an operator the rule does not mention
 - **THEN** it is routed `modem`, the configured default
 
+#### Scenario: An entry naming a route that does not exist
+- **WHEN** a rule entry naming an unknown route is saved
+- **THEN** the save is refused with that reason, and the rule in force is unchanged
+
 #### Scenario: The rule changes without a deploy
 - **WHEN** a second operator is added to the rule while the service is running
 - **THEN** subsequent items for that operator take the new route, with no restart and no code change
+
+### Requirement: A route's credentials live in `settings`, marked secret, and never in the environment
+
+A route that needs credentials SHALL read them from `settings`, and each SHALL be its own
+setting marked secret. The admin console SHALL be able to say whether a credential is
+configured and SHALL NOT render its value; changing one SHALL NOT require a restart. The
+gateway already holds a secret on exactly these terms — `alert_bot_token` — and this is that
+precedent, not a new mechanism.
+
+**`.env` is not where such a value lives, and this is a fact about the code rather than a
+preference.** `seed_from_env()` copies an environment variable into `settings` only for a key
+that has no row yet: placed before the first run it is copied once and lives in `settings`
+afterwards, and placed after, it is read by nobody. The gateway SHALL NOT read a vendor
+credential from the environment at send time. Owner's decision of 18.09.2026, confirming what
+the code had already shown on 11.09.2026.
+
+There are two vendors behind the ladder and therefore two credentials: uCaller's, a single
+bearer string carrying both an API key and a service id, and Telegram Gateway's bearer token.
+They SHALL be separate settings. A route whose credential is absent SHALL NOT be attempted and
+SHALL NOT be called unauthenticated to find out.
+
+A rung skipped for a missing credential SHALL raise an operator alert on the configuration the
+gateway ships with, and the ladder SHALL then advance past it as it would past a decline. This
+is deliberately the lesser of two bad outcomes: refusing an operator's traffic outright because
+the *cheap* rung is unconfigured means nobody on that network logs in, while advancing means
+paying more than intended — bounded by the spend ceiling, and loudly. It is the one place in
+this capability where a configuration gap costs money rather than traffic, and it is written
+down so that it is a decision rather than a discovery.
+
+**A ladder every one of whose rungs was skipped SHALL fail the verification with a reason
+naming the missing credentials, and SHALL NOT fall back to `modem`.** Advancing past the last
+rung leaves nothing to advance to, and the quiet answer — sending it over the modem — is the
+silent fallback this capability forbids everywhere else, reached here by exhausting a list
+rather than by deciding anything.
+
+[unbacked · `is_secret` precedent and `seed_from_env()`: app/settings_store.py]
+
+#### Scenario: A credential placed in the environment after the first run
+- **WHEN** a vendor credential is written to `.env` for a key that already has a row in `settings`
+- **THEN** the running gateway does not use it, and the value in `settings` remains the one in force
+
+#### Scenario: A secret is not rendered
+- **WHEN** an operator opens the settings page
+- **THEN** it says whether each vendor credential is configured, and shows neither value
+
+#### Scenario: A rung with no credential
+- **WHEN** the first rung of a ladder has no credential configured
+- **THEN** it is not attempted, the operator is alerted on stock settings, and the ladder advances to the next rung
+
+#### Scenario: A ladder with no credential anywhere
+- **WHEN** no rung of an operator's ladder has a credential configured
+- **THEN** the verification fails with a reason naming them, and nothing is sent over the modem instead
 
 ### Requirement: Operator names are matched normalised, never by exact string
 
@@ -151,7 +243,15 @@ the default route is a guess.
 Each route SHALL declare what it can carry. The `modem` route carries arbitrary text. The
 `call` route carries a verification code and nothing else: the code is the last four digits of
 the calling number, so there is no field in which words, a link or a second sentence could
-travel.
+travel. The `tg_gateway` route carries a verification code and nothing else either, for a
+different reason — `sendVerificationMessage` accepts a `code` and a `code_length` and no
+message body at all, the wording being Telegram's rather than ours.
+
+**Adding the third route therefore does nothing for the applications that are not sending
+codes.** `gmp_app`, which sent 63 of August's 111 МегаФон messages and is growing, sends free
+text with links, and neither paid route has a field to put it in. The ladder widens how a
+*code* reaches a МегаФон subscriber; it does not narrow what this change costs the other
+applications, and that cost is stated in the proposal unchanged.
 
 An item whose assigned route cannot carry it SHALL NOT be handed to that route, SHALL NOT be
 rerouted to another, and SHALL NOT be attempted. It SHALL be refused with a reason naming the
@@ -169,6 +269,115 @@ failover this change refuses, arrived at by accident rather than by decision.
 #### Scenario: A verification addressed to an operator routed to the modem
 - **WHEN** a verification is requested for a number whose operator is routed `modem`
 - **THEN** it is carried as an SMS, because the modem route can carry a code
+
+### Requirement: A paid ladder tries its rungs in order, and nothing is bought before every gate that could refuse has been passed
+
+An operator's entry may name more than one route. The gateway SHALL attempt them in the order
+written, SHALL attempt each rung of a verification's ladder at most once, and SHALL advance to
+the next rung only when the current one **declines to carry** the verification — not when it
+carries it and then fails.
+
+On `tg_gateway`, declining is `checkSendAbility` reporting that the subscriber cannot be
+reached, or not answering within the acceptance bound. On `call`, there is no declining rung
+below it; a ladder SHALL end in a route that either carries or fails.
+
+🔴 **`checkSendAbility` is not a free probe, and the design must not be built as though it
+were.** The vendor's reference is explicit: *"If the ability to send is confirmed, a fee will
+apply according to the pricing plan."* What is free is the **second** call — *"Within the scope
+of a `request_id`, only one fee can be charged. Calling `sendVerificationMessage` once with the
+returned `request_id` will be free of charge, while repeated calls will result in an error"* —
+and what is returned is an undelivered message: *"If a message is not delivered within the
+specified `ttl`, the request fee will be refunded automatically."*
+
+So the ladder is cheap for exactly two reasons, and neither is "the check is free": an
+**unreachable** subscriber costs nothing, and a **confirmed but undelivered** one is refunded.
+Against that, the `call` rung is charged for a call that was *placed*, whether or not anyone
+read the digits.
+
+Two consequences follow, and both are normative:
+
+1. **Every gate that can refuse a verification SHALL be evaluated before the first rung is
+   contacted** — the blacklist, the number's normalisation, the per-number limits, the
+   application's entitlement to spend and the spend ceiling. A gate evaluated after a confirmed
+   ability check refuses something already paid for, and no refund path exists for a fee whose
+   message was never sent: the refund is tied to non-delivery within a `ttl`, and a `ttl` only
+   starts when a message is sent.
+2. **A confirmed ability check SHALL be followed by exactly one `sendVerificationMessage`
+   carrying its `request_id`.** It SHALL NOT be abandoned, and SHALL NOT be repeated with the
+   same `request_id`, which the vendor answers with an error rather than a second message.
+
+An ability check that does not answer within the bound SHALL be recorded as **possibly
+charged** and counted separately from both outcomes. A confirmation we never saw is a fee that
+cannot be spent and cannot be refunded, and without a count an unexplained fall in the vendor's
+reported balance has no name to look for.
+
+**Whether a message the Gateway accepted and then failed to deliver within its `ttl` escalates
+to the `call` rung is not decided by this change.** Until the owner decides it, such a
+verification SHALL fail with that reason and SHALL NOT be escalated. The safe default is the
+one that cannot spend money on a decision nobody has taken; the argument for the other is that
+the fee is refunded anyway, and it is a real argument, which is why this is an open question
+and not an omission.
+
+[unbacked · vendor reference: Telegram Gateway API, `checkSendAbility`, `sendVerificationMessage`, read 18.09.2026 — no live sample captured]
+
+#### Scenario: The subscriber is not reachable in Telegram
+- **WHEN** `checkSendAbility` reports the subscriber cannot be reached
+- **THEN** nothing is charged for it, the ladder advances to `call`, and the decline is recorded against the `tg_gateway` rung
+
+#### Scenario: The subscriber is reachable in Telegram
+- **WHEN** `checkSendAbility` confirms the subscriber
+- **THEN** the code is sent with that `request_id`, no call is placed, and the one fee already incurred is recorded against the verification
+
+#### Scenario: The ability check does not answer in time
+- **WHEN** `checkSendAbility` has not answered within the acceptance bound
+- **THEN** the ladder advances to `call` and the check is counted as possibly charged rather than as a decline
+
+#### Scenario: A gate that would refuse is reached after the money
+- **WHEN** a verification would be refused by the spend ceiling or by the application's entitlement
+- **THEN** it is refused before any rung is contacted, and no ability check is made
+
+#### Scenario: The Gateway took the message and did not deliver it
+- **WHEN** a message the Gateway accepted is not delivered within its `ttl`
+- **THEN** the verification fails with that reason, no call is placed, and the refund is reflected in the recorded cost
+
+### Requirement: Spending on a paid route is an entitlement of the application, and it is off by default
+
+Whether an application may have its verifications carried by a paid route SHALL be an
+entitlement recorded against that application. An application whose entitlement is absent or
+off SHALL be refused, with a reason naming the entitlement.
+
+It SHALL default to off, including for a newly issued token. Today any active token can open a
+paid verification, and three of the four applications on this gateway never send codes at all:
+`gmp_app`, `mprz_bot` and `turbo_route_bot` between them account for none of the traffic this
+route exists to carry. A default of on would mean that the first mistake in any of them is
+billed rather than logged.
+
+A refusal for want of the entitlement SHALL place no vendor call and make no ability check,
+SHALL NOT be reported to the application as a vendor failure, and SHALL NOT be quietly carried
+over the `modem` route instead — for a МегаФон subscriber that is the route that has been
+refusing, so the fallback would read as a delivery and behave as a silence.
+
+The entitlement SHALL NOT be part of the routing rule. The rule answers what reaches a
+subscriber and stays keyed on the operator alone; this answers who is allowed to pay for it,
+and the two questions have different answers that change at different times. It SHALL be
+changeable without a restart, by the same means as the rule.
+
+**Owner's decision of 18.09.2026.** It was raised by the critic round of 11.09.2026 as a
+finding left for the owner rather than written as a norm; it is now written as one.
+
+[unbacked · no entitlement concept exists in the model today; token store at app/db/queries.py]
+
+#### Scenario: An application without the entitlement
+- **WHEN** an application whose entitlement is off requests a verification for an operator routed to a paid ladder
+- **THEN** it is refused with a reason naming the entitlement, no vendor is contacted, and nothing is sent over the modem instead
+
+#### Scenario: A newly issued token
+- **WHEN** a new application token is created and immediately requests a paid verification
+- **THEN** it is refused, because the entitlement defaults to off
+
+#### Scenario: An entitled application
+- **WHEN** an application whose entitlement is on requests the same verification
+- **THEN** the ladder is attempted normally
 
 ### Requirement: A route that cannot be used fails loudly and does not silently fall back
 
@@ -192,15 +401,30 @@ The vendor's own limits do not provide this: they are per number — four a minu
 — and a loop over five hundred numbers violates none of them while spending four hundred
 roubles. A balance floor is not a ceiling either; it reports money already gone.
 
+**The ceiling SHALL count across all paid routes together, not per vendor.** There are two
+prepaid accounts behind the ladder now, and a ceiling counted per rung lets a run of
+verifications spend twice the intended amount by advancing from one rung to the other — which
+is exactly what the ladder does by design. What is being bounded is the bill, and the bill is
+one.
+
+Every alert this requirement raises SHALL name **which** vendor it is about. With one paid
+route "the vendor is out of credit" was unambiguous; with two it is the question the operator
+has to answer before they can act, and answering it by reading a log is the difference between
+a two-minute top-up and an outage.
+
 [unbacked]
 
 #### Scenario: The vendor rejects our credentials
-- **WHEN** the vendor answers with an authentication error
-- **THEN** nothing is sent over the modem instead, the operator is alerted, and the existing retry rules apply
+- **WHEN** a vendor answers with an authentication error
+- **THEN** nothing is sent over the modem instead, the operator is alerted with that vendor named, and the existing retry rules apply
 
 #### Scenario: The vendor is out of credit
-- **WHEN** the vendor reports insufficient balance
-- **THEN** the operator is alerted with that reason, and nothing is rerouted
+- **WHEN** a vendor reports insufficient balance
+- **THEN** the operator is alerted with that reason and that vendor's name, and nothing is rerouted
+
+#### Scenario: The ceiling counts the ladder, not the rung
+- **WHEN** verifications advance from the first rung to the second often enough that the two rungs together reach the configured ceiling
+- **THEN** the next request is refused by the ceiling, even though neither rung reached it alone
 
 ### Requirement: What the rule costs is countable per operator
 

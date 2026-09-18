@@ -30,21 +30,37 @@ subscriber's phone. It is therefore a way to deliver a *verification code*, and 
   drafted for `verify-by-inbound-code` and already sent to the parking developer — the same
   door, with a third method behind it.
 - **A send acquires a route.** The modem stops being the only way out and becomes one route
-  of two, the second being uCaller's flash call.
+  of three: Telegram's Gateway API, uCaller's flash call, and itself.
+- **The paid way out is a ladder, not a route** — Telegram Gateway first, the flash call
+  behind it — so that a subscriber the Gateway cannot reach costs nothing before the call is
+  placed. Owner's decision of 18.09.2026.
 - **Route selection is a configured rule keyed on the recipient's operator**, not a branch.
-  Today it carries one entry — МегаФон to the call route — set without deploying code.
+  Today it carries one entry — МегаФон to `[tg_gateway, call]` — set without deploying code,
+  and the *order* of that list is part of what is configured.
+- **Spending on a paid route is an entitlement of the application, off by default.** Three of
+  the four applications never send codes; today any active token could open a paid
+  verification.
+- **The text of an SMS-carried code comes from a per-application template**, and an
+  application without one is refused rather than given wording the gateway invented.
+- **The rule and both vendors' credentials live in `settings`**, marked secret, changeable
+  without a restart. `.env` is at most a one-time seed and never the place a value lives.
 - **A message that its operator's route cannot carry is failed at once**, not attempted and
   not silently rerouted. A flash call carries four digits and nothing else; free text,
   a link, or a multipart notice cannot travel it.
 
 Explicitly **not** in this change, by the owner's decisions of 07–08.09.2026:
 
-- **no automatic failover.** A route that starts failing does not reroute itself. Automatic
-  escalation into a paid channel needs a spend ceiling to be safe, and that is a second
-  change, not a corner of this one.
+- **no automatic failover between the modem and the paid way out.** A route that starts
+  failing does not reroute itself, in either direction. The ladder added on 18.09.2026 is not
+  that: its rungs are both paid, its order is configured rather than discovered, it advances
+  only on a rung *declining to carry* rather than on one failing after it accepted, and the
+  spend ceiling that made escalation unsafe to talk about in the first place is now a norm of
+  this change rather than a future one.
 - **no migration of the other operators.** The modem keeps МТС, Билайн, Теле2 and the rest.
-- **`verify-by-inbound-code` stays frozen.** It remains the reserve path — not discarded,
-  not implemented, and not edited by this change.
+- **`verify-by-inbound-code` is not edited by this change.** It was frozen on 08.09.2026 as
+  the reserve path and unfrozen by the owner on 12.09.2026; it is still not implemented, and
+  the two changes' contract divergences are the owner's letter to write, not ours. Neither
+  change touches the other's artefacts.
 
 ## Measured, not quoted
 
@@ -107,6 +123,23 @@ arrived, and none of them show up until tried.
 
 It costs one call to `+79851600019` (an operator-confirmed МегаФон number the owner has
 released for probes) once an API key exists. **Task 1.1, before anything else is built.**
+
+**The ladder of 18.09.2026 adds a second unverified link rather than removing the first.**
+Whether that number is reachable in Telegram at all is equally unknown, and it decides which
+rung ever runs in practice: a subscriber base with no Telegram is a ladder whose first rung is
+always declined, paying for the check to learn nothing. The measurement the messenger session
+called cheap and refused to take without permission — what share of these numbers is reachable —
+is the same question, and it stays the owner's to give.
+
+What is genuinely cheaper here is the *mechanism* probe, as opposed to the reachability one: the
+vendor states that `sendVerificationMessage` is **"always free of charge when used to send codes
+to your own phone number"**, so the Gateway rung can be proved end to end — code supplied by us,
+`ttl`, delivery report, callback signature — for nothing, against the owner's own number, before
+any balance is funded. That probe does not answer whether a *customer's* МегаФон number is
+reachable; it answers whether our half works, which is the half we can fix.
+
+Neither rung is proved by the other. A ladder whose first rung is unproven and whose second is
+unproven has two ways to be void, and the tasks keep them apart.
 
 ## Checked against the messenger work, 12.09.2026
 
@@ -171,12 +204,60 @@ programme. Our own open branch (a bot asking for a phone number as grounds for l
 untouched by their design and remains unresolved and waiting on a lawyer — both belong in front
 of the same lawyer.
 
+## The paid way out becomes a ladder, 18.09.2026
+
+**Owner's decision, taken on the reconciliation above.** The competitor the messenger session
+found does not replace uCaller and is not made to choose against it: it goes *in front* of it.
+A verification for an operator routed to the paid way out first asks Telegram's Gateway whether
+the subscriber can be reached there, and only a subscriber it cannot reach is worth the price of
+a call.
+
+The reason is the shape of the two vendors' billing, not a preference between them:
+
+- **an unreachable subscriber costs nothing.** `checkSendAbility` refusing is free;
+- **a reachable one costs one fee, and only one.** *"Within the scope of a `request_id`, only
+  one fee can be charged. Calling `sendVerificationMessage` once with the returned `request_id`
+  will be free of charge"*;
+- **a code that does not arrive is refunded.** *"If a message is not delivered within the
+  specified `ttl`, the request fee will be refunded automatically"*;
+- **uCaller charges for a call that was placed**, and `call_status: 1` says nothing about
+  whether anyone read the digits.
+
+🔴 **What this is not: a free probe.** The vendor is explicit that *"if the ability to send is
+confirmed, a fee will apply"*. The first draft of the messenger reconciliation got this wrong
+and was corrected on 12.09.2026 against the reference; the correction survives here as a design
+constraint rather than a footnote. A confirmed check is money already spent, so **every gate
+that could refuse a verification — the blacklist, the per-number limits, the application's
+entitlement, the spend ceiling — is evaluated before the ladder is touched at all**, and a
+confirmed check is always followed by the send it paid for. A check that times out is worse than
+either outcome: it may have been confirmed and charged at the vendor without our learning the
+`request_id`, and such a fee can be neither spent nor refunded. It is counted separately,
+because otherwise it appears only as a balance that drifts.
+
+**What the ladder does not fix.** It widens how a *code* reaches a МегаФон subscriber and does
+nothing at all for the applications that are not sending codes. `sendVerificationMessage` takes
+a code and no message body, so `gmp_app`'s free text with links has no more of a field to travel
+in than a flash call gave it. The cost to the other applications, stated below, is unchanged.
+
+**What it adds that the call route never had: evidence.** The Gateway reports `sent`,
+`delivered`, `read`, `expired` or `revoked`. The change's single unverified link — does a paid
+route reach a МегаФон subscriber — becomes answerable from the vendor's own report on this rung,
+and stays unanswerable except by asking a person on the other. The two rungs will therefore never
+be equally well evidenced, and their success rates are not comparable quantities.
+
+**What it costs in new failure points, honestly.** A second prepaid account that can run out; a
+second credential that can be wrong; a second vendor that can be slow rather than refusing, which
+turns the cheap rung off silently and shows up only as a bill. Hence: the balance floor is held
+against each vendor separately, every alert names which vendor it is about, the spend ceiling
+counts the two rungs together rather than each alone, and an abandoned ability check is counted.
+
 ## Capabilities
 
 ### New Capabilities
 
-- `outbound-routing`: which way out a message or a verification takes, what the rule is, and
-  what happens when the chosen route cannot carry what it was handed.
+- `outbound-routing`: which way out a message or a verification takes, what the rule is, in
+  what order the paid ways out are tried, who is allowed to pay for them, where their
+  credentials live, and what happens when the chosen route cannot carry what it was handed.
 - `phone-verification`: verifying that a person holds a phone number — the request, the
   code, the choice of method, and the answer to "is this the right code".
 
@@ -191,7 +272,8 @@ of the same lawyer.
 
 ## What this costs the other applications
 
-`gmp_app`, `mprz_bot` and `turbo_route_bot` do not send codes and cannot use the call route.
+`gmp_app`, `mprz_bot` and `turbo_route_bot` do not send codes and cannot use either paid route:
+a flash call has no text field, and the Gateway's verification message has no body of ours.
 Their МегаФон traffic — about 70 messages a month and growing — will be **failed at accept
 time** with a named reason instead of failing after the retry ladder. Owner's decision of
 08.09.2026, taken with this consequence stated: the outcome is the same failure either way,
@@ -207,15 +289,40 @@ Two hazards follow, and both are tasks rather than prose:
 
 ## Open questions — design, not implementation
 
-1. **How long a verification stays open, and how many code attempts it allows.** The person
-   is standing at a barrier; too short is a support call, too long is a wider guessing
-   window. Not decided here.
-2. **Whether the SMS method's text is a per-application template setting or is composed by
-   the gateway.** With the gateway generating the code, the application can no longer supply
-   finished text, and `SokolParking: ####` has to come from somewhere.
-3. **Where the routing rule lives** — `settings` (changeable from the admin console, no
-   restart) or `.env` (a restart, which drops sending sessions). Both satisfy "no deploy";
-   they differ in who can change it and how fast.
+**All three of the questions this chapter carried are answered, and so is the entitlement the
+critic round left open. The owner took all four on 18.09.2026**, and they are norms now rather
+than questions:
+
+1. **How long a verification stays open, and how many attempts it allows** — five minutes and
+   five attempts, as settings. Both coincide with numbers the gateway already holds:
+   `delivery_timeout_seconds` is 300 and `blacklist_threshold` is 5. 🔴 It also diverges from
+   the contract already in the parking developer's hands, which states ten minutes; that
+   letter is task 3.1 and it is the owner's to send.
+2. **Where the SMS method's text comes from** — a per-application template, refused at accept
+   when absent, with no built-in default. A default would be a wording decision taken silently
+   for applications that do not share a voice.
+3. **Where the routing rule lives** — `settings`, marked secret where it is a credential.
+   `.env` was never a candidate once the code was read: `seed_from_env()` copies a variable
+   into `settings` only for a key with no row, so it is a one-time seed and not a home.
+4. **Whether spending on a paid route is an entitlement of the application** — yes, and off by
+   default, including for a newly issued token.
+
+**What remains open, and both are new rather than carried over:**
+
+1. **Whether a Gateway message that was accepted and then not delivered within its `ttl`
+   escalates to a call.** The spec's default is that it does not: the fee is refunded and the
+   verification fails with that reason. The argument for escalating is that the refund makes it
+   nearly free, and it is a real argument — which is why this is an open question and not an
+   omission. Nothing may be built as escalation until it is decided.
+2. **Which word survives for the flash-call route.** This change calls it `call`; the messenger
+   ladder proposed on 12.09.2026 calls it `flash_call` and puts it on a second axis beside a
+   direction of `outbound`/`inbound`. This change adopts `tg_gateway` and `modem` from that list
+   verbatim, so exactly one word is contested, and it is contested across two changes and one
+   contract already at the developer.
+
+The third thing that is not a question but is not ours either: **what share of these numbers is
+reachable in Telegram has never been measured.** It is cheap and needs no message sent, but it
+means running live customer numbers through a vendor, and that is the owner's to permit.
 
 ## Status
 
@@ -228,12 +335,33 @@ synchronously; what it did confirm is that the requirement claiming nothing is d
 that same code as its evidence. The round added 22 scenarios and one capability delta
 (`delivery-dispatch`), and it is closed — the ceiling is one round.
 
-Two of its findings are left for the owner rather than written as norms: an entitlement
+Two of its findings were left for the owner rather than written as norms: an entitlement
 deciding which applications may spend on a paid route (today any active token can), and the
-rewriting of tasks 5.2 and 5.3, which as written prove the change on live customer traffic.
+rewriting of tasks 5.2 and 5.3, which as written prove the change on live customer traffic. The
+first is now a norm — see below. The second is still the owner's, and tasks 5.2 and 5.3 carry
+it.
 
-The vendor contract below was taken from uCaller's official reference on 08.09.2026, which
-satisfies the external-contract gate for `initCall`, `getInfo` and `initRepeat`. **No live
-sample has been captured.** The `inboundCallWaiting` webhook is deliberately absent from this
-change: its payload fields are not in the documentation, and a parser for it may not be
-written from guesses.
+**Parked 11.09.2026, unparked 18.09.2026, and updated the same day** with the owner's answers to
+all four open decisions and with the ladder. The intent is the one this change was written for —
+get a code to a МегаФон subscriber without the modem — so this is an update to it and not a
+change of its own. **The critic round is not reopened**: the ceiling is one round and it was
+spent on 11.09.2026. What ran instead, before and after this update, is the mechanical pass —
+`openspec validate --strict`, `check.py`, and a diff of scenario names against the pre-update
+census of 70.
+
+The vendor contracts behind the two paid rungs were taken from official references and neither
+from a live sample:
+
+- **uCaller**, read 08.09.2026 — satisfies the external-contract gate for `initCall`, `getInfo`
+  and `initRepeat`. The `inboundCallWaiting` webhook is deliberately absent from this change:
+  its payload fields are not in the documentation, and a parser for it may not be written from
+  guesses.
+- **Telegram Gateway**, read 18.09.2026 — `checkSendAbility`, `sendVerificationMessage`,
+  `checkVerificationStatus` and `revokeVerificationMessage`, with their parameters, the
+  `RequestStatus` / `DeliveryStatus` objects, the `ttl` range of 30–3600 s, the fee and refund
+  rules quoted above, and the callback's `X-Request-Timestamp` / `X-Request-Signature` headers.
+  Its callback *is* documented, which is why this change may specify verifying it where it may
+  not specify parsing uCaller's.
+
+**No live sample has been captured for either.** Tasks 1.3 and 1.6 exist to capture them, and no
+adapter is written before they are.
