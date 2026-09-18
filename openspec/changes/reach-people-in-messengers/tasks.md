@@ -1,7 +1,8 @@
 ## 1. Vocabulary, configuration and their refusals
 
-- [ ] 1.1 Settle the method vocabulary with `verify-by-inbound-code` task 1.4 **before the
-      deltas are frozen**: direction (`outbound`/`inbound`) and route (`app_bot`,
+- [ ] 1.1 Settle the method vocabulary with `verify-by-inbound-contact` task 1.1 **before the
+      deltas are frozen** (that change was renamed from `verify-by-inbound-code` on 18.09.2026
+      and its vocabulary task renumbered): direction (`outbound`/`inbound`) and route (`app_bot`,
       `tg_user`, `max_user`, `modem`) are two axes, not one flat list. The names are
       normative values exposed to an application whose contract is already sent, so until
       the owner decides, the deltas SHALL say the wire values are provisional.

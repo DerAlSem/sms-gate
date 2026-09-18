@@ -23,7 +23,7 @@ table of which networks work.
 The bar on disclosure is on identity, not on address: a method that requires the person to look
 somewhere, or to address the gateway, SHALL carry what they need to do that and nothing else
 about the estate. "Open Telegram" is the address; which Gateway account paid for it is the
-identity. The reserve path `verify-by-inbound-code` is the same case in the other direction —
+identity. The reserve path `verify-by-inbound-contact` is the same case in the other direction —
 it must name the number the subscriber texts — and this capability SHALL remain the single
 owner of `POST /verifications`, `POST /verifications/{id}/check` and
 `GET /verifications/{id}`, a method being a variant within it rather than a capability of its
@@ -516,7 +516,8 @@ A verification's code SHALL NOT appear in an API response, in an operator notifi
 a log line. It SHALL be readable only by the party that answers `POST /verifications/{id}/check`.
 
 This has to be said out loud precisely because the reserve path says the opposite: the frozen
-`verify-by-inbound-code` returns the code to the application by design, because there the
+`verify-by-inbound-contact` returns the code to the application by design on that one rung,
+because there the
 person reads it from their own screen. Whoever implements against both contracts will carry
 that habit across, and a code returned here lets an application confirm a verification without
 the call ever reaching the person — which is the whole guarantee, gone. The gateway also has

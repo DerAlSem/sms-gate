@@ -27,8 +27,10 @@ subscriber's phone. It is therefore a way to deliver a *verification code*, and 
 - **A verification stops being an SMS the application composes.** The application asks the
   gateway to verify a number; the gateway generates the code, chooses how to deliver it, and
   answers whether a code the person typed is the right one. This is the contract already
-  drafted for `verify-by-inbound-code` and already sent to the parking developer — the same
-  door, with a third method behind it.
+  drafted for `verify-by-inbound-contact` (renamed from `verify-by-inbound-code` on
+  18.09.2026) — the same door, with a third method behind it. 🔴 **That contract was never
+  sent to the parking developer**; the owner said so on 18.09.2026 and the earlier claim here
+  was wrong.
 - **A send acquires a route.** The modem stops being the only way out and becomes one route
   of three: Telegram's Gateway API, uCaller's flash call, and itself.
 - **The paid way out is a ladder, not a route** — Telegram Gateway first, the flash call
@@ -57,10 +59,15 @@ Explicitly **not** in this change, by the owner's decisions of 07–08.09.2026:
   spend ceiling that made escalation unsafe to talk about in the first place is now a norm of
   this change rather than a future one.
 - **no migration of the other operators.** The modem keeps МТС, Билайн, Теле2 and the rest.
-- **`verify-by-inbound-code` is not edited by this change.** It was frozen on 08.09.2026 as
-  the reserve path and unfrozen by the owner on 12.09.2026; it is still not implemented, and
-  the two changes' contract divergences are the owner's letter to write, not ours. Neither
-  change touches the other's artefacts.
+- **`verify-by-inbound-contact` (renamed from `verify-by-inbound-code`) is not edited by this
+  change, but it now edits this one.** It was frozen on 08.09.2026 as the reserve path and
+  unfrozen by the owner on 12.09.2026. On 18.09.2026 the owner decided its routes are rungs
+  **inside `phone-verification`** rather than a capability of their own, so that change carries
+  `MODIFIED` and `REMOVED` blocks against requirements authored here — including the removal of
+  `A verification request names only the number, and the gateway answers with the method`, which
+  its list-of-routes answer replaces. 🔴 **It must not be archived before this change**, or
+  those blocks address requirements the living spec does not hold and merge silently into
+  nothing; its `check-base.sh` and the registry row `sms-gate/20260918-04` hold that order.
 
 ## Measured, not quoted
 
