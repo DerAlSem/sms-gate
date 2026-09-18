@@ -580,6 +580,79 @@ app/db/queries.py:begin_message_attempt, app/modem/at_commands.py:registration_s
 - **WHEN** a two-part message is due while the modem is not registered
 - **THEN** no part is transmitted, so the message cannot end up with one part delivered and no way to retry
 
+### Requirement: An alert names only what the gateway observed
+
+An alert raised by the recovery ladder SHALL NOT name a cause the gateway did not observe.
+
+On 2026-09-06 every alert of a two-hour outage read `check antenna/operator` while the
+modem was refusing its own SIM. Both named parties were healthy. An alert that names the
+wrong cause is worse than one that names none, because it is acted on: it sent the operator
+to check the two things that were working, and the fault was found only by reading a
+sibling service's journal.
+
+The text SHALL carry the observations the gateway already holds. The diagnostics snapshot —
+SIM state, registration, signal, operator — is collected from the modem on demand and
+rendered on the console; an alert that omits it forces whoever reads it to open a second
+surface to learn what the first one had. Where those observations are unavailable, the
+alert SHALL say so rather than fall back to a guess.
+
+This requirement is about what the alert *reports*, not about what the ladder *decides*.
+The ladder's causes and remedies are unchanged: a registration failure with an unusable SIM
+still walks the registration ladder, and this text does not pretend otherwise.
+
+[normative · evidence: app/modem/manager.py:1094-1109, app/modem/manager.py:118,
+collect_diagnostics · conf: high — the observations exist and are already collected; only
+their delivery into the alert is new]
+
+#### Scenario: The ladder escalates while the modem is reachable
+- **WHEN** an alert is raised for a modem that answers AT commands
+- **THEN** it carries the SIM, registration, signal and operator the gateway read, and does not assert a cause those readings do not support
+
+#### Scenario: The observations cannot be read
+- **WHEN** the snapshot cannot be collected at the moment the alert is raised
+- **THEN** the alert says the observations are unavailable rather than naming a likely cause
+
+#### Scenario: The same fault persists across many escalations
+- **WHEN** escalations repeat on their normal cadence with the observations unchanged
+- **THEN** the operator is not sent one full snapshot every few minutes for hours
+
+### Requirement: A link that was never established holds a message on the same terms as one that was lost
+
+A message due while the gateway has no link at all SHALL be held, not failed, on exactly
+the terms already required for a link that was lost: no attempt counted against it,
+rescheduled to be tried again shortly, and bounded by the existing pending deadline.
+
+The spec already refuses to read a lost link as "not knowing", on the reasoning that it is
+not a question the modem failed to answer but the absence of anything to ask. A link that
+has never come up — because the device was absent when the gateway started, or was
+unplugged — is the same absence, and the same reasoning governs it. Reading it as a send
+failure instead would turn a brief unplug into lost SMS, and would report `failed` to the
+owning application for messages the network was never offered.
+
+The determination SHALL be made before an attempt is claimed. A link known to be absent is
+known before anything is written, so the message need never have its attempt count or
+schedule disturbed and then restored.
+
+While the gateway has no link, held messages SHALL continue to accumulate as `pending`
+rather than being rejected at the API, since accepting and queueing a send has never
+required the modem.
+
+#### Scenario: A message is due with no modem attached
+- **WHEN** a message becomes due while the gateway has never established a link
+- **THEN** it stays `pending` with its attempt count unchanged, and is tried again shortly
+
+#### Scenario: The modem is attached later
+- **WHEN** the link is established while messages are held
+- **THEN** they are transmitted without having spent any of their retry budget
+
+#### Scenario: A held message outlives its deadline
+- **WHEN** the modem is still absent when a held message reaches its pending deadline
+- **THEN** it reaches a terminal status and its application is told, as any other pending message would
+
+#### Scenario: A send is requested with no modem attached
+- **WHEN** an application submits a message while the gateway has no link
+- **THEN** the request is accepted and queued, as it is when the modem is present
+
 ## Resolved intent
 
 - **U1 — When may `failed` reach the app?** Resolved 2026-07-24: only once the retry

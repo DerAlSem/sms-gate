@@ -65,3 +65,45 @@ behaviour.
   gateway no longer uses its own exit as a remedy.
 - Every route in `app/api/` keeps working with no modem, since accepting and queueing a
   send never touched the modem.
+
+## Two acceptance clauses refused, not forgotten — owner's decision, 2026-09-18
+
+Tasks 7.3 and 7.4 asked for a rehearsal on prod hardware. The rehearsal happened, but it
+was not staged: on 2026-09-17 at 12:00 MSK the EP06-E lost USB three times (12:00:09,
+12:00:21, 12:00:26) while its neighbour EM12-G was being pulled, and both AT ports went
+with it. What that episode proves, read out of the journal on 2026-09-18, is three of
+7.3's four clauses:
+
+- **The console stayed up.** `POST /sms/send` answered 200 at 12:01:00 and `GET /sms/2288`
+  at 12:01:10 and 12:03:10 — served with no device node present, which is the whole point
+  of moving the connect out of `lifespan`.
+- **No restart was used as a remedy.** `NRestarts=0`, and
+  `ExecMainStartTimestamp=Thu 2026-09-17 06:37:26 MSK`: the process that served the outage
+  is the one that started five hours before it.
+- **Sending resumed unaided.** Message 2288 was held seven times (`held: modem not
+  registered`) while still on attempt 1 — no retry budget spent — then sent at 12:03:44 and
+  reported `+CDS delivered` at 12:03:45, both delivery webhooks answering 200.
+
+Two clauses are refused rather than checked, and the reason is the same in both: the
+evidence costs a second deliberate outage on a gateway carrying live customer traffic.
+
+- **The notice on the console was not witnessed.** For the whole absence the only client was
+  the application (178.250.157.233), sixteen requests, none to `/admin/*`. Nobody opened an
+  admin page while the link was out. The notice is left standing on tests 5.1 and 5.4 — that
+  it renders on every page, and that it disappears when the link is back.
+- **7.4 — inbound arriving mid-absence — never ran.** `Inbox scan: empty` at each
+  reconciliation of the episode (12:00:15, 12:00:24, 12:00:44): nothing arrived while the
+  ports were gone, so the once-not-twice path was not exercised. Waiting for the coincidence
+  is not a plan: inbound runs 2–19 a day (median 4 over the preceding 21 days) against an
+  absence of ~3.5 minutes, which puts a natural overlap near 1% per episode. Its guard stays
+  the reconciliation tests of section 7 alone.
+
+Recorded here rather than left as two open boxes, so a later reader does not mistake a
+priced decision for an oversight. If the dedup on reconciliation is ever suspected in
+earnest, the way to buy the evidence is named: unplug, text the gateway's own number while
+the ports are gone, replug. Not worth an outage on its own account.
+
+One measurement worth keeping, because it looks like a defect and is not: inbound has been
+silent since 2026-09-16 14:58, about forty hours across the modem swap. The four largest
+inbound gaps of the preceding 45 days are 178.8h, 106.4h, 75.1h and 75.0h, so the quiet
+says nothing about the swap.

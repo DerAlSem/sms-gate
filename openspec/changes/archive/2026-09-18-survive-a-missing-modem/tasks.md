@@ -48,6 +48,20 @@
 
 - [x] 7.1 Revisit `Restart=` and `StartLimitBurst=` in `deploy/`, whose reasoning assumed a startup path that deliberately exited, and update the comments that describe it
 - [x] 7.2 Run the full test suite and confirm nothing depended on the gateway exiting for a lost link
-- [ ] 7.3 Rehearse on prod hardware: unplug the modem, confirm the console stays up and shows the notice, replug, confirm sending and inbound resume with no restart
-- [ ] 7.4 Confirm inbound that arrived while unplugged is delivered once, not twice, on reconciliation
-- [ ] 7.5 Archive the change so the deltas land in `openspec/specs/`
+
+### 7.3 and 7.4 refused, not skipped — owner's decision, 2026-09-18
+
+Prose rather than boxes, because a refused clause left as an open task blocks the archive
+for ever and reads to a later visitor as work nobody did.
+
+The rehearsal 7.3 asked for did happen, unstaged, on 2026-09-17 at 12:00 MSK, and it proved
+three of its four clauses: the console answered 200 with no device node, `NRestarts=0`, and
+message 2288 went out on its own once the ports came back. What it did not prove is the
+notice on the console — nobody opened an admin page while the link was out — and 7.4 never
+ran at all, since no inbound arrived during the ~3.5 minutes of absence. Both refusals cost
+the same thing to lift: a second deliberate outage on a gateway carrying live traffic.
+
+Evidence, figures and the way to buy the missing half later: `proposal.md`, section "Two
+acceptance clauses refused, not forgotten".
+
+- [x] 7.5 Archive the change so the deltas land in `openspec/specs/`
