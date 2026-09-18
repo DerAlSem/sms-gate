@@ -1,18 +1,36 @@
 ## Why
 
 Confirmation codes reach a subscriber only if the operator lets us send. Since 06.09.2026
-МегаФон does not: 50 reports of `0x63` across the gateway's history, 35 of them in the 30
-hours from that evening, every one bound for a МегаФон subscriber while every other operator
-delivered normally in the same minutes. A probe of six messages differing in wording, in
-alphabet and in whether they carried a code at all was rejected identically, so nothing
-inside a message changes the outcome. This SIM has also been blocked outright before.
+МегаФон mostly does not: 50 reports of `0x63` across the gateway's history, 35 of them in
+the 30 hours from that evening, every one bound for a МегаФон subscriber while every other
+operator delivered normally in the same minutes. A probe of six messages differing in
+wording, in alphabet and in whether they carried a code at all was rejected identically, so
+nothing inside a message changes the outcome. This SIM has also been blocked outright before.
 
-Every remedy considered so far buys a different way to **send**: a commercial provider
-(≈530 ₽/month for the МегаФон share, and a monthly sender-name fee that dwarfs it), or a
-voice channel (the modem in service does not answer calls at all — verified 07.09.2026:
-silence and disconnect, while SMS to the same SIM arrives).
+**"Mostly" is measured, and it corrects this proposal's first draft.** Of 55 messages sent to
+МегаФон between 06.09.2026 18:30 and 08.09.2026, 49 failed and 6 were genuinely delivered —
+live `+CDS` reports, not inferred — so roughly one in nine arrives. A channel that drops
+eight codes out of nine cannot carry a login, and the conclusion does not change. But "not a
+single one gets through" was a small sample stated as a fact, and a later reader comparing it
+to the live database would have found it false.
 
-**Reversing the direction removes the obstacle instead of paying to go around it.** What is
+Every remedy considered so far buys a different way to **send**: a commercial SMS provider,
+or a voice channel. The modem in service cannot supply the second — verified 07.09.2026, a
+call to its SIM is silence and disconnect while SMS to the same SIM arrives — but a vendor's
+flash call supplies it without the modem, and that is the route the owner chose as primary on
+08.09.2026.
+
+🔴 **The price argument this was first written with was wrong, and it is withdrawn.** It read
+"≈530 ₽/month for the МегаФон share, and a monthly sender-name fee that dwarfs it". Both
+halves rest on a count that missed half of МегаФон: `upper()` and `LIKE` in sqlite are
+ASCII-only and do not touch Cyrillic, and `number_operators` carries both `МЕГАФОН` and
+`МегаФон`. Re-measured against the live database on 08.09.2026: the flash-call vendor charges
+0,80 ₽ per verification, ≈52 ₽/month at the three-month average of 65 `sp_app` verifications
+to МегаФон, against ≈190 ₽/month for the same traffic at an SMS provider's 2,92 ₽. **Neither
+is a sum worth reversing a protocol over,** and what this change is worth is stated under
+Cost instead.
+
+**Reversing the direction removes the obstacle; paying only moves it.** What is
 being filtered is our outbound A2P traffic to one operator. A message from the subscriber to
 us is ordinary P2P between two consumer numbers and is not subject to it. The gateway already
 receives, stores and indexes inbound messages — `+CMTI` → `inbound_loop` →
@@ -58,8 +76,14 @@ thing — or lengthen it and think the problem solved.
 ## Cost
 
 Nothing per verification, for us. The subscriber pays for one SMS at their own tariff. That
-is a real cost moved onto the customer and it is the honest objection to this design;
-it is accepted because the alternative is that МегаФон subscribers cannot log in at all.
+is a real cost moved onto the customer, and it is the honest objection to this design.
+
+It is **not** defended by being cheaper. At ≈52 ₽/month the paid route is not a cost anyone
+needs saving from, and a design that moves a charge onto the customer to save that would be
+indefensible. What this buys is independence: no vendor account, no prepaid balance, no API
+key, nothing outside the gateway that can run out in the middle of a login. That is concrete
+and not hypothetical — as of 12.09.2026 the primary route has been stopped since 08.09.2026
+on exactly those three things, and no МегаФон subscriber has gained anything in those days.
 
 ## Capabilities
 
@@ -79,5 +103,13 @@ it is accepted because the alternative is that МегаФон subscribers cannot
 
 ## Status
 
-**Authored 07.09.2026. Not critiqued.** The `system-architect` / `gap-finder` round has not
-been run; the authoring session was barred from spawning subagents.
+**Authored 07.09.2026. Frozen 08.09.2026 as the fallback route, unfrozen 12.09.2026 — both
+the owner's decision. Not critiqued.** The `system-architect` / `gap-finder` round has not
+been run; the authoring session was barred from spawning subagents, and the round is still
+owed.
+
+The numbers in "Why" were re-measured on 08.09.2026 against the live database and the price
+argument withdrawn on 12.09.2026. The integration contract was handed to the parking
+developer before any of that, and five things in it have since diverged from what the
+neighbouring change normalises — tasks 1.1 to 1.5 carry them, and amending the contract is
+the owner's to do, not ours.
