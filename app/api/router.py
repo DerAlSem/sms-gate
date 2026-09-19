@@ -176,6 +176,12 @@ async def select_verification_route(
     # The one rung where the person must type the code back is the one rung where the
     # owning application is given it — it has no other way to show them. Read after the
     # selection so that a verification whose selection lost a race hands over nothing.
+    # Per rung attempted, from the moment it is the rung being attempted. A ladder has
+    # more than one, and "what did this person's login cost" is unanswerable from a table
+    # that keeps only the last.
+    await queries.record_verification_rung(verification_id, route=body.route,
+                                           outcome="selected")
+
     if body.route == CALL_IN:
         # This rung carries its own window, and it is the rung whose residual risk scales
         # with it: an attacker can open a verification on a victim's number and, inside

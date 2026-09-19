@@ -1068,19 +1068,27 @@ async def mark_verification_notified(verification_id: int) -> bool:
     return cursor.rowcount == 1
 
 
-async def has_open_verification(phone: str, *, route: str) -> bool:
+async def has_open_verification(
+    phone: str, *, route: str, excluding: int | None = None,
+) -> bool:
     """Whether this number already has a live verification on this rung.
 
     Asked by the `call_in` rung, which carries no code: attribution there rests entirely
     on the calling number and a single open window, so a second window on one number
     would leave an arriving call belonging to neither with certainty.
+
+    `excluding` is for re-proving a rung *under* an open verification. Without it the
+    question answers itself — the verification being checked is the open window — and the
+    sweep that watches for dead routes would end every call verification a minute after
+    it was selected. The positive control in
+    `tests/test_verification_outcome_reaches_the_app.py` is what caught that.
     """
     db = await get_db()
     async with db.execute(
         "SELECT 1 FROM verifications "
         " WHERE phone = ? AND route = ? AND status = 'pending' "
-        "   AND expires_at > CURRENT_TIMESTAMP LIMIT 1",
-        (phone, route),
+        "   AND expires_at > CURRENT_TIMESTAMP AND id IS NOT ? LIMIT 1",
+        (phone, route, excluding),
     ) as cursor:
         return await cursor.fetchone() is not None
 
@@ -1100,18 +1108,20 @@ async def get_verification(verification_id: int, app_id: str) -> aiosqlite.Row |
         return await cursor.fetchone()
 
 
-async def get_verification_any(verification_id: int) -> aiosqlite.Row | None:
-    """A verification without the application scope — for the gateway's own machinery.
+async def open_verifications_with_a_route() -> list[aiosqlite.Row]:
+    """Open verifications that are being carried by a rung right now.
 
-    Kept apart from `get_verification` rather than given a nullable `app_id`, so that a
-    door reaching for the unscoped read has to name it. The scoped one is the default in
-    this module for exactly the same reason the message store does it that way.
+    Asked once a minute so that a rung which has died under one of them is noticed while
+    the person is still waiting, rather than at the deadline — where the only word the
+    gateway has left is "expired", which is the one thing that did not happen.
     """
     db = await get_db()
     async with db.execute(
-        "SELECT * FROM verifications WHERE id = ?", (verification_id,)
+        "SELECT id, app_id, phone, route FROM verifications "
+        " WHERE status = 'pending' AND route IS NOT NULL "
+        "   AND expires_at > CURRENT_TIMESTAMP"
     ) as cursor:
-        return await cursor.fetchone()
+        return list(await cursor.fetchall())
 
 
 async def check_verification(
@@ -1285,16 +1295,6 @@ async def count_calls_without_number() -> int:
         "SELECT COUNT(*) FROM inbound_calls WHERE phone IS NULL"
     ) as cursor:
         return (await cursor.fetchone())[0]
-
-
-async def list_inbound_calls(limit: int, offset: int = 0) -> list[aiosqlite.Row]:
-    db = await get_db()
-    async with db.execute(
-        "SELECT id, phone, raw_number, started_at, outcome, reason FROM inbound_calls "
-        "ORDER BY id DESC LIMIT ? OFFSET ?",
-        (limit, offset),
-    ) as cursor:
-        return list(await cursor.fetchall())
 
 
 async def delete_inbound(message_id: int) -> None:

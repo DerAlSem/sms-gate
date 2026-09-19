@@ -35,8 +35,12 @@ def _run(body):
         await run_migrations()
         await queries.create_app("app1", "token-app1")
         await store.load()
-        await store.set_many({"delivery_dispatch": '[{"app_id":"app1",'
-                                                   '"webhook_url":"https://x/hook"}]'})
+        await store.set_many({
+            "delivery_dispatch": '[{"app_id":"app1","webhook_url":"https://x/hook"}]',
+            # Both rungs need a number for the subscriber to reach; without it neither is
+            # offerable and every re-proof below would read as a route that had died.
+            "gateway_msisdn": "+79990001122",
+        })
         return await body()
 
     try:
@@ -204,3 +208,62 @@ def test_the_guard_above_can_actually_fail():
     match = _TERMINAL_WRITE.search(offending)
     assert match is not None, "the pattern no longer recognises a terminal write at all"
     assert "notified = 1" in offending[match.start():match.start() + 500]
+
+
+# --- 7.2 — the detector, not just the writer ---------------------------------------------
+
+def test_an_open_verification_whose_route_died_is_ended_by_the_sweep(pushed, monkeypatch):
+    """The half that is easy to leave unbuilt: `fail_verification` exists, and nothing
+    calls it. Then a route dies under an open verification, nothing notices, and the
+    person is told "expired" — the one thing that did not happen."""
+    import app.modem.manager as manager_mod
+
+    class DeadRoute:
+        # Stands in for the serial link, which is what the manager's own
+        # `caller_id_held` reads — replacing the manager's property instead would test
+        # the fake rather than the chain.
+        caller_id_subscribed = False    # the subscription is gone
+        in_service = True
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = DeadRoute()
+        m._reader_link = DeadRoute()
+        vid = await _open(CALL_IN)
+        await m.verification_step()
+        row = await queries.get_verification(vid, "app1")
+        return vid, row["status"], row["reason"]
+
+    vid, status, reason = _run(body)
+    assert status == "failed", "the sweep let a dead route run to its deadline"
+    assert reason and "precondition" in reason, reason
+    assert [(p["id"], p["status"]) for p in pushed] == [(vid, "failed")]
+
+
+def test_a_verification_whose_route_still_holds_is_left_alone(pushed, monkeypatch):
+    """The positive control. A sweep that ends everything has not detected anything."""
+    import app.modem.manager as manager_mod
+
+    class LiveRoute:
+        caller_id_subscribed = True
+        in_service = True
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = LiveRoute()
+        m._reader_link = LiveRoute()
+        m.ims_proof = _ims_holds()
+        vid = await _open(CALL_IN)
+        await m.verification_step()
+        return (await queries.get_verification(vid, "app1"))["status"]
+
+    assert _run(body) == "pending"
+    assert pushed == []
+
+
+def _ims_holds():
+    from app.verification.routes import Proof
+
+    async def proof():
+        return Proof(holds=True)
+    return proof

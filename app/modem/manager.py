@@ -20,6 +20,7 @@ from app.modem import calls
 from app.modem.calls import CallWatch
 from app.verification import routes
 from app.verification.dispatch import announce_verification_outcomes
+from app.verification.probes import build_probes
 from app.modem.parser import (
     parse_cds, parse_clip, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
 )
@@ -1504,9 +1505,70 @@ class ModemManager:
         while True:
             await asyncio.sleep(60)
             try:
-                await announce_verification_outcomes()
+                await self.verification_step()
             except Exception:
                 logger.exception("Verification sweep failed")
+
+    async def verification_step(self) -> None:
+        """One pass, split out of the loop so a test can drive the ordering.
+
+        The order is the mechanism. Rungs that have died under an open verification are
+        ended *first*, so their reason is announced in the same pass rather than the next
+        one — and so that a verification whose route died a second before its deadline is
+        reported as the outage it was rather than as an expiry.
+        """
+        await self._end_verifications_whose_route_died()
+        await announce_verification_outcomes()
+
+    async def _end_verifications_whose_route_died(self) -> None:
+        """A rung proven at the offer can stop holding while the person is still dialling.
+
+        The gap is not small. A verification's default life is five minutes, and one
+        recovery of this modem is bounded at three hundred seconds of gate-closed time
+        plus a thirty-second settle — so a recovery can consume a whole window. "Expired",
+        told to a person who did call, on time, from the right number, is the gateway
+        reporting the one thing that did not happen.
+
+        🔴 What this cannot do is recover the call. Inbound SMS has a buffer — messages
+        accumulate in modem memory while the link is down and are reconciled by a scan
+        when it returns — and a call has none: it exists nowhere in the modem, nowhere in
+        the log, and the caller heard the carrier's voicemail. The asymmetry is a property
+        of the bearer. What is forbidden is concealing it, which is why the reason names
+        the outage instead of the clock.
+        """
+        open_rows = await queries.open_verifications_with_a_route()
+        if not open_rows:
+            return
+        for row in open_rows:
+            # A registry per row, because the rung is being re-proved *under* this
+            # verification: its own open window must not be the reason its rung looks
+            # unavailable.
+            registry = self._verification_registry(excluding=row["id"])
+            offered = {o.route for o in await registry.offer(row["phone"])}
+            if row["route"] in offered:
+                continue
+            if await queries.fail_verification(
+                row["id"],
+                reason=f"the {row['route']} route lost the precondition it was "
+                       f"offered on",
+            ):
+                logger.warning(
+                    "Verification %d ended: its %s route lost its precondition",
+                    row["id"], row["route"],
+                )
+
+    def _verification_registry(self, *, excluding: int | None = None):
+        """The ladder as the settings have it right now, against this modem."""
+        return routes.Registry(
+            probes=build_probes(self, ims_proof=getattr(self, "ims_proof", None),
+                                excluding=excluding),
+            order=[name.strip()
+                   for name in store.verification_route_order.split(",")
+                   if name.strip()],
+            probe_timeout=store.verification_probe_timeout,
+            max_proof_age=store.verification_proof_max_age_seconds,
+            gateway_number=store.gateway_msisdn,
+        )
 
     async def expire_loop(self) -> None:
         """Periodically mark stale 'sent' messages as 'expired'.

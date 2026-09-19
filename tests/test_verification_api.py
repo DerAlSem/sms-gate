@@ -296,3 +296,20 @@ def test_a_rung_window_longer_than_the_ladders_does_not_lengthen_a_verification(
     client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
     after = client.get(f"/verifications/{vid}", headers=AUTH).json()["expires_at"]
     assert after == before, f"a rung lengthened a verification: {before} -> {after}"
+
+
+def test_the_selected_rung_is_recorded_as_a_rung_attempted(client):
+    """7.1 — per rung, not per verification, because a ladder has more than one and a
+    column on the verification would answer "what did this cost" by overwriting half."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+
+    async def rungs():
+        from app.db.connection import get_db
+        db = await get_db()
+        async with db.execute(
+            "SELECT verification_id, route, outcome FROM verification_rungs"
+        ) as cur:
+            return [tuple(r) for r in await cur.fetchall()]
+
+    assert asyncio.run(rungs()) == [(vid, CALL_IN, "selected")]
