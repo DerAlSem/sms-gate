@@ -50,6 +50,20 @@ funded balance.
 
 ## 4. Implement, tests first
 
+🟢 **The base capability's core is being built in `verify-by-inbound-contact`, by the
+owner's decision of 19.09.2026 — do not build it twice.** Landed there already: the
+`verifications` and `verification_rungs` tables, the `verification_ttl_seconds` /
+`verification_max_attempts` / `verification_retention_days` settings, and the store's
+conditional confirm, attempt limit, ownership scoping, expiry sweep and retention
+(`app/db/queries.py`, `tests/test_verification_store.py`). The doors and the route
+chooser follow there.
+
+What stays here: everything vendor-side — the uCaller and Telegram Gateway adapters,
+the callback signature, the `sms_out` template, the cost ledger's vendor half, and the
+operator routing rule itself. Those are blocked on accounts and balances (1.1, 1.7)
+rather than on code.
+
+
 - [ ] 4.1 Test: a verification for an operator the rule routes to `flash_call` is not picked up by the modem sender, and one routed to `sms_out` is
 - [ ] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
 - [ ] 4.3 Test: the rule matches `МЕГАФОН` and `МегаФон` identically, and matches a name with surrounding whitespace. **This test fails on any implementation built on SQLite `upper()`/`LIKE` or on `==`**
