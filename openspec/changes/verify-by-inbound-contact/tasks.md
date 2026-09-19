@@ -119,23 +119,23 @@ exists to avoid.
 
 ## 7. What the verification stores and says
 
-- [ ] 7.1 Reuse `phone-verification`'s storage requirement — per rung attempted, its vendor
+- [x] 7.1 Reuse `phone-verification`'s storage requirement — per rung attempted, its vendor
       identifiers, cost and refund. Add: the rung selected, and the method that confirmed.
       Do not invent a second store.
 - [ ] 7.2 A verification whose selected rung loses its precondition ends with that reason and
       notifies, rather than reaching its deadline. Every writer of a terminal state notifies.
 - [ ] 7.3 The `call_in` window, configurable separately and defaulting to no longer than
       the ladder's.
-- [ ] 7.4 Return the code to the owning application **only** on `sms_in`, and never in an
+- [x] 7.4 Return the code to the owning application **only** on `sms_in`, and never in an
       operator notification or a log line on any rung.
 - [ ] 7.5 The confirmation names the method, in the push and in the poll.
 
 ## 8. The two rungs this change bears
 
-- [ ] 8.1 `call_in` — confirmed by the caller's number alone, within one open window.
-- [ ] 8.2 `sms_in` — confirmed only by the pair of originating number and code; last on
+- [x] 8.1 `call_in` — confirmed by the caller's number alone, within one open window.
+- [x] 8.2 `sms_in` — confirmed only by the pair of originating number and code; last on
       the ladder, and not offered when a cheaper rung proved itself.
-- [ ] 8.3 Inbound traffic that confirms nothing stays stored and visible exactly as today
+- [x] 8.3 Inbound traffic that confirms nothing stays stored and visible exactly as today
       (`app/admin/router.py:351`) — verification neither deletes, hides nor reclassifies it.
 
 ## 9. Guards that must bite, not merely pass

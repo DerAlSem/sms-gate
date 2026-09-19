@@ -29,6 +29,10 @@ _RING_GAP = 10.0
 
 # What became of a call, as stored. Named here because the reader writes them and the
 # chooser will read them, and two spellings of one outcome is how a count stops counting.
+# The rung an incoming call belongs to, imported rather than spelled again: the reader,
+# the chooser and the store disagreeing by a spelling is a bug with no symptom.
+from app.verification.routes import CALL_IN  # noqa: E402  (a value, not a cycle)
+
 NO_NUMBER = "no_number"        # nothing usable to attribute it by
 UNATTRIBUTED = "unattributed"  # a number arrived and no open verification wanted it
 CONFIRMED = "confirmed"        # it confirmed a verification

@@ -230,3 +230,34 @@ def test_the_poll_names_the_method_that_confirmed(client):
     assert body["status"] == "confirmed"
     assert body["method"] == CALL_IN
     assert "code" not in body
+
+
+# --- the one exception, and it follows the rung rather than the application -------------
+
+def test_the_code_comes_back_only_when_the_person_is_the_one_who_must_type_it(app, client):
+    """On `sms_in` the person reads the code from the screen in front of them and texts it
+    from the number being verified, so the owning application must be able to display it —
+    it has no other way. The exception follows the rung, not the application.
+
+    🔴 It is handed over **on selection**, not on creation, and the spec's own words say
+    "creation response". They predate this change's own decision to let the consumer pick
+    the rung afterwards: at creation no rung is chosen, and handing the code to an
+    application that then picks `call_in` would give away the secret for nothing.
+    """
+    # Nothing cheaper proves itself, so the paid rung is on the ladder — which is the
+    # only state in which it can be selected at all.
+    app.state.ims_proof = _fails()
+    vid = _create(client).json()["id"]
+    r = client.post(f"/verifications/{vid}/route", json={"route": SMS_IN}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["code"].isdigit() and len(r.json()["code"]) == 4
+
+
+def test_the_same_application_on_another_rung_is_not_given_the_code(client):
+    """The exception is a route's, not an application's. A code returned on a rung the
+    gateway itself carries lets the application confirm without the person ever being
+    reached, which is the whole guarantee gone."""
+    vid = _create(client).json()["id"]
+    r = client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json().get("code") is None

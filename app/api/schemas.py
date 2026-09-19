@@ -96,6 +96,15 @@ class RouteSelectResponse(BaseModel):
     id: int
     route: str
     status: str
+    # There is exactly one exception to the code never leaving the matcher, and it is a
+    # **route**, not an application. On `sms_in` the person is the sender: they read the
+    # code from the screen in front of them and text it to the gateway from the number
+    # being verified, so the owning application has to be able to display it. On every
+    # rung the gateway itself carries, this stays None — a code returned there would let
+    # the application confirm without the person ever being reached.
+    #
+    # Handed over here rather than at creation because at creation no rung is chosen yet.
+    code: str | None = None
 
 
 class VerificationStatusResponse(BaseModel):

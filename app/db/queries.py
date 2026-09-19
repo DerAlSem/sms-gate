@@ -1215,6 +1215,7 @@ async def record_inbound_call(
 
 async def attach_inbound_call_number(
     call_id: int, *, phone: str | None, raw_number: str, outcome: str,
+    verification_id: int | None = None,
 ) -> None:
     """The first `+CLIP` of a call, joined to the row its `RING` opened.
 
@@ -1224,8 +1225,9 @@ async def attach_inbound_call_number(
     """
     db = await get_db()
     await db.execute(
-        "UPDATE inbound_calls SET phone = ?, raw_number = ?, outcome = ? WHERE id = ?",
-        (phone, raw_number, outcome, call_id),
+        "UPDATE inbound_calls SET phone = ?, raw_number = ?, outcome = ?, "
+        "       verification_id = ? WHERE id = ?",
+        (phone, raw_number, outcome, verification_id, call_id),
     )
     await db.commit()
 

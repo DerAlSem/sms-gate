@@ -148,7 +148,7 @@ def test_inbound_notifies(monkeypatch):
 
     async def run():
         m = ModemManager("/dev/null", "/dev/null")
-        m._spawn_dispatch("+79991234567", "hello")
+        m._spawn_dispatch("+79991234567", "hello", redact=set())
         await asyncio.sleep(0)
 
     asyncio.run(run())

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 import sqlite3
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANS
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
+from app.verification import routes
 from app.modem.parser import (
     parse_cds, parse_clip, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
 )
@@ -41,6 +43,26 @@ def _as_stored_time(value) -> str | None:
     if value is None:
         return None
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+# A code is four digits and nothing around it. Written with lookarounds rather than `\b`
+# so that a longer run of digits — an order number, a time — is not mined for a code it
+# happens to contain.
+_FOUR_DIGITS = re.compile(r"(?<!\d)\d{4}(?!\d)")
+
+
+def _redacted(text: str, codes: set[str] | None) -> str:
+    """The message with any code currently live for this number taken out.
+
+    Only codes that are actually live, so an ordinary message that happens to contain four
+    digits — a time, a flat number, an amount — reaches the operator as written. A
+    redaction that ate every message would have hidden a feature rather than protected a
+    secret.
+    """
+    if not codes:
+        return text
+    return _FOUR_DIGITS.sub(
+        lambda m: "****" if m.group(0) in codes else m.group(0), text)
 
 
 def _is_permanent_status(code: int) -> bool:
@@ -850,13 +872,31 @@ class ModemManager:
             return
         phone = self._canonical_caller(raw)
         call.named = phone is not None
+        # Offered to the open verifications before the row is written, so that what is
+        # written is what happened rather than a first guess corrected a moment later.
+        # At most one verification can take it: the `call_in` rung is forbidden from
+        # having two windows open on one number, which is what makes a call — carrying no
+        # code at all — attributable.
+        verification_id = None
+        if phone is not None:
+            verification_id = await queries.confirm_by_inbound_call(
+                phone, method=calls.CALL_IN)
+        if verification_id is not None:
+            outcome = calls.CONFIRMED
+        elif phone is not None:
+            outcome = calls.UNATTRIBUTED
+        else:
+            outcome = calls.NO_NUMBER
         await queries.attach_inbound_call_number(
             call.row_id,
             phone=phone,
             raw_number=raw,
-            outcome=calls.UNATTRIBUTED if phone else calls.NO_NUMBER,
+            outcome=outcome,
+            verification_id=verification_id,
         )
-        logger.info("Incoming call from %s", phone or f"{raw!r} (not a usable number)")
+        logger.info("Incoming call from %s%s",
+                    phone or f"{raw!r} (not a usable number)",
+                    f" confirmed verification {verification_id}" if verification_id else "")
 
     @staticmethod
     def _canonical_caller(raw: str) -> str | None:
@@ -1078,12 +1118,48 @@ class ModemManager:
         if full is not None:
             logger.info("Inbound saved: phone=%s len=%d", sms.sender, len(full))
             # Do not await dispatch — fire-and-forget; errors are logged internally.
-            self._spawn_dispatch(sms.sender, full)
+            await self.handle_inbound_text(sms.sender, full)
 
-    def _spawn_dispatch(self, phone: str, text: str) -> None:
+    async def handle_inbound_text(self, phone: str, text: str) -> None:
+        """One complete inbound message, from the person to everything that wants it.
+
+        Three things happen to it and they are deliberately independent. It may confirm a
+        verification — only by the pair of this number and this verification's code, and
+        only on the rung where the person is the sender. It is announced to the operator,
+        with any live code taken out of the announcement first. And it is dispatched and
+        stored exactly as it is today, because verification neither deletes, hides nor
+        reclassifies traffic that was not meant for it: the gateway receives ordinary
+        messages from people, and a person replying to a verification with a question
+        must still be visible in the console.
+        """
+        live = await queries.open_codes_for(phone)
+        confirmed = None
+        for candidate in _FOUR_DIGITS.findall(text):
+            if candidate not in live:
+                continue
+            confirmed = await queries.confirm_by_inbound_message(
+                phone, code=candidate, method=routes.SMS_IN)
+            if confirmed is not None:
+                logger.info("Inbound message confirmed verification %d", confirmed)
+                break
+        self._spawn_dispatch(phone, text, redact=live)
+
+    def _spawn_dispatch(self, phone: str, text: str, *, redact: set[str]) -> None:
         """Fire-and-forget dispatch with a strong reference: the event loop holds
-        tasks weakly, and a sleeping retry-ladder could be collected by the GC."""
-        notify("inbound", f"{phone}: {text}", phone=phone)
+        tasks weakly, and a sleeping retry-ladder could be collected by the GC.
+
+        `redact` is applied to the *announcement only*. A verification's code may not
+        appear in an operator notification, and this is the live path that would carry it
+        out — notifications relay message text to Telegram. What reaches the application
+        and the message store is untouched: that is the traffic, and it stays exactly as
+        it is today.
+
+        Required rather than defaulted, and this is the boundary it guards: every inbound
+        text leaves for the operator through here, so a new caller that has not thought
+        about live codes fails on the signature rather than quietly announcing one. An
+        empty set is the way to say "nothing to hide", out loud.
+        """
+        notify("inbound", f"{phone}: {_redacted(text, redact)}", phone=phone)
         task = asyncio.create_task(dispatch_inbound(phone, text))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
@@ -1132,7 +1208,10 @@ class ModemManager:
             await asyncio.sleep(60)
             try:
                 for phone, text in await assembler.flush_stale_parts(max_age_seconds):
-                    self._spawn_dispatch(phone, text)
+                    # Through the same door as a whole message. A flushed group is still
+                    # a person's text arriving: if the part carrying the code survived,
+                    # it confirms, and if it did, the code must not ride out in the alert.
+                    await self.handle_inbound_text(phone, text)
             except Exception:
                 logger.exception("Parts flush failed")
 

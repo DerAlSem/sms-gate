@@ -187,7 +187,11 @@ async def run_migrations() -> None:
             -- unattributed — a number arrived and no open verification wanted it
             -- confirmed    — it confirmed a verification
             outcome    TEXT NOT NULL,
-            reason     TEXT
+            reason     TEXT,
+            -- The verification this call confirmed, where it confirmed one. "Who called
+            -- us" and "what did that call do" are different questions and the second one
+            -- is the one an operator asks after a person says the barrier did not open.
+            verification_id INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_inbound_calls_phone ON inbound_calls(phone);
