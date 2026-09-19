@@ -122,13 +122,13 @@ exists to avoid.
 - [x] 7.1 Reuse `phone-verification`'s storage requirement — per rung attempted, its vendor
       identifiers, cost and refund. Add: the rung selected, and the method that confirmed.
       Do not invent a second store.
-- [ ] 7.2 A verification whose selected rung loses its precondition ends with that reason and
+- [x] 7.2 A verification whose selected rung loses its precondition ends with that reason and
       notifies, rather than reaching its deadline. Every writer of a terminal state notifies.
-- [ ] 7.3 The `call_in` window, configurable separately and defaulting to no longer than
+- [x] 7.3 The `call_in` window, configurable separately and defaulting to no longer than
       the ladder's.
 - [x] 7.4 Return the code to the owning application **only** on `sms_in`, and never in an
       operator notification or a log line on any rung.
-- [ ] 7.5 The confirmation names the method, in the push and in the poll.
+- [x] 7.5 The confirmation names the method, in the push and in the poll.
 
 ## 8. The two rungs this change bears
 
@@ -142,11 +142,11 @@ exists to avoid.
 
 - [ ] 9.1 Each new guard is checked by mutation: break the guarded thing and confirm it goes
       red. A guard that never bit is not a guard.
-- [ ] 9.2 The silent-death guard specifically: with the IMS precondition unmet, assert the
+- [x] 9.2 The silent-death guard specifically: with the IMS precondition unmet, assert the
       call rung is absent from the answer — **and assert the positive control**, that it is
       present when the precondition holds. A negative guard without its positive control has
       executed nothing.
-- [ ] 9.3 The same pair for the caller-ID record: rung absent when `AT+CLIP=1` failed, present
+- [x] 9.3 The same pair for the caller-ID record: rung absent when `AT+CLIP=1` failed, present
       when it succeeded, and an anonymous call is *not* a fault while the record holds.
 - [x] 9.4 A test that `soft_recover` re-issues `CLIP` — it is a one-line omission today and
       will be a one-line omission again after the next edit to that function.

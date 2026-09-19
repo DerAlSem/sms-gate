@@ -905,6 +905,24 @@ async def select_route(verification_id: int, app_id: str, *, route: str) -> str:
     return "expired"
 
 
+async def shorten_verification_window(verification_id: int, *, ttl_seconds: int) -> None:
+    """Bring a verification's deadline in to this rung's own window, never out.
+
+    A rung may hold a shorter window than the capability's default and may not hold a
+    longer one: the deadline the application was told at creation is the ceiling, and a
+    configuration saying otherwise is clamped rather than obeyed. `MIN` does that in the
+    statement itself, so there is no read between the decision and the write.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE verifications "
+        "   SET expires_at = MIN(expires_at, datetime('now', ? || ' seconds')) "
+        " WHERE id = ? AND status = 'pending'",
+        (f"{int(ttl_seconds):+d}", verification_id),
+    )
+    await db.commit()
+
+
 async def fail_verification(verification_id: int, *, reason: str) -> bool:
     """End an open verification with a named reason, and say whether this call did it.
 
@@ -913,13 +931,14 @@ async def fail_verification(verification_id: int, *, reason: str) -> bool:
     service under it. "Expired" told to a person who did call, on time, from the right
     number, is the gateway reporting the one thing that did not happen.
 
-    The boolean is what makes the notification exactly-once: only the caller that actually
-    moved the row announces it.
+    The boolean says whether this call is the one that ended it, which a caller wants for
+    its own log line. It is deliberately *not* what makes the announcement exactly-once —
+    that is the announcer's own claim — because a writer that both ends and announces is a
+    writer that can be added without announcing.
     """
     db = await get_db()
     cursor = await db.execute(
-        "UPDATE verifications SET status = 'failed', reason = ?, code = NULL, "
-        "       notified = 1 "
+        "UPDATE verifications SET status = 'failed', reason = ?, code = NULL "
         " WHERE id = ? AND status = 'pending'",
         (reason, verification_id),
     )
@@ -1025,8 +1044,10 @@ async def unnotified_terminal_verifications() -> list[aiosqlite.Row]:
     """Verifications that reached a terminal state and have not been announced yet.
 
     Every writer of a terminal state leaves `notified` at 0 for this to pick up, so that
-    "who tells the application" has one answer rather than one per writer. The sweep that
-    expires rows is the exception: it announces its own, because it already holds the list.
+    "who tells the application" has one answer rather than one per writer — including the
+    expiry sweep, which has no privilege here despite holding its own list. A writer that
+    announced its own would be a writer somebody could add without announcing, and the
+    guard in `tests/test_verification_outcome_reaches_the_app.py` enforces exactly that.
     """
     db = await get_db()
     async with db.execute(
@@ -1075,6 +1096,20 @@ async def get_verification(verification_id: int, app_id: str) -> aiosqlite.Row |
     async with db.execute(
         "SELECT * FROM verifications WHERE id = ? AND app_id = ?",
         (verification_id, app_id),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def get_verification_any(verification_id: int) -> aiosqlite.Row | None:
+    """A verification without the application scope — for the gateway's own machinery.
+
+    Kept apart from `get_verification` rather than given a nullable `app_id`, so that a
+    door reaching for the unscoped read has to name it. The scoped one is the default in
+    this module for exactly the same reason the message store does it that way.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM verifications WHERE id = ?", (verification_id,)
     ) as cursor:
         return await cursor.fetchone()
 
@@ -1148,9 +1183,10 @@ async def check_verification(
 async def expire_due_verifications() -> list[int]:
     """Move open verifications past their deadline to expired, and hand back which.
 
-    Returned for the caller to notify on, and each row is handed over once: `notified` is
-    set in the same statement that expires it, so the next pass cannot announce the same
-    expiry again.
+    The rows are left **unannounced** — `notified` stays 0 — because who tells the
+    application is one answer for the whole capability and not one per writer: the
+    announcer claims each row with a conditional update of its own, which is what makes
+    the telling exactly-once whichever writer ended it.
 
     An expiry computed only when somebody next asks never fires for the case that matters.
     The person who never got the call has no reason to come back with a code, so nothing
@@ -1166,8 +1202,7 @@ async def expire_due_verifications() -> list[int]:
         return []
     marks = ",".join("?" * len(ids))
     await db.execute(
-        f"UPDATE verifications SET status = 'expired', reason = 'expired', code = NULL, "
-        f"       notified = 1 "
+        f"UPDATE verifications SET status = 'expired', reason = 'expired', code = NULL "
         f" WHERE id IN ({marks}) AND status = 'pending'",
         ids,
     )

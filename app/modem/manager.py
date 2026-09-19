@@ -19,6 +19,7 @@ from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
 from app.verification import routes
+from app.verification.dispatch import announce_verification_outcomes
 from app.modem.parser import (
     parse_cds, parse_clip, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
 )
@@ -1486,6 +1487,26 @@ class ModemManager:
                 item["error"] = f"{type(e).__name__}: {e}"
             out.append(item)
         return out
+
+    async def verification_loop(self) -> None:
+        """Expire what is due, announce every ended verification, prune the old.
+
+        A loop rather than a lazy check, because the case that matters never asks: the
+        person who never got the call has no reason to come back with a code, so nothing
+        would trigger an expiry computed on demand and the application would hold a
+        session open for ever.
+
+        A minute, the same tick as the message expiry sweep. A verification's default
+        life is five minutes, so a minute is fine enough to keep "expired" honest while
+        costing one query a minute on a gateway that is mostly idle.
+        """
+        logger.info("Verification loop started")
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await announce_verification_outcomes()
+            except Exception:
+                logger.exception("Verification sweep failed")
 
     async def expire_loop(self) -> None:
         """Periodically mark stale 'sent' messages as 'expired'.

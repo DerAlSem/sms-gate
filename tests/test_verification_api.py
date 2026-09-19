@@ -261,3 +261,38 @@ def test_the_same_application_on_another_rung_is_not_given_the_code(client):
     r = client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
     assert r.status_code == 200, r.text
     assert r.json().get("code") is None
+
+
+# --- 7.3 — the call rung's own window ----------------------------------------------------
+
+def test_choosing_the_call_rung_shortens_the_window_to_its_own(client):
+    """The rung's residual risk scales with the window: an attacker can open a
+    verification on a victim's number and, inside it, give the victim a reason to call.
+    A person is easy to persuade to dial a number and nearly impossible to persuade to
+    text four specific digits, which is the one asymmetry between this rung and the
+    inbound-message one and the reason the window is worth shortening here and nowhere
+    else."""
+    async def shorten():
+        await store.set_many({"verification_call_in_ttl_seconds": 60})
+
+    asyncio.run(shorten())
+    vid = _create(client).json()["id"]
+    before = client.get(f"/verifications/{vid}", headers=AUTH).json()["expires_at"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    after = client.get(f"/verifications/{vid}", headers=AUTH).json()["expires_at"]
+    assert after < before, f"the window was not shortened: {before} -> {after}"
+
+
+def test_a_rung_window_longer_than_the_ladders_does_not_lengthen_a_verification(client):
+    """Configurable separately, and never longer than the ladder's. A configuration that
+    says otherwise is clamped rather than obeyed: the capability's deadline is the one
+    the application was told."""
+    async def lengthen():
+        await store.set_many({"verification_call_in_ttl_seconds": 86400})
+
+    asyncio.run(lengthen())
+    vid = _create(client).json()["id"]
+    before = client.get(f"/verifications/{vid}", headers=AUTH).json()["expires_at"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    after = client.get(f"/verifications/{vid}", headers=AUTH).json()["expires_at"]
+    assert after == before, f"a rung lengthened a verification: {before} -> {after}"

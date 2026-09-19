@@ -67,6 +67,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         ("reader", modem_manager.reader_loop(), True),
         ("inbound", modem_manager.inbound_loop(), True),
         ("expire", modem_manager.expire_loop(), True),
+        # Essential for the same reason the message expiry sweep is: a verification whose
+        # end is never announced leaves a person at a barrier and an application waiting
+        # on an answer that is never computed.
+        ("verification", modem_manager.verification_loop(), True),
         ("retry", modem_manager.retry_loop(), True),
         ("keepalive", modem_manager.keepalive_loop(), False),
         ("parts-flush", modem_manager.parts_flush_loop(), False),

@@ -15,7 +15,7 @@ from app.lookup.operator import record_operator
 from app.modem.manager import ModemManager
 from app.settings_store import store
 from app.verification.probes import build_probes
-from app.verification.routes import SMS_IN, Registry, unavailable
+from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -176,6 +176,14 @@ async def select_verification_route(
     # The one rung where the person must type the code back is the one rung where the
     # owning application is given it — it has no other way to show them. Read after the
     # selection so that a verification whose selection lost a race hands over nothing.
+    if body.route == CALL_IN:
+        # This rung carries its own window, and it is the rung whose residual risk scales
+        # with it: an attacker can open a verification on a victim's number and, inside
+        # the window, give the victim a reason to call. Clamped to the ladder's, so a
+        # configuration cannot lengthen what the application was already told.
+        await queries.shorten_verification_window(
+            verification_id, ttl_seconds=store.verification_call_in_ttl_seconds)
+
     code = None
     if body.route == SMS_IN:
         selected = await queries.get_verification(verification_id, app_id)
