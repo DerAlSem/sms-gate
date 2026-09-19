@@ -91,8 +91,16 @@ text to Telegram, and the admin console renders it.
 rung the person is the sender: they read the code from the screen in front of them and text it
 to the gateway from the number being verified. The code must therefore be returned to the
 owning application, which has no other way to display it. On that rung, and only there, the
-code SHALL be returned in the creation response to the owning application and to no one else,
-and SHALL still be absent from every operator notification and every log line.
+code SHALL be returned to the owning application and to no one else, and SHALL still be absent
+from every operator notification and every log line.
+
+**It SHALL be handed over on the selection of that rung, not on the creation of the
+verification**, because that is the first moment at which a rung exists. Creation answers with
+the routes that can carry the number and commits to none of them; an application given the code
+there could then select `call_in` and confirm without the person ever being reached, which is
+the one thing this requirement exists to prevent. The rule above — the exception follows the
+rung — settles the moment as well as the recipient, and saying it out loud is what keeps an
+implementer from putting the code in the earlier answer where the older two-step flow had it.
 
 **Where the exception applies, the guarantee this requirement otherwise makes does not exist,
 and the spec says so rather than leaving it to be discovered.** A code the requester can read
@@ -107,19 +115,23 @@ verification on any other route SHALL NOT be given the code.
 [unbacked]
 
 #### Scenario: The code is not in the response
-- **WHEN** a verification is created or asked about on a route where the gateway sends the code
-- **THEN** neither answer carries the code
+- **WHEN** a verification is created, a route is selected, or it is asked about, on a route where the gateway sends the code
+- **THEN** none of those answers carries the code
 
 #### Scenario: The code is not in an alert or a log
 - **WHEN** a verification fails and the operator is alerted
 - **THEN** the alert and the log name the verification and the reason, and not the code
 
 #### Scenario: The route where the person must type the code back
-- **WHEN** a verification is created on the `sms_in` rung
-- **THEN** the creation response carries the code to the owning application, and the operator notification and the log still do not
+- **WHEN** the consumer selects the `sms_in` rung
+- **THEN** the selection response carries the code to the owning application, and the operator notification and the log still do not
+
+#### Scenario: The answer that commits to no rung yet
+- **WHEN** a verification is created and the `sms_in` rung is among those offered
+- **THEN** the creation answer does not carry the code, because no rung has been selected
 
 #### Scenario: The same application on another rung
-- **WHEN** the same application creates a verification on any rung the gateway itself sends
+- **WHEN** the same application selects any rung the gateway itself sends
 - **THEN** the code is not returned to it
 
 ### Requirement: Accepting a verification is bounded and does not hang on the vendor
@@ -320,10 +332,24 @@ A route whose attempt fails SHALL fail the verification with that reason, and th
 carry the routes still available so that the consumer may select again. Selecting again SHALL
 be the consumer's act, and the reason the previous attempt failed SHALL be visible to it.
 
+**Failure is terminal for the verification, and "select again" means a new one** — the owner's
+decision of 19.09.2026, settling an ambiguity this requirement carried from the moment the
+ladder was added to it. A verification that has failed SHALL NOT accept a second selection; the
+door SHALL refuse one with that reason. What the failed verification owes the consumer is the
+list, not a second turn: without it the consumer would have to open a verification merely to
+discover what is left, and the reason string alone names what died rather than what remains.
+
+That list SHALL be the ladder as it stands **at the moment the answer is read**, not as it
+stood when the verification failed, and SHALL NOT contain the route that failed. Read-time,
+because a rung's precondition decays and a list composed at the ending would be exactly the
+stale evidence this capability refuses everywhere else. Without the failed route, because that
+route may well still prove itself — a rung can fail for reasons of its own while its
+precondition holds perfectly — and offering it back is the silent hop arriving by another door.
+
 Selecting a route that was not offered, or one whose precondition has since stopped holding,
 SHALL be refused with that reason rather than attempted.
 
-[unbacked · owner's decision 18.09.2026; the prohibition on silent switching predates the ladder and is unchanged by it]
+[unbacked · owner's decisions 18.09.2026 (no silent switching) and 19.09.2026 (failure is terminal)]
 
 #### Scenario: The consumer picks a route
 - **WHEN** the consumer selects one of the offered routes
@@ -332,6 +358,18 @@ SHALL be refused with that reason rather than attempted.
 #### Scenario: The chosen route fails
 - **WHEN** the selected route fails to carry the verification
 - **THEN** the verification fails with that reason, the remaining available routes are offered, and no other route is attempted without a new selection
+
+#### Scenario: The route that failed is not among what is left
+- **WHEN** a failed verification is asked what routes remain, and the route it was carried by could still prove itself
+- **THEN** that route is absent from the answer and the remaining ones are present
+
+#### Scenario: A verification still being carried is offered nothing
+- **WHEN** a verification that has neither failed nor ended is asked about
+- **THEN** it carries no list of routes, because a list handed over under a live rung reads as a licence to hop
+
+#### Scenario: Selecting again on a verification that failed
+- **WHEN** the consumer selects a route on a verification that has already failed
+- **THEN** the selection is refused with that reason, and a fresh verification is what carries the next attempt
 
 #### Scenario: A route that was never offered
 - **WHEN** the consumer selects a route that was not in the offered list

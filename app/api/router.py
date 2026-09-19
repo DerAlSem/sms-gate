@@ -145,6 +145,19 @@ async def select_verification_route(
     if row is None:
         raise HTTPException(status_code=404, detail="Verification not found")
 
+    # A verification that ended is refused as ended, and before the hop check, because a
+    # failed one holds a route and would otherwise be answered "already_selected" — an
+    # answer about the route, which would send a consumer looking for a way to release it
+    # when what actually happened is that the verification is over. Failure is terminal by
+    # the owner's decision of 19.09.2026: a fresh verification carries the next attempt,
+    # and the list of what remains rides on the poll of this one.
+    if row["status"] != "pending":
+        raise HTTPException(
+            status_code=422,
+            detail={"error": f"verification_{row['status']}", "reason": row["reason"],
+                    "message": "this verification has ended; open a new one to try again"},
+        )
+
     # Asked before the probes, and in this order deliberately. A verification that
     # already holds a route is not a rung that has become unavailable — it is the same
     # verification being selected twice, and the `call_in` rung's own one-window-per-number

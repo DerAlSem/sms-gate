@@ -391,3 +391,32 @@ def test_a_confirmed_verification_is_offered_nothing(client):
 
     assert asyncio.run(confirm()) == vid
     assert client.get(f"/verifications/{vid}", headers=AUTH).json()["routes"] == []
+
+
+def test_selecting_again_on_a_verification_that_failed_is_refused_as_ended(client):
+    """The owner's decision of 19.09.2026: failure is terminal, and a fresh verification
+    is what carries the next attempt.
+
+    Refused **as ended**, not as `already_selected`. That answer is about the route and
+    would send a consumer looking for a way to release it; what actually happened is that
+    the verification is over, and the list it now carries is for the next one.
+    """
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert _fail(vid) is True
+
+    r = client.post(f"/verifications/{vid}/route", json={"route": SMS_IN}, headers=AUTH)
+    assert r.status_code == 422
+    assert "verification_failed" in r.text
+    assert "already_selected" not in r.text
+
+
+def test_a_verification_still_open_is_still_refused_as_already_carried(client):
+    """The positive control: the ending check must not swallow the hop refusal, which is
+    the older and more load-bearing of the two."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+
+    r = client.post(f"/verifications/{vid}/route", json={"route": SMS_IN}, headers=AUTH)
+    assert r.status_code == 422
+    assert "already_selected" in r.text
