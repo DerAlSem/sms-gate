@@ -370,7 +370,11 @@ def test_a_soft_recovery_restores_the_delivery_report_subscription():
     serial = ATSerial("/dev/null")
     serial.command = rec
     asyncio.run(serial.soft_recover())
-    assert rec.calls[-1] == CNMI_SUBSCRIBE
+    # Position, not identity: the subscription has to come after the RF cycle that may
+    # have dropped it. Caller ID is now re-issued behind it and is a different guard's
+    # business (`tests/test_caller_id_record.py`), so this one asserts what it is about.
+    assert CNMI_SUBSCRIBE in rec.calls
+    assert rec.calls.index("AT+COPS=0") < rec.calls.index(CNMI_SUBSCRIBE)
     assert "AT+CFUN=4" in rec.calls and "AT+COPS=0" in rec.calls
 
 

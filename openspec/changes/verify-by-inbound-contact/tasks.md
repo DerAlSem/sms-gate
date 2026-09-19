@@ -58,10 +58,10 @@
 
 ## 4. Caller ID becomes something the gateway knows it holds
 
-- [ ] 4.1 Re-issue `CLIP_SUBSCRIBE` wherever `CNMI_SUBSCRIBE` is re-issued —
+- [x] 4.1 Re-issue `CLIP_SUBSCRIBE` wherever `CNMI_SUBSCRIBE` is re-issued —
       `soft_recover` (`app/modem/at_commands.py:669-681`) does the second and not the first,
       on a docstring whose own argument covers both. Test first, and it must fail first.
-- [ ] 4.2 Record the subscription's state per link generation: issued and acknowledged, or
+- [x] 4.2 Record the subscription's state per link generation: issued and acknowledged, or
       not. `AT+CLIP=1` at init is already allowed to fail with only a warning
       (`app/modem/at_commands.py:706-715`) — that warning becomes a recorded fact.
 - [ ] 4.3 Make that record, and nothing read back from the modem, the rung's precondition on
@@ -136,7 +136,7 @@
       executed nothing.
 - [ ] 9.3 The same pair for the caller-ID record: rung absent when `AT+CLIP=1` failed, present
       when it succeeded, and an anonymous call is *not* a fault while the record holds.
-- [ ] 9.4 A test that `soft_recover` re-issues `CLIP` — it is a one-line omission today and
+- [x] 9.4 A test that `soft_recover` re-issues `CLIP` — it is a one-line omission today and
       will be a one-line omission again after the next edit to that function.
 - [ ] 9.5 Assert the ladder cannot be reordered into offering a rung without its precondition,
       and that stale evidence is refused as firmly as absent evidence.

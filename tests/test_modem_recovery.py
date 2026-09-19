@@ -38,11 +38,18 @@ def test_soft_recover_sequence():
 
     The CNMI re-issue is not decoration: if a firmware drops the subscription across a
     CFUN cycle, the gateway stops receiving +CDS and +CMTI silently. Every message would
-    expire and every inbound SMS would be missed, with no health check the wiser."""
-    from app.modem.at_commands import CNMI_SUBSCRIBE
+    expire and every inbound SMS would be missed, with no health check the wiser.
+
+    Caller ID rides along for the same reason, behind the part that may not fail: after
+    an ordinary recovery IMS still reads `1,1`, so nothing looks unhealthy while `RING`
+    arrives anonymous. Whether its *record* survives is the business of
+    `tests/test_caller_id_record.py`; what belongs here is the sequence."""
+    from app.modem.at_commands import CLIP_SUBSCRIBE, CNMI_SUBSCRIBE
     rec = Rec()
     asyncio.run(_serial(rec).soft_recover())
-    assert rec.calls == ["AT+CFUN=4", "AT+CFUN=1", "AT+COPS=0", CNMI_SUBSCRIBE]
+    assert rec.calls == [
+        "AT+CFUN=4", "AT+CFUN=1", "AT+COPS=0", CNMI_SUBSCRIBE, CLIP_SUBSCRIBE,
+    ]
 
 
 def test_hard_reset_issues_cfun_and_swallows_error():
