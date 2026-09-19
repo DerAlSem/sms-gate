@@ -1,0 +1,232 @@
+"""The doors: create, select, check, poll.
+
+The shape is the owner's decision of 18.09.2026 and it is what this change exists to add.
+Creating a verification **proves** routes; it does not place anything. The consumer picks
+one, and only then does the gateway begin carrying it. A list to choose from is not a
+licence to hop: the gateway never moves a verification to another route by itself, because
+a person told to watch Telegram whose verification silently becomes an SMS is looking at
+the wrong screen while the right one already shows the code.
+"""
+
+import asyncio
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.db import queries
+from app.db.connection import close_db, init_db
+from app.db.migrate import run_migrations
+from app.settings_store import store
+from app.verification.routes import CALL_IN, SMS_IN, Proof
+
+PHONE = "+79261234888"
+AUTH = {"Authorization": "Bearer token-app1"}
+
+
+class FakeModem:
+    caller_id_held = True
+    link_in_service = True
+
+    def health_snapshot(self):
+        return {"modem_detected": True}
+
+
+def _holds():
+    async def proof():
+        return Proof(holds=True)
+    return proof
+
+
+def _fails():
+    async def proof():
+        return Proof(holds=False, reason="ims not registered")
+    return proof
+
+
+@pytest.fixture
+def app():
+    """The public router on a bare app, as the other door tests build it.
+
+    Deliberately not `app.main:app`: its lifespan opens serial ports and starts the modem
+    loops, and none of that is what a door is being asked about here.
+    """
+    from fastapi import FastAPI
+
+    from app.api.router import router
+
+    async def setup():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.create_app("app1", "token-app1")
+        await queries.create_app("app2", "token-app2")
+        await store.load()
+        await store.set_many({"gateway_msisdn": "+79990001122"})
+
+    asyncio.run(setup())
+    application = FastAPI()
+    application.include_router(router)
+    application.state.modem = FakeModem()
+    application.state.ims_proof = _holds()
+    try:
+        yield application
+    finally:
+        asyncio.run(close_db())
+
+
+@pytest.fixture
+def client(app):
+    return TestClient(app)
+
+
+def _create(client, phone=PHONE, headers=None, **extra):
+    return client.post("/verifications", json={"phone": phone, **extra},
+                       headers=headers or AUTH)
+
+
+# --- creation proves, and places nothing ------------------------------------------------
+
+def test_creation_answers_with_an_id_and_the_routes_that_can_carry_it(client):
+    r = _create(client)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert isinstance(body["id"], int)
+    assert [o["route"] for o in body["routes"]] == [CALL_IN]
+
+
+def test_the_answer_says_what_the_person_must_do_and_names_no_estate(client):
+    body = _create(client).json()
+    instruction = body["routes"][0]["instruction"]
+    assert "+79990001122" in instruction
+    for word in ("SIM", "modem", "ttyUSB", "vendor", "Quectel"):
+        assert word.lower() not in instruction.lower()
+
+
+def test_nothing_is_placed_before_a_selection(client):
+    """No call placed, no message composed, no vendor charged — and the row says so by
+    holding no route at all."""
+    vid = _create(client).json()["id"]
+
+    async def row():
+        return dict(await queries.get_verification(vid, "app1"))
+
+    assert asyncio.run(row())["route"] is None
+
+
+def test_the_creation_answer_never_carries_the_code(client):
+    """A code returned to an application lets that application confirm a verification
+    without the code ever reaching the person. Which is the whole guarantee, gone."""
+    body = _create(client).json()
+    assert "code" not in body
+
+
+def test_an_application_that_supplies_its_own_code_is_refused(client):
+    """The party that answers "is this code correct" must be the party that knows what to
+    compare against; splitting the secret from its matcher is what makes short codes
+    unsafe."""
+    r = _create(client, code="1234")
+    assert r.status_code == 422
+    assert "code" in r.text
+
+
+def test_a_blocked_number_is_refused_without_opening_anything(client):
+    async def block():
+        await queries.block_phone(PHONE)
+
+    asyncio.run(block())
+    r = _create(client)
+    assert r.status_code == 422
+    assert "blacklist" in r.text.lower()
+
+
+def test_no_route_proving_itself_is_refused_in_the_same_answer(app, client):
+    """6.7 — rather than opening a verification whose only possible outcome is to expire."""
+    app.state.ims_proof = _fails()
+    app.state.modem = type("Down", (), {"caller_id_held": True,
+                                        "link_in_service": False})()
+    r = _create(client)
+    assert r.status_code == 422
+    assert "no_route_available" in r.text
+
+    async def count():
+        db = await __import__("app.db.connection", fromlist=["x"]).get_db()
+        async with db.execute("SELECT COUNT(*) FROM verifications") as cur:
+            return (await cur.fetchone())[0]
+
+    assert asyncio.run(count()) == 0, "a verification was opened that can only expire"
+
+
+# --- selection --------------------------------------------------------------------------
+
+def test_the_consumer_picks_a_route_and_the_gateway_carries_it_by_that_one(client):
+    vid = _create(client).json()["id"]
+    r = client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["route"] == CALL_IN
+
+    async def row():
+        return dict(await queries.get_verification(vid, "app1"))
+
+    assert asyncio.run(row())["route"] == CALL_IN
+
+
+def test_a_route_that_was_never_offered_is_refused_with_that_reason(client):
+    vid = _create(client).json()["id"]
+    r = client.post(f"/verifications/{vid}/route", json={"route": "flash_call"},
+                    headers=AUTH)
+    assert r.status_code == 422
+    assert "not_offered" in r.text
+
+
+def test_a_route_whose_precondition_has_since_lapsed_is_refused(app, client):
+    """Refused with that reason rather than attempted: the proof decays after the offer,
+    and the gap between offer and selection is where it decays."""
+    vid = _create(client).json()["id"]
+    app.state.ims_proof = _fails()
+    r = client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert r.status_code == 422
+    assert "not_offered" in r.text
+
+
+def test_a_second_selection_is_refused_rather_than_hopping(client):
+    """The gateway never moves a verification to another route by itself, and it does not
+    let the door do it either — one route at a time."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    r = client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert r.status_code == 422
+    assert "already_selected" in r.text
+
+
+# --- ownership ---------------------------------------------------------------------------
+
+def test_another_application_cannot_see_or_spend_a_verification(client):
+    """Indistinguishable from a missing one, and no attempt spent: one token walking
+    another's verifications does worse than read them."""
+    vid = _create(client).json()["id"]
+    other = {"Authorization": "Bearer token-app2"}
+    assert client.get(f"/verifications/{vid}", headers=other).status_code == 404
+    assert client.post(f"/verifications/{vid}/check", json={"code": "0000"},
+                       headers=other).status_code == 404
+
+    async def attempts():
+        return dict(await queries.get_verification(vid, "app1"))["attempts"]
+
+    assert asyncio.run(attempts()) == 0
+
+
+# --- poll ---------------------------------------------------------------------------------
+
+def test_the_poll_names_the_method_that_confirmed(client):
+    """An application whose stakes do not tolerate the weakest of these must be able to
+    see what it got, and must not have to assume the strongest."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+
+    async def confirm():
+        return await queries.confirm_by_inbound_call(PHONE, method=CALL_IN)
+
+    assert asyncio.run(confirm()) == vid
+    body = client.get(f"/verifications/{vid}", headers=AUTH).json()
+    assert body["status"] == "confirmed"
+    assert body["method"] == CALL_IN
+    assert "code" not in body

@@ -64,7 +64,7 @@
 - [x] 4.2 Record the subscription's state per link generation: issued and acknowledged, or
       not. `AT+CLIP=1` at init is already allowed to fail with only a warning
       (`app/modem/at_commands.py:706-715`) — that warning becomes a recorded fact.
-- [ ] 4.3 Make that record, and nothing read back from the modem, the rung's precondition on
+- [x] 4.3 Make that record, and nothing read back from the modem, the rung's precondition on
       caller ID. `AT+CLIP?` does not answer on this device and `AT+CLIP=?` answers a
       different question.
 - [x] 4.4 Count calls arriving with no usable caller number and expose the count to an
@@ -101,20 +101,20 @@ runs the other one and two sessions building one door is the collision task 3.1
 exists to avoid.
 
 
-- [ ] 6.1 Route registry with a precondition probe per rung; the ladder's order and membership
+- [x] 6.1 Route registry with a precondition probe per rung; the ladder's order and membership
       read from configuration.
-- [ ] 6.2 Bound the probe set **as a whole**, not probe by probe, and count an unanswered
+- [x] 6.2 Bound the probe set **as a whole**, not probe by probe, and count an unanswered
       probe as unproven.
-- [ ] 6.3 The invariant on the boundary: a rung with an unproven or stale precondition is not
+- [x] 6.3 The invariant on the boundary: a rung with an unproven or stale precondition is not
       offered. Guard on the offering, not a walk over the callers.
-- [ ] 6.4 The selection door — `POST /verifications/{id}/route`. Nothing is placed, composed
+- [x] 6.4 The selection door — `POST /verifications/{id}/route`. Nothing is placed, composed
       or charged before a selection; selecting a rung that was not offered, or one whose
       precondition has since lapsed, is refused with that reason.
 - [ ] 6.5 No silent hop. A failed rung fails the verification with its reason and re-offers
       what is left; moving on is the consumer's act.
-- [ ] 6.6 One open `call_in` verification per number; a second request for that number is
+- [x] 6.6 One open `call_in` verification per number; a second request for that number is
       answered without that rung.
-- [ ] 6.7 Refuse the verification when no rung can prove itself, in the same answer, rather
+- [x] 6.7 Refuse the verification when no rung can prove itself, in the same answer, rather
       than opening one that can only expire.
 
 ## 7. What the verification stores and says
@@ -150,7 +150,7 @@ exists to avoid.
       when it succeeded, and an anonymous call is *not* a fault while the record holds.
 - [x] 9.4 A test that `soft_recover` re-issues `CLIP` — it is a one-line omission today and
       will be a one-line omission again after the next edit to that function.
-- [ ] 9.5 Assert the ladder cannot be reordered into offering a rung without its precondition,
+- [x] 9.5 Assert the ladder cannot be reordered into offering a rung without its precondition,
       and that stale evidence is refused as firmly as absent evidence.
 
 ## 10. Verify against the real thing

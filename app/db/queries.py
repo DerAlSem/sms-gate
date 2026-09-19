@@ -948,6 +948,105 @@ async def record_verification_rung(
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def confirm_by_inbound_call(phone: str, *, method: str) -> int | None:
+    """Confirm the open `call_in` verification for this caller, at most once.
+
+    Returns the id confirmed, or None when the call confirmed nothing — no open
+    verification on that rung for that number, or one that had already closed.
+
+    A single conditional update, like the check door's, and for a sharper reason:
+    repetition is not an edge case here. The modem reports one call fifteen times in
+    sixteen seconds, so a read-then-write would see "pending" fourteen times after the
+    first confirmation and race itself.
+
+    Nothing about the call is required beyond its number, because nothing else is
+    carried. Attribution rests on the number and the single open window, which is why
+    the rung is separately forbidden from having two windows open on one number.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?, code = NULL, "
+        "       notified = 0 "
+        " WHERE id = (SELECT id FROM verifications "
+        "              WHERE phone = ? AND route = 'call_in' AND status = 'pending' "
+        "                AND expires_at > CURRENT_TIMESTAMP "
+        "              ORDER BY id LIMIT 1)",
+        (method, phone),
+    )
+    await db.commit()
+    if cursor.rowcount != 1:
+        return None
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE phone = ? AND route = 'call_in' AND status = 'confirmed' "
+        " ORDER BY confirmed_at DESC, id DESC LIMIT 1",
+        (phone,),
+    ) as c:
+        row = await c.fetchone()
+    return row[0] if row else None
+
+
+async def confirm_by_inbound_message(phone: str, *, code: str, method: str) -> int | None:
+    """Confirm on the pair of originating number **and** code. Neither half alone.
+
+    The code binds the arriving message to one open verification; the originating number
+    is what binds the person to the number. A message carrying a valid open code from
+    another number confirms nothing and consumes nothing, and a wrong code from the right
+    number leaves the verification pending — deliberately without spending an attempt,
+    because on this rung the only party who can spend them is the person themselves,
+    mistyping, and counting those locks a real person out of a barrier they are at.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?, code = NULL, "
+        "       notified = 0 "
+        " WHERE id = (SELECT id FROM verifications "
+        "              WHERE phone = ? AND code = ? AND route = 'sms_in' "
+        "                AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP "
+        "              ORDER BY id LIMIT 1)",
+        (method, phone, code),
+    )
+    await db.commit()
+    if cursor.rowcount != 1:
+        return None
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE phone = ? AND route = 'sms_in' AND status = 'confirmed' "
+        " ORDER BY confirmed_at DESC, id DESC LIMIT 1",
+        (phone,),
+    ) as c:
+        row = await c.fetchone()
+    return row[0] if row else None
+
+
+async def unnotified_terminal_verifications() -> list[aiosqlite.Row]:
+    """Verifications that reached a terminal state and have not been announced yet.
+
+    Every writer of a terminal state leaves `notified` at 0 for this to pick up, so that
+    "who tells the application" has one answer rather than one per writer. The sweep that
+    expires rows is the exception: it announces its own, because it already holds the list.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, status, confirmed_by, reason FROM verifications "
+        " WHERE status != 'pending' AND notified = 0 ORDER BY id"
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def mark_verification_notified(verification_id: int) -> bool:
+    """Claim the right to announce this one. True only for the caller that won it."""
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET notified = 1 WHERE id = ? AND notified = 0",
+        (verification_id,),
+    )
+    await db.commit()
+    return cursor.rowcount == 1
+
+
 async def has_open_verification(phone: str, *, route: str) -> bool:
     """Whether this number already has a live verification on this rung.
 
