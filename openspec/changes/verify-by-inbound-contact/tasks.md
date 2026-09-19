@@ -89,6 +89,18 @@
 
 ## 6. The chooser
 
+🔴 **Blocked on the base capability existing, verified in code on 19.09.2026, against
+the previous handoff's claim that this section was free to start.** There is no
+`verifications` table, no `POST /verifications`, no `/check` and no
+`GET /verifications/{id}`: the public API is `/sms/send` and `/sms/{id}` and nothing
+else. The selection door below is `POST /verifications/{id}/route`, and `{id}` has no
+source. Those norms live in `route-sends-by-operator`'s delta, which is at 9/89 with
+every code task open, and task 7.1 here forbids inventing a second store. Who builds
+the base — that change or this one — is the owner's call, because a sister session
+runs the other one and two sessions building one door is the collision task 3.1
+exists to avoid.
+
+
 - [ ] 6.1 Route registry with a precondition probe per rung; the ladder's order and membership
       read from configuration.
 - [ ] 6.2 Bound the probe set **as a whole**, not probe by probe, and count an unanswered
