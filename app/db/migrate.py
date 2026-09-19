@@ -292,6 +292,60 @@ async def run_migrations() -> None:
         CREATE INDEX IF NOT EXISTS idx_delivery_reports_at  ON delivery_reports(received_at);
         CREATE INDEX IF NOT EXISTS idx_delivery_reports_ref ON delivery_reports(modem_ref);
 
+        -- A verification: who asked, which number, the secret, the deadline, the state.
+        --
+        -- `code` is nullable and is *emptied* the moment the verification stops being
+        -- confirmable — confirmed, expired, or out of attempts. The row holds a
+        -- subscriber's number next to a live secret, and the window in which that secret
+        -- is useful is exactly the window in which the row is pending.
+        --
+        -- `route` is the rung the consumer selected, and is NULL until it selects one:
+        -- nothing is placed, composed or charged before that. `confirmed_by` is the
+        -- method that actually proved it, which is not always the route — an application
+        -- whose stakes do not tolerate a caller number alone must be able to see what it
+        -- got rather than assume the strongest.
+        CREATE TABLE IF NOT EXISTS verifications (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id       TEXT NOT NULL,
+            phone        TEXT NOT NULL,
+            code         TEXT,
+            -- pending | confirmed | failed | expired
+            status       TEXT NOT NULL DEFAULT 'pending',
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            route        TEXT,
+            confirmed_by TEXT,
+            reason       TEXT,
+            created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at   TIMESTAMP NOT NULL,
+            confirmed_at TIMESTAMP,
+            -- Whether the owning application has already been told this verification
+            -- reached a terminal state. One notification per verification, and the
+            -- sweep must not announce the same expiry on its next pass.
+            notified     INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_verifications_phone  ON verifications(phone);
+        CREATE INDEX IF NOT EXISTS idx_verifications_status ON verifications(status);
+
+        -- Per rung attempted, not per verification: a ladder has more than one. A
+        -- verification that tried Telegram and then placed a call holds two vendor
+        -- identifiers and two costs against one code, and a column on the row above
+        -- would answer "what did this person's login cost" by overwriting half of it.
+        CREATE TABLE IF NOT EXISTS verification_rungs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            verification_id INTEGER NOT NULL,
+            route           TEXT NOT NULL,
+            vendor_ref      TEXT,
+            cost            REAL,
+            refunded        INTEGER NOT NULL DEFAULT 0,
+            outcome         TEXT,
+            reason          TEXT,
+            started_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_verification_rungs_v
+            ON verification_rungs(verification_id);
+
         CREATE TABLE IF NOT EXISTS notify_refs (
             message_id  INTEGER PRIMARY KEY,
             phone       TEXT NOT NULL,

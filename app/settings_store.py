@@ -69,6 +69,21 @@ SETTINGS_SPEC: list[Spec] = [
          route_key="app_id"),
     Spec("inbound_dispatch_retries", "int", 3, "Dispatch", False, "POST retries"),
     Spec("inbound_dispatch_timeout", "float", 10.0, "Dispatch", False, "POST timeout (s)"),
+    # Both numbers coincide with ones the gateway already holds, by the owner's decision
+    # of 18.09.2026, and the coincidence is the argument. Five minutes is
+    # `delivery_timeout_seconds`: a verification that outlived the message carrying it
+    # would sit open waiting on an outcome the sender had already abandoned. Five attempts
+    # is `blacklist_threshold`: two different numbers for "enough" is two support answers
+    # to one question.
+    Spec("verification_ttl_seconds", "posint", 300, "Verification", False,
+         "How long a verification stays open (s)"),
+    Spec("verification_max_attempts", "posint", 5, "Verification", False,
+         "Wrong codes tolerated before a verification stops accepting any"),
+    # The row holds a subscriber's number beside a code. Retention is why it does not hold
+    # it for ever; `posint` because zero would delete verifications as fast as they are
+    # made and present as a gateway that answers 404 to everyone.
+    Spec("verification_retention_days", "posint", 30, "Verification", False,
+         "Delete finished verifications after N days"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93

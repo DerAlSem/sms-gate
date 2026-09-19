@@ -837,6 +837,173 @@ async def list_inbound(
 
 
 
+async def create_verification(
+    app_id: str, phone: str, *, code: str, ttl_seconds: int,
+) -> int:
+    """Persist a verification before anything is placed on its behalf.
+
+    The deadline is computed by the database rather than by the caller, so that it is
+    comparable with `CURRENT_TIMESTAMP` in every conditional update below — the whole
+    point of those being single statements is lost if the times they compare were written
+    by two different clocks.
+    """
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO verifications (app_id, phone, code, expires_at) "
+        "VALUES (?, ?, ?, datetime('now', ? || ' seconds'))",
+        # `:+d`, the idiom this module already uses for a signed interval: a plain
+        # "+" prefix turns a negative interval into "+-1", which SQLite reads as no date
+        # at all and the NOT NULL constraint then reports as a missing deadline.
+        (app_id, phone, code, f"{int(ttl_seconds):+d}"),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def open_codes_for(phone: str) -> set[str]:
+    """The codes currently live on this number, so a new one can differ from all of them.
+
+    Two open verifications sharing a code would make an arriving answer attributable to
+    neither with certainty, which is the one job a code has on the routes that carry one.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT code FROM verifications "
+        "WHERE phone = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP "
+        "AND code IS NOT NULL",
+        (phone,),
+    ) as cursor:
+        return {row[0] for row in await cursor.fetchall()}
+
+
+async def get_verification(verification_id: int, app_id: str) -> aiosqlite.Row | None:
+    """Scoped to the owning application, and indistinguishable from missing to any other.
+
+    Unscoped reads exist elsewhere in this module for the admin console; this door is not
+    one of them. An application walking another's verifications by id does worse than
+    read them — it spends their attempts.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM verifications WHERE id = ? AND app_id = ?",
+        (verification_id, app_id),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def check_verification(
+    verification_id: int, app_id: str, *, code: str, max_attempts: int,
+) -> str:
+    """Answer whether `code` is this verification's, and say what happened.
+
+    One of: `confirmed`, `wrong_code`, `already_confirmed`, `expired`, `no_attempts_left`,
+    `not_found`. A bare no is not an answer — the caller is a barrier with a person
+    standing at it, and "expired" and "wrong" mean different things to them.
+
+    `max_attempts` is required rather than defaulted on purpose. It is a setting, this
+    layer does not read settings, and a default here would be a quiet hole: a new call
+    site that forgot it would pass, silently bounded by somebody else's number.
+
+    Both the confirmation and the spent attempt are single conditional updates, decided on
+    the rows they changed. Reading the state and writing it back loses the race that
+    actually happens: a person double-taps Confirm, and both reads see a pending
+    verification with attempts to spare.
+    """
+    db = await get_db()
+    limit = int(max_attempts)
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = 'check', code = NULL "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP AND attempts < ? AND code = ?",
+        (verification_id, app_id, limit, code),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "confirmed"
+
+    # It was not confirmed. Spend an attempt under the same conditions, so that a wrong
+    # code costs one and a code offered to something already finished costs nothing.
+    cursor = await db.execute(
+        "UPDATE verifications SET attempts = attempts + 1 "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP AND attempts < ?",
+        (verification_id, app_id, limit),
+    )
+    await db.commit()
+    spent = cursor.rowcount == 1
+    if spent:
+        # The attempt that reaches the limit finishes the verification, and a finished
+        # verification stops holding a usable secret.
+        await db.execute(
+            "UPDATE verifications SET status = 'failed', reason = 'no_attempts_left', "
+            "       code = NULL "
+            " WHERE id = ? AND status = 'pending' AND attempts >= ?",
+            (verification_id, limit),
+        )
+        await db.commit()
+        return "wrong_code"
+
+    # Nothing changed, so why is a read — used to explain, never to decide.
+    row = await get_verification(verification_id, app_id)
+    if row is None:
+        return "not_found"
+    if row["status"] == "confirmed":
+        return "already_confirmed"
+    if row["status"] == "expired":
+        return "expired"
+    if row["status"] == "failed":
+        return "no_attempts_left"
+    return "expired"          # pending, but past its deadline: the sweep has not run yet
+
+
+async def expire_due_verifications() -> list[int]:
+    """Move open verifications past their deadline to expired, and hand back which.
+
+    Returned for the caller to notify on, and each row is handed over once: `notified` is
+    set in the same statement that expires it, so the next pass cannot announce the same
+    expiry again.
+
+    An expiry computed only when somebody next asks never fires for the case that matters.
+    The person who never got the call has no reason to come back with a code, so nothing
+    triggers a lazy check and the application waits for an answer that is never computed.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE status = 'pending' AND expires_at <= CURRENT_TIMESTAMP"
+    ) as cursor:
+        ids = [row[0] for row in await cursor.fetchall()]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    await db.execute(
+        f"UPDATE verifications SET status = 'expired', reason = 'expired', code = NULL, "
+        f"       notified = 1 "
+        f" WHERE id IN ({marks}) AND status = 'pending'",
+        ids,
+    )
+    await db.commit()
+    return ids
+
+
+async def prune_verifications(max_age_days: int) -> int:
+    """Delete finished verifications past their retention, and report how many went.
+
+    Finished, not merely old: an open verification past the window is a person still
+    waiting, and deleting it answers their barrier with a 404.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "DELETE FROM verifications "
+        " WHERE status != 'pending' "
+        "   AND created_at < datetime('now', ? || ' days')",
+        (f"-{int(max_age_days)}",),
+    )
+    await db.commit()
+    return cursor.rowcount
+
+
 async def record_inbound_call(
     *, phone: str | None = None, raw_number: str | None = None, outcome: str,
     reason: str | None = None,

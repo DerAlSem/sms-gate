@@ -18,6 +18,8 @@ def test_spec_has_all_soft_keys():
         "telegram_replies_enabled",
         "inbound_dispatch", "delivery_dispatch",
         "inbound_dispatch_retries", "inbound_dispatch_timeout",
+        "verification_ttl_seconds", "verification_max_attempts",
+        "verification_retention_days",
         "blacklist_threshold", "delivery_timeout_seconds",
         "delivery_report_max_age_hours", "delivery_report_strict_attribution",
         "phone_region", "max_sms_parts", "modem_watchdog_enabled",
