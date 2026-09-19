@@ -11,6 +11,8 @@ class FakeSender:
         self.calls = []
 
     in_service = True
+    # As the real link reports it: the record, not a query.
+    caller_id_subscribed = True
 
     async def command(self, cmd, timeout=5.0):
         self.calls.append(cmd)
@@ -55,7 +57,9 @@ def test_collect_short_circuits_on_dead_modem():
     purpose."""
     sender = FakeSender({}, raise_for={"AT"})
     out = asyncio.run(_mgr(sender).collect_diagnostics())
-    assert [item["key"] for item in out] == ["gateway", "alive"]
+    # `calls` belongs with `gateway`: both are what the gateway knows about itself,
+    # and neither costs the modem a command — which is why they survive a wedged one.
+    assert [item["key"] for item in out] == ["gateway", "calls", "alive"]
     assert "error" in out[1]
     assert sender.calls == ["AT"]
 

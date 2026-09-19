@@ -837,6 +837,74 @@ async def list_inbound(
 
 
 
+async def record_inbound_call(
+    *, phone: str | None = None, raw_number: str | None = None, outcome: str,
+    reason: str | None = None,
+) -> int:
+    """Write down one incoming call, whatever became of it.
+
+    Written on the first `RING`, before anything is known about who is calling: the event
+    is the call, and the number is a fact that may or may not follow it. A call recorded
+    only once its number arrived would lose exactly the calls this store exists to make
+    visible — the nameless ones.
+    """
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO inbound_calls (phone, raw_number, outcome, reason) "
+        "VALUES (?, ?, ?, ?)",
+        (phone, raw_number, outcome, reason),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def attach_inbound_call_number(
+    call_id: int, *, phone: str | None, raw_number: str, outcome: str,
+) -> None:
+    """The first `+CLIP` of a call, joined to the row its `RING` opened.
+
+    `phone` stays None when what arrived is not a number we can match against; the raw
+    form is recorded regardless, so "who called us" has an answer even where "which
+    verification was this" does not.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE inbound_calls SET phone = ?, raw_number = ?, outcome = ? WHERE id = ?",
+        (phone, raw_number, outcome, call_id),
+    )
+    await db.commit()
+
+
+async def count_inbound_calls() -> int:
+    db = await get_db()
+    async with db.execute("SELECT COUNT(*) FROM inbound_calls") as cursor:
+        return (await cursor.fetchone())[0]
+
+
+async def count_calls_without_number() -> int:
+    """How many calls arrived that nothing can be attributed by.
+
+    The only detector for a caller-ID subscription dropped without a `CFUN` cycle: the
+    gateway's record of its own `AT+CLIP=1` cannot see that happen, and a rate of
+    nameless calls can.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM inbound_calls WHERE phone IS NULL"
+    ) as cursor:
+        return (await cursor.fetchone())[0]
+
+
+async def list_inbound_calls(limit: int, offset: int = 0) -> list[aiosqlite.Row]:
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, phone, raw_number, started_at, outcome, reason FROM inbound_calls "
+        "ORDER BY id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
 async def delete_inbound(message_id: int) -> None:
     db = await get_db()
     await db.execute("DELETE FROM inbound_messages WHERE id = ?", (message_id,))

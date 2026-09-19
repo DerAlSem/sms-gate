@@ -34,6 +34,20 @@ _CDS_PATTERN = re.compile(
     r'\+CDS:\s*\d+,(\d+),"([^"]*)",\d+,"([^"]*)","([^"]*)",(\d+)'
 )
 _CMTI_PATTERN = re.compile(r'\+CMTI:\s*"([^"]+)"\s*,\s*(\d+)')
+
+# +CLIP: <number>,<type>[,<subaddr>,<satype>[,[<alpha>][,<CLI validity>]]]
+#
+# Captured live from the production EP06-E on 2026-09-18, not inferred:
+#   RING
+#   +CLIP: "+79261234888",145,,,,0
+# `145` is the type of address (international) and the last field is CLI validity —
+# 0 the number is valid, 1 the caller withheld it, 2 the network could not supply it.
+#
+# Only the first two fields are required by the format, so the validity is its own
+# optional group: a modem that stops short of it has not told us the number is invalid.
+_CLIP_PATTERN = re.compile(
+    r'\+CLIP:\s*"?([^",]*)"?\s*,\s*(\d+)(?:\s*,[^,]*,[^,]*,[^,]*,\s*(\d+))?'
+)
 _CMGR_PATTERN = re.compile(
     r'\+CMGR:\s*"[^"]*"\s*,\s*"([^"]*)"\s*,[^\r\n]*\r?\n([^\r\n]*)'
 )
@@ -228,6 +242,32 @@ def parse_cmti(line: str) -> int | None:
     """Parse +CMTI: "<storage>",<index> → index. Storage ignored — modem decides."""
     match = _CMTI_PATTERN.search(line)
     return int(match.group(2)) if match else None
+
+
+def parse_clip(line: str) -> str | None:
+    """The caller's number from one `+CLIP`, as the network gave it, or None.
+
+    None means "this line carries no number we may act on", and it covers three
+    different arrivals on purpose: the field is empty because the caller withheld it,
+    the validity says the network could not supply it, or the line is not readable as a
+    `+CLIP` at all. They differ in why, not in what may be concluded — and what may be
+    concluded is nothing about who called. The raw line is kept by the caller either way,
+    so the distinction is not lost, merely not made here.
+
+    Canonicalisation is deliberately elsewhere. This returns the network's own text; what
+    a phone number is belongs to `app.phone`, which owns that question for the whole
+    gateway.
+    """
+    match = _CLIP_PATTERN.search(line)
+    if not match:
+        return None
+    number = match.group(1).strip()
+    validity = match.group(3)
+    if validity is not None and validity != "0":
+        # The network is telling us the caller ID is not to be trusted. A number in the
+        # field alongside that is not an exception to it.
+        return None
+    return number or None
 
 
 def _decode_text(raw: str) -> str:

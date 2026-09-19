@@ -67,23 +67,23 @@
 - [ ] 4.3 Make that record, and nothing read back from the modem, the rung's precondition on
       caller ID. `AT+CLIP?` does not answer on this device and `AT+CLIP=?` answers a
       different question.
-- [ ] 4.4 Count calls arriving with no usable caller number and expose the count to an
+- [x] 4.4 Count calls arriving with no usable caller number and expose the count to an
       operator. This is the only detector for a subscription dropped without a `CFUN` cycle,
       which the record in 4.2 cannot see.
 
 ## 5. The reader learns that a call happened
 
-- [ ] 5.1 Parse `RING` and `+CLIP` in `reader_loop` (`app/modem/manager.py:746-762`),
+- [x] 5.1 Parse `RING` and `+CLIP` in `reader_loop` (`app/modem/manager.py:746-762`),
       alongside the existing `+CDS` and `+CMTI` branches. Today both fall to the `else`
       branch and are logged as `Unhandled URC` — the code comment there already names this
       as the case it was left for.
-- [ ] 5.2 Canonicalize the caller number through `phonenumbers` before matching, per
+- [x] 5.2 Canonicalize the caller number through `phonenumbers` before matching, per
       AGENTS.md — canonicalize before storage, never after.
-- [ ] 5.3 Collapse one call's repetitions into one event. Measured 18.09.2026: fifteen
+- [x] 5.3 Collapse one call's repetitions into one event. Measured 18.09.2026: fifteen
       `RING` / `+CLIP` pairs in sixteen seconds for a single call. Test first, failing first.
-- [ ] 5.4 Record every call in its own store, including those that confirmed nothing and
+- [x] 5.4 Record every call in its own store, including those that confirmed nothing and
       those that carried no number — not in `inbound_messages`.
-- [ ] 5.5 Do not answer the call. `ATH` stays out: it needs the command port the sender holds,
+- [x] 5.5 Do not answer the call. `ATH` stays out: it needs the command port the sender holds,
       and that it rejects an unanswered incoming call on this firmware is an assertion about
       the device rather than a measurement.
 

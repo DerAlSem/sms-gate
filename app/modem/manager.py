@@ -15,7 +15,12 @@ from app.modem.dispatch import dispatch_inbound
 from app.modem.errors import is_retryable
 from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANSPORT, WAIT
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
-from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
+from app.modem import calls
+from app.modem.calls import CallWatch
+from app.modem.parser import (
+    parse_cds, parse_clip, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
+)
+from app.phone import validate_and_normalize
 from app.modem.pdu import decode_deliver, inbound_pdu_key
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
@@ -186,6 +191,10 @@ class ModemManager:
         # invariant, and spreading them across this class is what let a stall inherit a
         # recovery performed for a different problem.
         self._health = ModemHealth(_WD_FAIL_THRESHOLD, _WD_FAIL_THRESHOLD)
+        # Which arriving `RING` or `+CLIP` belongs to which call. The modem announces one
+        # call many times — fifteen pairs in sixteen seconds, measured — and both things
+        # built on this must happen once per call, not once per line.
+        self._calls = CallWatch()
 
     # Thin views onto the health object, kept because this class reads them in several
     # places and because they are what the tests observe.
@@ -745,6 +754,18 @@ class ModemManager:
 
                 if decoded.startswith('+CDS:'):
                     await self._on_cds_line(decoded)
+                elif decoded == 'RING' or decoded.startswith('+CLIP:'):
+                    # Guarded exactly as `+CDS` is, and for the same reason: losing this
+                    # loop is silent and total, and a call now reaches the database from
+                    # it. A locked table costs the call; it must not cost the `+CMTI`
+                    # behind it, which is somebody's message.
+                    try:
+                        if decoded == 'RING':
+                            await self._on_ring()
+                        else:
+                            await self._on_clip_line(decoded)
+                    except Exception:
+                        logger.exception("Could not record an incoming call: %r", decoded)
                 elif decoded.startswith('+CMTI:'):
                     index = parse_cmti(decoded)
                     if index is not None:
@@ -776,6 +797,73 @@ class ModemManager:
             # The gate is open and the port is still gone: the watchdog has not reached
             # this observation yet. Its own tick is what acts on it.
             await asyncio.sleep(_RECOVERY_POLL)
+
+    async def _on_ring(self) -> None:
+        """A call is ringing. Written down before anything is known about who is calling.
+
+        `RING` needs no subscription — the modem volunteers it — so it is the one part of
+        an incoming call that always arrives. Recording the call here rather than waiting
+        for its number is what keeps the nameless ones, and those are the ones worth
+        keeping: a caller-ID subscription dropped without a `CFUN` cycle presents as
+        nothing but a rise in calls that carry no number.
+        """
+        call, is_new = self._calls.observe()
+        if not is_new:
+            return          # the same call, still ringing
+        call.row_id = await queries.record_inbound_call(outcome=calls.NO_NUMBER)
+
+    async def _on_clip_line(self, line: str) -> None:
+        """The caller's number, joined to the call its `RING` opened.
+
+        Only the first `+CLIP` of a call says anything new; the fourteen after it repeat
+        it. A `+CLIP` with no `RING` before it opens a call of its own, because the join
+        must not be the thing that loses the event it was meant to connect.
+
+        Nothing is said back to the modem. Ending the call is the owner's decision of
+        18.09.2026, but every step of it is still an assertion — that `ATH` ends an
+        *unanswered* incoming call on this firmware, that the command port can be taken
+        from the sender without displacing a send — and none of them has been observed.
+        Confirmation never depended on the hang-up, which is why waiting costs nothing.
+        """
+        call, _ = self._calls.observe()
+        if call.row_id is None:
+            call.row_id = await queries.record_inbound_call(outcome=calls.NO_NUMBER)
+        if call.named:
+            return          # the same number, said again
+        raw = parse_clip(line)
+        if raw is None:
+            # The caller withheld it, or the network could not supply it. With the
+            # subscription recorded as held this is an ordinary outcome and not a fault:
+            # it confirms nothing, and the call stays among those carrying no number.
+            logger.info("Incoming call with no usable caller number: %r", line)
+            return
+        phone = self._canonical_caller(raw)
+        call.named = phone is not None
+        await queries.attach_inbound_call_number(
+            call.row_id,
+            phone=phone,
+            raw_number=raw,
+            outcome=calls.UNATTRIBUTED if phone else calls.NO_NUMBER,
+        )
+        logger.info("Incoming call from %s", phone or f"{raw!r} (not a usable number)")
+
+    @staticmethod
+    def _canonical_caller(raw: str) -> str | None:
+        """The caller's number in the one form the rest of the gateway matches on.
+
+        Canonicalised before storage rather than at comparison time, per the project's
+        own convention: a national-format caller has to match a number stored in E.164,
+        and matching is not the place to discover that. What the network said is kept
+        beside it either way.
+
+        None where what arrived is not a number at all — a service caller, a short code.
+        Nothing can be attributed by it, which is the same position as a withheld number
+        and is recorded as such.
+        """
+        try:
+            return validate_and_normalize(raw, store.phone_region, restrict_region=False)
+        except ValueError:
+            return None
 
     async def _on_cds_line(self, line: str) -> None:
         """One `+CDS` from the port, from raw text to a recorded outcome.
@@ -1248,6 +1336,14 @@ class ModemManager:
         snapshot = self._health.snapshot(held=len(self._held), stalled=self._stalled)
         snapshot.update(self._sender.link_snapshot())
         snapshot["urc_link"] = "open" if self._reader_link.usable else "lost"
+        # Whether the gateway holds the caller-ID subscription on the link now in service
+        # — its own record, since the modem will not answer the question. It is here
+        # because it is the difference between two pages that look identical: one where
+        # nameless calls mean callers withholding their numbers, and one where they mean
+        # the gateway lost the subscription and nothing said so.
+        snapshot["caller_id"] = (
+            "held" if self._sender.caller_id_subscribed else "not held"
+        )
         # The one fact the console's banner reads. It is here rather than derived in the
         # template so the banner and the diagnostics page cannot disagree about whether
         # the modem is reachable — and it is the whole link, not one port, because a
@@ -1262,6 +1358,24 @@ class ModemManager:
         # First, so the operator sees it before the readings: during a recovery the radio
         # is deliberately off, and an unannotated snapshot reads as a dead modem.
         state = [{"key": "gateway", "cmd": "—", "parsed": self.health_snapshot()}]
+        # Before the modem is asked anything, and therefore still there when it has
+        # stopped answering. A caller-ID subscription dropped without a `CFUN` cycle is
+        # invisible to the record above — the gateway believes it holds something it does
+        # not — and the only symptom is calls arriving with no number where they used to
+        # carry one. That is a rate, and a rate needs a count to be read off.
+        #
+        # Read the way every other row of this sweep is read — one reading that fails
+        # does not break it. This method is also the alert path's source, and it promises
+        # never to raise; a database that cannot be read during an incident is exactly
+        # when that promise is called in.
+        try:
+            state.append({"key": "calls", "cmd": "—", "parsed": {
+                "calls_total": await queries.count_inbound_calls(),
+                "calls_without_number": await queries.count_calls_without_number(),
+            }})
+        except Exception as e:
+            state.append({"key": "calls", "cmd": "—",
+                          "error": f"could not read the call log: {type(e).__name__}: {e}"})
 
         try:
             await self._sender.command("AT", timeout=2.0)

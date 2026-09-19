@@ -167,6 +167,32 @@ async def run_migrations() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_inbound_phone ON inbound_messages(phone);
 
+        -- Incoming calls, in their own right. Deliberately not `inbound_messages`: a
+        -- call carries no text, and writing it there would corrupt the record that makes
+        -- ordinary inbound traffic visible in the console.
+        --
+        -- `phone` is the canonical form and is NULL whenever nothing usable arrived —
+        -- the caller withheld the number, the network could not supply it, the
+        -- subscription was not held, or what came was not a number at all. `raw_number`
+        -- keeps what the network actually said, because that is the evidence and our
+        -- reading of it is not. A row is written on the first `RING`, before its number
+        -- exists; the number is attached when the first `+CLIP` arrives, which is why
+        -- `phone` is nullable rather than merely often empty.
+        CREATE TABLE IF NOT EXISTS inbound_calls (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone      TEXT,
+            raw_number TEXT,
+            started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            -- no_number    — nothing usable to attribute it by
+            -- unattributed — a number arrived and no open verification wanted it
+            -- confirmed    — it confirmed a verification
+            outcome    TEXT NOT NULL,
+            reason     TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbound_calls_phone ON inbound_calls(phone);
+        CREATE INDEX IF NOT EXISTS idx_inbound_calls_at    ON inbound_calls(started_at);
+
         CREATE TABLE IF NOT EXISTS inbound_parts (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             phone       TEXT NOT NULL,
