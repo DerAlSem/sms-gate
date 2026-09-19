@@ -876,6 +876,95 @@ async def open_codes_for(phone: str) -> set[str]:
         return {row[0] for row in await cursor.fetchall()}
 
 
+async def select_route(verification_id: int, app_id: str, *, route: str) -> str:
+    """Record the consumer's choice of rung. Answers what happened, in one word.
+
+    One of: `selected`, `already_selected`, `expired`, `not_found`. A verification is
+    carried by exactly one route at a time and the gateway never moves it to another by
+    itself — a list to choose from is not a licence to hop — so this is the single moment
+    at which a verification acquires a route, and it is a conditional update for the same
+    reason the confirmation is: two selections can arrive together.
+
+    Nothing is placed here. Placement is the caller's act, after this returns `selected`.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET route = ? "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' AND route IS NULL "
+        "   AND expires_at > CURRENT_TIMESTAMP",
+        (route, verification_id, app_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "selected"
+    row = await get_verification(verification_id, app_id)
+    if row is None:
+        return "not_found"
+    if row["route"] is not None:
+        return "already_selected"
+    return "expired"
+
+
+async def fail_verification(verification_id: int, *, reason: str) -> bool:
+    """End an open verification with a named reason, and say whether this call did it.
+
+    Used where a verification stops being carryable for a reason that is not the clock:
+    the selected route lost the precondition it was offered on, or the modem went out of
+    service under it. "Expired" told to a person who did call, on time, from the right
+    number, is the gateway reporting the one thing that did not happen.
+
+    The boolean is what makes the notification exactly-once: only the caller that actually
+    moved the row announces it.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'failed', reason = ?, code = NULL, "
+        "       notified = 1 "
+        " WHERE id = ? AND status = 'pending'",
+        (reason, verification_id),
+    )
+    await db.commit()
+    return cursor.rowcount == 1
+
+
+async def record_verification_rung(
+    verification_id: int, *, route: str, vendor_ref: str | None = None,
+    cost: float | None = None, outcome: str | None = None, reason: str | None = None,
+) -> int:
+    """One rung attempted, with what it cost and what became of it.
+
+    Per rung rather than per verification: a ladder has more than one, and a verification
+    that tried Telegram and then placed a call holds two vendor identifiers and two costs
+    against one code.
+    """
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO verification_rungs "
+        "       (verification_id, route, vendor_ref, cost, outcome, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (verification_id, route, vendor_ref, cost, outcome, reason),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def has_open_verification(phone: str, *, route: str) -> bool:
+    """Whether this number already has a live verification on this rung.
+
+    Asked by the `call_in` rung, which carries no code: attribution there rests entirely
+    on the calling number and a single open window, so a second window on one number
+    would leave an arriving call belonging to neither with certainty.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM verifications "
+        " WHERE phone = ? AND route = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP LIMIT 1",
+        (phone, route),
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
 async def get_verification(verification_id: int, app_id: str) -> aiosqlite.Row | None:
     """Scoped to the owning application, and indistinguishable from missing to any other.
 

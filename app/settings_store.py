@@ -77,6 +77,37 @@ SETTINGS_SPEC: list[Spec] = [
     # to one question.
     Spec("verification_ttl_seconds", "posint", 300, "Verification", False,
          "How long a verification stays open (s)"),
+    # The ladder: which rungs are offered and in what order. Configuration rather than
+    # compiled-in behaviour, because prices move, vendors are added and dropped, and an
+    # operator that refuses delivery today may accept it next month — none of which should
+    # need a deployment. The shipped order is the owner's decision of 18.09.2026 and is
+    # recorded as a decision rather than a measurement. Changing it changes nothing about
+    # what a route proves.
+    Spec("verification_route_order", "str",
+         "call_in,sms_out,flash_call,tg_gateway,sms_in", "Verification", False,
+         "Rungs offered, cheapest first (comma-separated). A rung nothing can prove is "
+         "never offered, whatever its place here"),
+    # Bounds the precondition probes **as a whole**, not one by one: otherwise a slow day
+    # at one vendor spends the budget the whole answer was promised in.
+    Spec("verification_probe_timeout", "float", 5.0, "Verification", False,
+         "Bound on the whole set of precondition probes (s)"),
+    # How stale a proof may be before a person is sent down a route that no longer works.
+    # Without a bound, "current evidence" is undefined: a reading taken once at boot would
+    # satisfy the norm for ever, which is precisely the failure it exists to prevent.
+    Spec("verification_proof_max_age_seconds", "posint", 300, "Verification", False,
+         "Refuse a route whose precondition was last proven longer ago than this (s)"),
+    # The `call_in` rung's own window, separately configurable and never longer than the
+    # ladder's. Shorter is the point: the rung's residual risk scales with the window,
+    # because an attacker can open a verification on a victim's number and, inside it,
+    # give the victim a reason to call. The number itself is open — task 1.5 — so the
+    # shipped value is the ladder's rather than an unmeasured guess.
+    Spec("verification_call_in_ttl_seconds", "posint", 300, "Verification", False,
+         "How long a call_in verification stays open (s); clamped to the ladder's"),
+    # The number a subscriber calls or texts. The gateway does not otherwise hold its own
+    # MSISDN anywhere, and both rungs this change adds have to tell the person where to
+    # reach it — blank means neither rung can be offered, which is the honest answer.
+    Spec("gateway_msisdn", "str", "", "Verification", False,
+         "The gateway's own number, as the subscriber must dial or text it"),
     Spec("verification_max_attempts", "posint", 5, "Verification", False,
          "Wrong codes tolerated before a verification stops accepting any"),
     # The row holds a subscriber's number beside a code. Retention is why it does not hold

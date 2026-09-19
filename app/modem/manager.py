@@ -338,6 +338,17 @@ class ModemManager:
         """Both ports open and initialised — the condition `ensure_link` restores."""
         return self._sender.in_service and self._reader_link.in_service
 
+    @property
+    def caller_id_held(self) -> bool:
+        """Whether the gateway holds the caller-ID subscription on the link in service.
+
+        Its own record, not a question put to the modem — `AT+CLIP?` does not answer on
+        this device. Exposed here because the `call_in` rung's precondition asks it, and a
+        chooser reaching into the serial object for it would be reaching past the one
+        actor that owns the ports.
+        """
+        return self._sender.caller_id_subscribed
+
     def suspend_until_linked(self) -> None:
         """Close the gate before any loop starts, unless the link is already up.
 
