@@ -119,13 +119,23 @@ class Registry:
         # still completes, by a dearer route, and the only visible symptom is the bill.
         self.abandoned_probes = 0
 
-    async def offer(self, phone: str) -> list[Offer]:
+    async def offer(
+        self, phone: str, *, without: frozenset[str] | set[str] = frozenset(),
+    ) -> list[Offer]:
         """The rungs that can carry a verification for `phone`, in configured order.
 
         Places nothing. Every probe runs concurrently under one bound; whatever has not
         answered by then is unproven and its rung is absent.
+
+        `without` drops rungs before anything is asked, and it is a parameter rather than
+        a filter over the result because the ladder's own rules read the membership: the
+        paid rung is dropped when *anything cheaper proved itself*, and a caller that
+        removed the cheap rung afterwards would be told there is nothing left when in
+        fact the dear rung is exactly what remains. Dropping first also spends no budget
+        probing a rung whose answer is not wanted.
         """
-        candidates = [name for name in self._order if self._is_offerable(name)]
+        candidates = [name for name in self._order
+                      if name not in without and self._is_offerable(name)]
         if not candidates:
             return []
 

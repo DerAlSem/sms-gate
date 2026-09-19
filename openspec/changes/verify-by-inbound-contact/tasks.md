@@ -112,6 +112,22 @@ exists to avoid.
       precondition has since lapsed, is refused with that reason.
 - [ ] 6.5 No silent hop. A failed rung fails the verification with its reason and re-offers
       what is left; moving on is the consumer's act.
+      **Two of three parts stand; the third is the owner's and is the only thing holding
+      this open.** Built 19.09.2026: the gateway never moves by itself (a second selection
+      is refused, `already_selected`), and the poll on a `failed` verification now carries
+      the remaining ladder with its instructions — asked of the registry at read time, not
+      stored at the ending, because a rung's precondition decays and a baked-in list is
+      the stale evidence this change refuses everywhere else. The rung that failed is
+      dropped **by name**, not left to its own probe: it may still prove itself perfectly
+      well — `sms_in` burns its attempts on a mistyped code without becoming unavailable —
+      and handing it back is the hop this norm forbids arriving by the other door.
+      🔴 **Open: whether "select again" happens on this verification or on a new one.**
+      The spec says a failed rung "fails the verification" *and* that the consumer "may
+      select again", and one cannot select on a failed verification by definition. Either
+      failure is not terminal for the rung that failed, or "again" means a fresh
+      verification and the list above is what it should ask for. Both readings need the
+      list; they part on whether `POST /verifications/{id}/route` accepts a second
+      selection after a failure. It is refused today, which is the terminal reading.
 - [x] 6.6 One open `call_in` verification per number; a second request for that number is
       answered without that rung.
 - [x] 6.7 Refuse the verification when no rung can prove itself, in the same answer, rather

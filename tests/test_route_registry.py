@@ -44,8 +44,8 @@ def _registry(probes, order=("call_in", "sms_in"), **kw):
     return Registry(probes=probes, order=list(order), **kw)
 
 
-def _offer(registry, phone=PHONE):
-    return asyncio.run(registry.offer(phone))
+def _offer(registry, phone=PHONE, **kw):
+    return asyncio.run(registry.offer(phone, **kw))
 
 
 # --- the pair: proven and unproven ------------------------------------------------------
@@ -231,3 +231,44 @@ def test_cheaper_means_earlier_in_the_configured_order_and_nothing_else():
     reg = _registry({"call_in": _probe(True), "sms_in": _probe(True)},
                     order=("sms_in", "call_in"))
     assert [o.route for o in _offer(reg)] == ["sms_in", "call_in"]
+
+
+# --- a rung set aside, and the ladder's own rules reading the membership -----------------
+
+def test_a_rung_set_aside_leaves_the_dearer_one_standing():
+    """The trap `without` exists to avoid, and the reason it is a parameter.
+
+    Filtering the *answer* would give nothing here: `offer` drops `sms_in` because
+    `call_in` proved itself, and removing `call_in` afterwards empties the list — telling
+    a consumer whose call rung just failed that nothing is left, while the rung that
+    exists for exactly that moment was dropped for being dearer than a rung no longer on
+    the ladder.
+    """
+    reg = _registry({"call_in": _probe(True), "sms_in": _probe(True)})
+    assert [o.route for o in _offer(reg)] == ["call_in"]
+    assert [o.route for o in _offer(reg, without={"call_in"})] == ["sms_in"]
+
+
+def test_a_rung_set_aside_is_never_asked():
+    """Not merely absent from the answer: a bounded probe set is the budget the whole
+    answer is promised in, and spending it on a rung whose answer is not wanted is how a
+    slow vendor turns a cheap rung off."""
+    asked = []
+
+    def counting(name, holds):
+        async def probe(phone):
+            asked.append(name)
+            return Proof(holds=holds)
+        return probe
+
+    reg = _registry({"call_in": counting("call_in", True),
+                     "sms_in": counting("sms_in", True)})
+    _offer(reg, without={"call_in"})
+    assert asked == ["sms_in"]
+
+
+def test_setting_nothing_aside_is_the_ladder_unchanged():
+    """The positive control: `without` empty must not be a third behaviour."""
+    reg = _registry({"call_in": _probe(True), "sms_in": _probe(True)})
+    assert [o.route for o in _offer(reg, without=set())] == \
+           [o.route for o in _offer(reg)]

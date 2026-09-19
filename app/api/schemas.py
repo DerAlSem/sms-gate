@@ -119,6 +119,16 @@ class VerificationStatusResponse(BaseModel):
     # weakest must be able to see what it got rather than assume the strongest.
     method: str | None = None
     reason: str | None = None
+    # What is left to try, and only on a verification that ended in failure. Moving on is
+    # the consumer's act, and an act needs something to act on — the reason alone tells it
+    # that the rung died without telling it what remains.
+    #
+    # Empty while the verification is still being carried, because a ladder handed over
+    # under a live rung reads as a licence to hop, and empty on a confirmation, because
+    # nothing is left to do. Computed on the read rather than stored at the ending: a
+    # rung's precondition decays, and a list baked in at failure time would be exactly the
+    # stale evidence this change refuses everywhere else.
+    routes: list[RouteOffer] = []
     attempts: int = 0
     created_at: datetime
     expires_at: datetime

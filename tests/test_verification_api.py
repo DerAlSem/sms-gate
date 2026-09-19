@@ -313,3 +313,81 @@ def test_the_selected_rung_is_recorded_as_a_rung_attempted(client):
             return [tuple(r) for r in await cur.fetchall()]
 
     assert asyncio.run(rungs()) == [(vid, CALL_IN, "selected")]
+
+
+# --- a rung that failed ends it, and the answer says what is left -----------------------
+
+def _fail(vid, reason="route_unavailable"):
+    async def go():
+        return await queries.fail_verification(vid, reason=reason)
+    return asyncio.run(go())
+
+
+def test_a_failed_rung_ends_the_verification_and_the_answer_carries_what_is_left(client):
+    """6.5 — moving on is the consumer's act, and an act needs something to act on.
+
+    The gateway does not hop. What it owes instead is the remaining ladder, named in the
+    same answer as the reason, so that selecting again is something the consumer can do
+    rather than something it must rediscover by opening a verification and reading the
+    list it gets back.
+    """
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert _fail(vid) is True
+
+    body = client.get(f"/verifications/{vid}", headers=AUTH).json()
+    assert body["status"] == "failed"
+    assert body["reason"] == "route_unavailable"
+    assert [o["route"] for o in body["routes"]] == [SMS_IN]
+
+
+def test_the_rung_that_failed_is_not_among_what_is_left_though_it_could_prove_itself(
+        client):
+    """The positive control, and the reason this guard is not the one above.
+
+    `ims_proof` holds throughout this test, so `call_in` would prove itself if asked: its
+    absence from the remaining ladder is because it is the rung that failed, not because
+    it could not answer. Without this, a registry that simply stopped offering `call_in`
+    would pass the guard above while saying something else entirely.
+    """
+    vid = _create(client).json()["id"]
+    assert [o["route"] for o in _create(client).json()["routes"]] == [CALL_IN]
+
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    assert _fail(vid) is True
+
+    body = client.get(f"/verifications/{vid}", headers=AUTH).json()
+    assert CALL_IN not in [o["route"] for o in body["routes"]]
+
+
+def test_what_is_left_says_what_the_person_must_do(client):
+    """A route named without its instruction is not an offer — same contract as creation."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+    _fail(vid)
+
+    offer = client.get(f"/verifications/{vid}", headers=AUTH).json()["routes"][0]
+    assert "+79990001122" in offer["instruction"]
+
+
+def test_a_verification_still_being_carried_is_offered_nothing(client):
+    """Because a list handed over while one rung is live reads as a licence to hop, and
+    the whole of 6.5 is that it is not one."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+
+    body = client.get(f"/verifications/{vid}", headers=AUTH).json()
+    assert body["status"] == "pending"
+    assert body["routes"] == []
+
+
+def test_a_confirmed_verification_is_offered_nothing(client):
+    """Nothing is left to do, and a ladder under a confirmation invites a second one."""
+    vid = _create(client).json()["id"]
+    client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
+
+    async def confirm():
+        return await queries.confirm_by_inbound_call(PHONE, method=CALL_IN)
+
+    assert asyncio.run(confirm()) == vid
+    assert client.get(f"/verifications/{vid}", headers=AUTH).json()["routes"] == []

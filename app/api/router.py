@@ -221,14 +221,31 @@ async def check_verification(
             response_model=VerificationStatusResponse)
 async def get_verification_status(
     verification_id: int,
+    request: Request,
     app_id: str = Depends(get_app_id),
 ) -> VerificationStatusResponse:
     row = await queries.get_verification(verification_id, app_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Verification not found")
+
+    # A rung that failed ends the verification and the gateway does not move to another by
+    # itself — but the consumer cannot make that move out of a reason string alone. What
+    # is left is named here, on the failure and nowhere else, and asked of the ladder at
+    # read time so the answer is as current as the one creation gives.
+    #
+    # The rung that failed is dropped by name rather than left to its own probe: it may
+    # still prove itself perfectly well — an `sms_in` verification burns its attempts on a
+    # mistyped code without `sms_in` becoming unavailable — and offering back the rung
+    # that just failed is the hop this norm forbids, arriving by the other door.
+    offers: list = []
+    if row["status"] == "failed":
+        without = {row["route"]} if row["route"] else set()
+        offers = await _registry(request).offer(row["phone"], without=without)
+
     return VerificationStatusResponse(
         id=row["id"], phone=row["phone"], status=row["status"], route=row["route"],
         method=row["confirmed_by"], reason=row["reason"], attempts=row["attempts"],
+        routes=[RouteOffer(route=o.route, instruction=o.instruction) for o in offers],
         created_at=row["created_at"], expires_at=row["expires_at"],
         confirmed_at=row["confirmed_at"],
     )
