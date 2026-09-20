@@ -15,10 +15,29 @@ single one gets through" was a small sample stated as a fact, and a later reader
 to the live database would have found it false.
 
 Every remedy considered so far buys a different way to **send**: a commercial SMS provider,
-or a voice channel. The modem in service cannot supply the second — verified 07.09.2026, a
-call to its SIM is silence and disconnect while SMS to the same SIM arrives — but a vendor's
-flash call supplies it without the modem, and that is the route the owner chose as primary on
-08.09.2026.
+or a voice channel. A vendor's flash call supplies the second without the modem, and that is
+the route the owner chose as primary on 08.09.2026.
+
+🔴 **This paragraph used to say the modem in service cannot supply a voice channel —
+"verified 07.09.2026, a call to its SIM is silence and disconnect". The measurement was
+honest; the conclusion drawn from it was false, and it is withdrawn.** A call to this SIM is
+silence **with IMS switched off**, which is how the module shipped. On 2026-09-18
+`AT+QCFG="ims",1` plus `AT+CFUN=1,1` was written to the live `EP06-E`, and the same call to
+the same SIM produced fifteen `RING` / `+CLIP` pairs in the gateway's journal, carrying the
+caller's number.
+
+What that reopens is narrow, and what it does not reopen matters more here:
+
+- **reopened** — a subscriber calling *our* SIM and being identified by `+CLIP`. That is the
+  same direction-reversal this change already builds on for SMS, and it is now possible in
+  hardware that is already in service;
+- **not reopened** — the vendor flash call. That scheme puts the code in the last four digits
+  of the *calling* number and needs a pool of numbers to dial from, which one SIM cannot
+  supply at any IMS setting. The owner's routing decision of 08.09.2026 stands on grounds
+  this correction does not touch.
+
+Watching the voice route so it cannot be lost again unseen is
+`openspec/changes/watch-the-voice-route`; consuming `RING` / `+CLIP` is nobody's change yet.
 
 🔴 **The price argument this was first written with was wrong, and it is withdrawn.** It read
 "≈530 ₽/month for the МегаФон share, and a monthly sender-name fee that dwarfs it". Both
