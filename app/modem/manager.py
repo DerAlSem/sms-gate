@@ -22,6 +22,7 @@ from app.modem.parser import (
 from app.modem.pdu import decode_deliver, inbound_pdu_key
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
+from app.modem.voice_route import VoiceRouteWatch
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
     decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
@@ -130,6 +131,10 @@ _DIAG_LOCAL = 2.0
 # still did not answer. It is back on the local budget, because a query that never
 # answers must not cost more than one that does, and this sweep also runs on the alert
 # path, holding the command port during an incident.
+# Asked in two places — the page's sweep and the watchdog's tick — and named once so
+# they cannot drift onto two different commands.
+_IMS_QUERY = 'AT+QCFG="ims"'
+
 _DIAG_QUERIES = [
     ("sim",        "AT+CPIN?",   decode_cpin,      _DIAG_LOCAL),
     ("eps_reg",    "AT+CEREG?",  decode_reg,       _DIAG_LOCAL),
@@ -166,7 +171,7 @@ _DIAG_QUERIES = [
     # Local budget, and the vendor says so rather than us guessing: maximum response
     # time 300 ms (LTE-A(Q) IMS Application Note V1.0 §2.3.1). It is answered out of the
     # module's own memory, and the settings it reports are stored there too.
-    ("ims",        'AT+QCFG="ims"', decode_qcfg_ims, _DIAG_LOCAL),
+    ("ims",        _IMS_QUERY,   decode_qcfg_ims,  _DIAG_LOCAL),
     ("last_error", "AT+CEER",    lambda r: {},     _DIAG_LOCAL),
 ]
 
@@ -200,6 +205,14 @@ class ModemManager:
         # invariant, and spreading them across this class is what let a stall inherit a
         # recovery performed for a different problem.
         self._health = ModemHealth(_WD_FAIL_THRESHOLD, _WD_FAIL_THRESHOLD)
+        # The voice route is watched, not recovered: nothing here has a remedy the
+        # gateway can carry out, which is why it lives beside the ladder rather than in
+        # it. Its episode state dies with the process on purpose — a route already lost
+        # at startup is an episode too, and the first reading raises it.
+        self._voice_route = VoiceRouteWatch()
+        # The registration answer the observation took, handed to the step that follows
+        # it in the same tick. Two answers from two moments are not a pair.
+        self._pending_poll: tuple[bool, bool] | None = None
 
     # Thin views onto the health object, kept because this class reads them in several
     # places and because they are what the tests observe.
@@ -1087,8 +1100,19 @@ class ModemManager:
             return registered, True
         return registered, False
 
+    async def _take_poll(self) -> tuple[bool, bool]:
+        """The tick's one registration answer, polled here if nobody polled it already.
+
+        The observation above the switch needs it and so does the ladder, and asking
+        twice means both paying for a second `AT+CEREG?` on the tick that fires most
+        often exactly when the port is worst, and treating two answers from two moments
+        as a pair. Polling lazily keeps `_watchdog_step` usable on its own.
+        """
+        cached, self._pending_poll = self._pending_poll, None
+        return cached if cached is not None else await self._poll()
+
     async def _watchdog_step(self) -> str:
-        registered, link_lost = await self._poll()
+        registered, link_lost = await self._take_poll()
         # A modem that answers every command and still cannot send is unhealthy too.
         # One check, one ladder — not because two would race over the port (the gate and
         # the serial lock already prevent that) but because there must be exactly one
@@ -1173,6 +1197,58 @@ class ModemManager:
         await self._recover(self._sender.hard_reset, reopen=False)
         return HARD
 
+    async def _observe_voice_route(self) -> tuple[bool, bool] | None:
+        """Read the voice route and say what changed. Never raises.
+
+        🔴 Never raising is the whole contract, and it is not politeness. This runs
+        before the ladder decides, so a read that raised would stop the ladder advancing
+        for exactly as long as the fault lasted — and the fault is when the ladder is
+        needed. Placed after the decision instead, it would swallow the returned rung and
+        with it the settle and the `os._exit(1)` that must follow a hard reset, leaving
+        the process alive across a modem reboot it had just ordered. Both re-open an
+        incident an archived change closed.
+
+        Returns the registration answer for the step that follows, or `None` if it never
+        got one — in which case the step polls for itself.
+        """
+        try:
+            registered, link_lost = await self._poll()
+        except Exception:                       # noqa: BLE001 - see docstring
+            logger.exception("Voice route observation could not poll registration")
+            return None
+        parsed = None
+        # A port that has been reported gone carries nothing. The configuration is not
+        # gated on registration, but it is gated on there being a link to ask down.
+        if not link_lost:
+            try:
+                raw = await self._sender.command(_IMS_QUERY, timeout=_DIAG_LOCAL)
+                parsed = decode_qcfg_ims(raw)
+            except Exception as e:              # noqa: BLE001 - see docstring
+                # Not measured, which is a reading in its own right: it feeds the
+                # staleness clock and stops the page showing the last value as current.
+                logger.info("Voice route not measured: %s: %s", type(e).__name__, e)
+        try:
+            for alert in self._voice_route.observe(
+                registered=registered, parsed=parsed, now=time.time()
+            ):
+                self._report_voice_route(alert)
+        except Exception:                       # noqa: BLE001 - see docstring
+            logger.exception("Voice route observation failed")
+        return registered, link_lost
+
+    def _report_voice_route(self, alert) -> None:
+        """One condition, to the journal and to whoever is awake.
+
+        `logger.warning` and not `logger.error`: an ERROR record is itself delivered to
+        Telegram by the alert handler, so an error line plus this notification would
+        wake the same person twice for one condition.
+        """
+        if alert.good:
+            logger.info("Voice route: %s", alert.text)
+        else:
+            logger.warning("Voice route: %s", alert.text)
+        notify(alert.event, alert.text, dedup_extra=alert.state)
+
     async def _alert_observations(self) -> str:
         """What the modem said, for the alert that is about to wake someone.
 
@@ -1220,6 +1296,14 @@ class ModemManager:
         logger.info("Modem watchdog started")
         while True:
             await self._wait_for_tick()
+            # 🔴 Above the switch below, deliberately. That switch exists so an operator
+            # can take over judgement about *remedies* — whether to cycle the radio,
+            # whether to reset the module. Observing and reporting is not a remedy, and
+            # an operator silencing the watchdog to investigate a flapping registration
+            # must not thereby opt out of ever learning the voice route is gone. The live
+            # `modem-link` spec refuses the same coupling for the link, and an archived
+            # task records this trap being found and fixed here once already.
+            self._pending_poll = await self._observe_voice_route()
             if not store.modem_watchdog_enabled:
                 # Recovery is the operator's job now, so stop accumulating a suspicion
                 # nothing will act on.
@@ -1269,6 +1353,11 @@ class ModemManager:
         # the modem is reachable — and it is the whole link, not one port, because a
         # gateway with only its command port is not one that can receive anything.
         snapshot["modem_detected"] = self.link_in_service
+        # The voice route, from the watcher rather than from the sweep: the sweep's row
+        # reports the module's two digits in the vendor's terms, and whether the route is
+        # *available* is a conclusion gated on registration. "voice route: unavailable"
+        # on a page during a reset is the same wrong statement as the alert would be.
+        snapshot.update(self._voice_route.snapshot())
         return snapshot
 
     async def collect_diagnostics(self, only: tuple[str, ...] | None = None) -> list[dict]:

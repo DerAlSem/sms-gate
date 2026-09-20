@@ -388,6 +388,18 @@ _EVENT_TOGGLE = {
     # ERROR lines that switch already governed, so the same toggle keeps governing the
     # same class of message.
     "link": "notify_system_errors",
+    # The voice route, in three types rather than one. They are the gateway's own alarms
+    # about its own hardware, so they ride the system-errors switch like the link does —
+    # an operator who turned that off has turned off the gateway reporting on itself.
+    #
+    # 🔴 Three types, not one with a parameter: `notify` dedups on the event type, so a
+    # shared one would let whichever condition arrived second hide behind the first for
+    # the whole window — and these three want opposite actions from an operator. One is
+    # "somebody must write the setting back and reboot the module", one is "the route is
+    # gone and the gateway cannot say why", and one is "nobody has been able to look".
+    "voice_route": "notify_system_errors",
+    "voice_route_config": "notify_system_errors",
+    "voice_route_stale": "notify_system_errors",
 }
 
 _EVENT_TITLE = {
@@ -397,6 +409,9 @@ _EVENT_TITLE = {
     "dispatch_error": "📡 Webhook failed",
     "delivery_unplaced": "🕳 Report about nothing",
     "link": "🔌 Link restored",
+    "voice_route": "📵 Voice route",
+    "voice_route_config": "⚙️ IMS configuration",
+    "voice_route_stale": "🕒 Voice route unknown",
 }
 
 
