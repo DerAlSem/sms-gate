@@ -170,7 +170,23 @@ rather than on code.
       predates the column comes out switched off. A default that reached only new rows
       would leave the guarantee empty on exactly the installations that have the defect.
 - [ ] 4.47 Test: an application with no template is refused **at accept** for a `sms_out`-routed verification, and is **not** refused for a paid-rung one, because neither paid rung carries text of ours
-- [ ] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
+- [x] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
+      Built 20.09.2026 as `app/verification/template.py` behind the typed setting
+      `verification_templates` — a **setting**, not a schema: the requirement says
+      "per application, in the manner `delivery-dispatch` already configures a
+      dispatch route per application", and a column in `apps` would pay with a
+      migration for what `settings` already does. Not carried by `delivery_dispatch`
+      itself, which demands a `webhook_url` on every entry.
+      Two norms beyond the three asked for, both recorded in the spec: one
+      application named twice is refused (order of the list would decide, silently),
+      and an unreadable setting is never read as an absence of templates.
+      Composing uses `replace`, never a formatter: a template is operator-supplied
+      text, and `{0}` in a formatter reaches into the arguments.
+      Nine mutations bite. Two started green and were understood rather than
+      rewritten: the blank-template branch is shadowed by the placeholder count
+      (the guard now asserts the **reason**, which is the only thing that branch
+      produces), and save-time normalising is shadowed by `parse` stripping on read
+      (the guard now asserts the **stored** form, which is what the page re-reads).
 - [ ] 4.49 Test: a vendor credential written to `.env` for a key that already has a row in `settings` is not used, and the value in `settings` stays in force
 - [ ] 4.50 Test: a rung whose credential is absent is not attempted, alerts on stock settings, and the ladder advances past it — the one place where a configuration gap costs money rather than traffic, and therefore the one that must be loud
       Built for the case of a route nothing is configured to carry: not attempted,

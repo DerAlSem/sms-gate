@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
-                       # | "oproutes" | "region" | "delays"
+                       # | "oproutes" | "templates" | "region" | "delays"
     default: object
     section: str
     is_secret: bool
@@ -32,6 +32,12 @@ def _shipped_rule() -> str:
     """
     from app.verification import rule
     return rule.SHIPPED
+
+
+def _shipped_templates() -> str:
+    """The templates' shipped content, fetched late, for the reason above."""
+    from app.verification import template
+    return template.SHIPPED
 
 
 SETTINGS_SPEC: list[Spec] = [
@@ -222,6 +228,17 @@ SETTINGS_SPEC: list[Spec] = [
          '{"operator":"*","routes":["sms_out"]},{"operator":"?","routes":["sms_out"]}] '
          "— \"*\" answers for an operator with no entry, \"?\" for one that could not "
          "be resolved, and \"refuse\" is a way of declining rather than a way out"),
+    # The text an `sms_out`-carried code arrives in, per application. Its norms and its
+    # save-time validation live in `app/verification/template.py`; what belongs here is
+    # that it is a setting at all, and that its default is **empty**. An estate with no
+    # templates refuses every `sms_out`-carried code, which is the honest state: the
+    # alternative is wording nobody chose going out under somebody's name. Not carried by
+    # `delivery_dispatch`, which requires a webhook URL on every entry.
+    Spec("verification_templates", "templates", _shipped_templates(), "Verification", False,
+         'The text of an sms_out-carried code, per application: JSON list, e.g. '
+         '[{"app_id":"sp_app","template":"SokolParking: {code}"}] — exactly one '
+         "{code} per template, and an application with no entry is refused an "
+         "sms_out-carried code rather than given wording of the gateway's own"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93
@@ -334,6 +351,10 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
         from app.verification import rule
         rule.validate(raw)
         return
+    if type_ == "templates":
+        from app.verification import template
+        template.validate(raw)
+        return
     if type_ == "delays":
         for part in raw.split(","):
             text = part.strip()
@@ -376,6 +397,9 @@ def normalize_raw(type_: str, raw: str) -> str:
     if type_ == "oproutes":
         from app.verification import rule
         return rule.normalize(raw)
+    if type_ == "templates":
+        from app.verification import template
+        return template.normalize(raw)
     if type_ != "routes" or raw.strip() == "":
         return raw
     try:

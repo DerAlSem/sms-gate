@@ -728,12 +728,35 @@ code, and a template carrying none, carrying it twice, or carrying an unknown pl
 be refused at save time. A template that silently drops the code sends a person a message with
 nothing in it to type.
 
+An application named by two entries SHALL be refused at save time. Which of the two wins
+would otherwise be decided by the order of the list, invisibly — the same argument the routing
+rule makes about two spellings of one operator.
+
+A stored value that cannot be read SHALL NOT be read as an absence of templates. Absent refuses
+the application, which is loud and recoverable; read as empty, the gateway would compose around
+whatever an empty string means to the compose step, and a person would receive a message with
+nothing in it to type. The unreadable case SHALL raise an operator alert and SHALL refuse.
+
+Composing SHALL substitute the code and SHALL NOT interpret the rest of the template. A
+template is operator-supplied text, and a formatter would read every brace in it as a field —
+`{0}` reaches into the arguments and `{a.b}` into attributes — so a wording typo would become a
+failed send at the moment a person is waiting for a code.
+
 The template governs the `sms_out` route only. `tg_gateway` has no message body to supply —
 `sendVerificationMessage` takes a `code` and no text — and `flash_call` carries no text at all, so an
 application without a template SHALL still be served by those rungs. The refusal follows the
 rung, not the application.
 
-[unbacked · per-application configuration precedent: the dispatch-route setting in delivery-dispatch]
+[partly backed · the save-time half is `app/verification/template.py`, reached as the typed
+setting `verification_templates` through `validate_raw`/`normalize_raw` in
+`app/settings_store.py` and rendered as a textarea on the settings page; guarded by
+`tests/test_verification_template.py` and by nine mutations in `bite-template.sh` — a template
+with no placeholder, with two, with an unknown one, a blank one, one application named twice, an
+unreadable setting read as absent, a formatter interpreting the template, and each of the two
+wirings into the settings layer removed — each turning a guard red. The shipped default is
+**empty**, so an estate that configures nothing refuses every `sms_out`-carried code rather than
+sending wording nobody chose. Still unbacked: the refusal **at accept** (task 4.47), which is
+the door's half and needs the door]
 
 #### Scenario: An application with no template asks for an SMS-carried verification
 - **WHEN** a verification is requested by an application with no template, for a number whose operator is routed `sms_out`
@@ -746,6 +769,14 @@ rung, not the application.
 #### Scenario: A template that would drop the code
 - **WHEN** a template with no code placeholder is saved
 - **THEN** the save is refused with that reason
+
+#### Scenario: One application with two templates
+- **WHEN** a list naming the same application twice is saved
+- **THEN** the save is refused, because which of the two wins would be decided by the order of the list
+
+#### Scenario: The stored templates cannot be read
+- **WHEN** the stored setting is not a readable list of templates
+- **THEN** an operator alert is raised and every application is refused an `sms_out`-carried code, rather than the setting being read as no templates at all
 
 ### Requirement: A verification carried by the modem takes that message's outcome
 
