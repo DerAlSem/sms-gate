@@ -59,7 +59,8 @@ def _registry(request: Request) -> Registry:
     """
     modem = request.app.state.modem
     return Registry(
-        probes=build_probes(modem, ims_proof=getattr(request.app.state, "ims_proof", None)),
+        probes=build_probes(modem, ims_proof=getattr(request.app.state, "ims_proof", None),
+                            tg_token=store.tg_gateway_token),
         order=[name.strip() for name in store.verification_route_order.split(",")
                if name.strip()],
         probe_timeout=store.verification_probe_timeout,

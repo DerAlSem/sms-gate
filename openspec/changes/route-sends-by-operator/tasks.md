@@ -82,6 +82,18 @@ rather than on code.
 - [ ] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, call]` — as data, not as a branch, and with no `app_id` in the rule
 - [ ] 4.17 Implement the verification endpoints, the code store and the uCaller adapter against the samples captured in 1.3
 - [ ] 4.17a Implement the Telegram Gateway adapter against the samples captured in 1.6 — `checkSendAbility`, `sendVerificationMessage` carrying our own `code` and a `ttl` taken from the verification's remaining lifetime, `revokeVerificationMessage`, and the signed callback. `checkVerificationStatus` is deliberately not used: the attempt counter stays here
+      ⚠️ **Half built, 20.09.2026, and deliberately left unticked.** Standing in
+      `app/verification/tg_gateway.py` with 32 tests in `tests/test_tg_gateway_adapter.py`,
+      all ten of its load-bearing guards checked by mutation: the three vendor calls, the
+      tolerant parser, the digits-only join that bridges the dropped `+`, the `ttl` floor
+      that refuses rather than inflates, the absence of `code_length`, the five outcomes of
+      an ability check, and `callback_verifies` against the signature computation now
+      recorded in the spec. The rung's probe is registered and both live ladders pass the
+      token (`tests/test_route_probes.py`), with `tg_gateway_token` as a secret setting.
+      **What remains: the callback DOOR** — `callback_verifies` is a function nothing
+      calls, because mounting it means a route, a `callback_url` setting, a tolerance
+      setting, and a verification whose recorded delivery outcome it may move. That door is
+      the rest of this task
 - [ ] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
 - [ ] 4.19 Update `docs/` with the two paid rungs: what each costs, how to change the rule **and its order**, how to top up each of the two balances, how to tell from a verification which rung carried it and what it cost, which application is entitled to spend, and what to do when МегаФон recovers
 - [ ] 4.20 Test: a verification belonging to one application cannot be read, checked or exhausted by another — by id, with a valid token

@@ -1561,7 +1561,8 @@ class ModemManager:
         """The ladder as the settings have it right now, against this modem."""
         return routes.Registry(
             probes=build_probes(self, ims_proof=getattr(self, "ims_proof", None),
-                                excluding=excluding),
+                                excluding=excluding,
+                                tg_token=store.tg_gateway_token),
             order=[name.strip()
                    for name in store.verification_route_order.split(",")
                    if name.strip()],

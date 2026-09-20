@@ -110,6 +110,12 @@ SETTINGS_SPEC: list[Spec] = [
          "The gateway's own number, as the subscriber must dial or text it"),
     Spec("verification_max_attempts", "posint", 5, "Verification", False,
          "Wrong codes tolerated before a verification stops accepting any"),
+    # The Telegram Gateway rung's access token. Secret on the same terms as
+    # `alert_bot_token`, and blank by default because blank is the honest state of an
+    # unconfigured estate: the rung is then never offered, which is a refusal rather
+    # than a rung that fails at the vendor after the gates have been spent.
+    Spec("tg_gateway_token", "str", "", "Verification", True,
+         "Telegram Gateway API access token (blank = the tg_gateway rung is never offered)"),
     # The row holds a subscriber's number beside a code. Retention is why it does not hold
     # it for ever; `posint` because zero would delete verifications as fast as they are
     # made and present as a gateway that answers 404 to everyone.
