@@ -313,6 +313,14 @@ msgstr "Диагностика модема"
 msgid "Refresh"
 msgstr "Обновить"
 
+#: app/admin/templates/modem.html
+msgid "the modem refused the command"
+msgstr "модем отказался выполнять команду"
+
+#: app/admin/templates/modem.html
+msgid "nothing was measured"
+msgstr "ничего не измерено"
+
 #: app/admin/templates/modem.html:8
 msgid "Parameter"
 msgstr "Параметр"

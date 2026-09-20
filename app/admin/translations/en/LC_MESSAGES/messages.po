@@ -312,6 +312,14 @@ msgstr ""
 msgid "Refresh"
 msgstr ""
 
+#: app/admin/templates/modem.html
+msgid "the modem refused the command"
+msgstr ""
+
+#: app/admin/templates/modem.html
+msgid "nothing was measured"
+msgstr ""
+
 #: app/admin/templates/modem.html:8
 msgid "Parameter"
 msgstr ""

@@ -14,8 +14,21 @@
     {% for item in diag %}
     <tr>
       <td>{{ item.key }} <code>{{ item.cmd }}</code></td>
+      {# Four outcomes, three renderings. A refusal and a silence are not faults and
+         must not wear the fault's style: three of these rows are permanently one or the
+         other on perfectly healthy hardware, and a page that is partly red whenever it
+         is opened teaches its reader that red here means nothing.
+
+         The page says what happened, not why. A refused row reports that the modem
+         refused — not that the firmware lacks the command, which is a different claim
+         and a wrong one for any command the modem refuses for a reason of its own. The
+         modem's own words stay in the Raw column whatever the outcome. #}
       <td>
-        {% if item.error %}<span class="err">{{ item.error }}</span>
+        {% if item.outcome == "refusal" %}
+          <span class="soft">{% trans %}the modem refused the command{% endtrans %}</span>
+        {% elif item.outcome == "silence" %}
+          <span class="soft">{% trans %}nothing was measured{% endtrans %}</span>
+        {% elif item.error %}<span class="err">{{ item.error }}</span>
         {% elif item.parsed %}
           {% for k, v in item.parsed.items() %}{{ k }}={{ v }} {% endfor %}
         {% else %}—{% endif %}

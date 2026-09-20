@@ -48,6 +48,13 @@
   .card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
   code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
   .muted { color: #9ca3af; }
+  /* A diagnostic reading's outcome. `.err` is the fault style — it was used by the
+     modem page before it existed as a rule, so a fault has been rendering as ordinary
+     body text and has looked exactly like a refusal. It is loud now, and a refusal and
+     a silence are deliberately quiet: they are not faults, they are not values, and on
+     healthy hardware three of that page's rows are permanently one of them. */
+  .err  { color: #991b1b; font-weight: 600; }
+  .soft { color: #6b7280; font-style: italic; }
   .text-truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* dialog timeline */
   .timeline { display: flex; flex-direction: column; gap: 8px; max-width: 760px; margin: 0 auto; }
