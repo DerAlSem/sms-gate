@@ -186,6 +186,88 @@ never stops the service or the admin console.
 
 ---
 
+## Voice Route (IMS / VoLTE)
+
+The module can be reached by an incoming voice call only while IMS is up. This was switched
+on by hand on **2026-09-18** and there was no written way back until this section existed.
+
+### Reading it
+
+```bash
+AT+QCFG="ims"       # +QCFG: "ims",<IMS_conf>,<VoLTE_cap>
+```
+
+Vendor reference: *Quectel LTE-A(Q) Series IMS Application Note V1.0* (2021-08-18), §2.3.1;
+§1.1 lists EP06 Series. Maximum response time 300 ms — it answers out of the module's own
+memory, no network round-trip.
+
+| field | value | meaning |
+|---|---|---|
+| `<IMS_conf>` | `0` | **factory position** — whether IMS is enabled is decided by the carrier profile (MBN) on the module |
+| | `1` | enable IMS compulsorily — **what this gateway sets** |
+| | `2` | disable IMS compulsorily |
+| `<VoLTE_cap>` | `0` | VoLTE not available |
+| | `1` | VoLTE available |
+
+⚠️ **`0` is not "off".** A module reading `0,1` has a working voice route supplied by its
+profile. A module reading `0,0` — which is what this one read before 2026-09-18 — has a
+profile that does not enable VoLTE. Neither means somebody switched IMS off; that is `2`.
+
+⚠️ **`<VoLTE_cap>` reads `0` on a module that is not registered to the network**, whatever
+the truth would be. After `AT+CFUN=1,1` this module sat outside the network for about three
+minutes reading `0` throughout. Read it only on a registered module.
+
+⚠️ **The vendor does not say the second field is the carrier's verdict.** Its parameter table
+calls it the capability of VoLTE; its prose (§1.3.1) calls it the IMS registration status.
+Do not tell an operator the carrier refused us — nothing here reads that.
+
+### Turning it on
+
+```bash
+AT+QCFG="ims",1
+AT+CFUN=1,1
+```
+
+The setting is saved automatically and survives a power cycle (§2.3.1, *Characteristics*).
+It takes effect only after the reboot, so `AT+CFUN=1,1` is not optional.
+
+🔴 **Writing it costs a service stop.** The command port is held by `sms-gate`, so the write
+means stopping the unit, and this gateway carries live customer traffic. Reading is free
+once the gateway asks for it as part of its own sweep.
+
+### Rolling it back
+
+```bash
+AT+QCFG="ims",0
+AT+CFUN=1,1
+```
+
+**Use `0`, not `2`.** `0` restores the state the module was in before 2026-09-18 — the
+profile decides. `2` pins IMS off against any future profile, which is a *different* state
+from the one being rolled back to and would silently outlive the reason for the rollback.
+
+**When to roll back.** The one risk this switch carries is that IMS may take SMS delivery off
+the circuit-switched path — the application note documents SMS over IMS (§1.3.2.2) and the
+`+g.3gpp.smsip` capability in the IMS registration, so the mechanism is real. Judge it by
+**inbound messages continuing to arrive**, not by a test send and not by a delivery report.
+
+Seven inbound messages arrived in the two days after the switch (first ≈90 minutes after it),
+so no harm is visible so far. The window runs to **2026-10-18**, watched by registry row
+`sms-gate-ec2f9e87/20260918-03`. Harm here is an *absence*, which no probe can catch — if
+inbound messages have stopped while outbound traffic is still healthy, roll back.
+
+### Losing it without anyone touching it
+
+§1.2.1 of the application note: an MBN activated or deactivated **restores an NV item written
+by AT command to the profile's default**. §1.2.3: the MBN is selected automatically from the
+SIM's IMSI. §1.2.2: *"not all operator MBN files enable IMS by default"*.
+
+**Changing the SIM can therefore disarm the voice route silently**, with no reboot ordered by
+us and nothing in the journal saying so. If the SIM is swapped, read `AT+QCFG="ims"`
+afterwards and write `1` again if it has moved.
+
+---
+
 ## Useful Debug Commands
 
 ```bash

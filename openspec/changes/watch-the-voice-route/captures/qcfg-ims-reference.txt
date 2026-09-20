@@ -1,0 +1,55 @@
+ 
+2.3. Description of AT Command 
+2.3.1. AT+QCFG="ims"  Configure IMS 
+Parameter 
+AT+QCFG="ims"  Configure IMS 
+Write Command 
+AT+QCFG="ims"[,<IMS_conf>] 
+Response 
+If the optional parameter is omitted, query the current setting: 
++QCFG: "ims",<IMS_conf>,<VoLTE_cap> 
+ 
+OK 
+ 
+If the optional parameter is specified, configure IMS: 
+OK 
+Or 
+ERROR 
+ 
+If error is related to ME functionality: 
++CME ERROR: <err> 
+Maximum Response Time 300 ms 
+Characteristics The command takes effect after rebooting. 
+The configuration will be saved automatically. 
+<IMS_conf>  Integer type. Whether to enable/disable IMS function. 
+    0 Whether to enable/disable IMS function is determined by  the default setting in    
+     MBN file 
+       1 Enable IMS function compulsorily 
+ 2 Disable IMS function compulsorily 
+<VoLTE_cap> Integer type. Indicates the capability of VoLTE. 
+  0 VoLTE is disabled 
+
+===== PAGE 19 =====
+                                                        
+                               LTE-A Module Series  
+ 
+LTE-A(Q)_IMS_Application_Note                                                       18 / 27 
+ 
+ 
+ 
+Example 
+AT+QCFG="ims"  //Query the current configuration 
++QCFG: "ims",0,0 
+ 
+OK 
+AT+QCFG="ims",1  //Enable IMS function compulsorily  
+OK 
+AT+QCFG="ims"  //Query current settings 
++QCFG: "ims",1,1  //VoLTE enabled, VoLTE session available 
+ 
+OK 
+ 
+
+--- продолжение той же таблицы, PDF перенёс строки за разрыв страницы (стр. 19) ---
+  1 VoLTE is enabled 
+<err>   Error codes. Please refer to the AT Command Manual of corresponding module. 

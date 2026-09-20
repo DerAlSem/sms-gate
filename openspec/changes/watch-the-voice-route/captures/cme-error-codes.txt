@@ -1,0 +1,29 @@
+14.5. Summary of CME ERROR Codes 
+ 
+Final result code +CME ERROR: <err> indicates an error related to mobile equipment or network. The 
+operation is similar to ERROR result code. None of the following commands in the same command line is 
+executed. Neither ERROR nor OK result code shall be returned. 
+ 
+<err> values are mostly used by common message commands. The following table lists most of general 
+and GRPS related ERROR codes. For some GSM protocol failure cause described in GSM specifications, 
+the corresponding ERROR codes are not included. 
+ 
+Table 11: Different Coding Schemes of +CME ERROR: <err> 
+Code of <err> Meaning 
+0 Phone failure 
+1 No connection to phone 
+2 Phone-adaptor link reserved 
+3 Operation not allowed 
+4 Operation not supported 
+5 PH-SIM PIN required 
+6 PH-FSIM PIN required 
+7 PH-FSIM PUK required 
+10 SIM not inserted 
+11 SIM PIN required 
+12 SIM PUK required 
+13 SIM failure 
+14 SIM busy 
+15 SIM wrong 
+16 Incorrect password 
+17 SIM PIN2 required 
+

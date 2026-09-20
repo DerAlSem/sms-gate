@@ -1,0 +1,62 @@
+ 
+In the same way, when the MBN is deactivated, the module will delete all the NV/EFS item lists that have 
+been read from the MBN. 
+ 
+If an NV item  of the MBN file s is changed through AT command, when the MBN is activat ed or 
+deactivated, the previously configured NV item will recover to default. 
+ 
+The purpose of MBN file is to mai ntain different NV item lists and EFS file li sts for operators based on 
+IMSI and ICCID. Therefore, it is very convenient to support certification and VoLTE service. 
+ 
+1.2.2. MBN Type 
+In most cases, there is one ROW MBN and many operator MBNs in the module. 
+ 
+The operator MBN files are used for certific ation or VoLTE requirements. Usually, it is named after 
+abbreviations of operators’ names. However, not all operator MBN files enable IMS by default. 
+ 
+The ROW MBN file is made of general NV settings. For example, the attached APN from ROW MBN file is 
+null since ROW MBN file indicates to a non-specific operator. When the ROW MBN file activated, you 
+NOTE 
+
+===== PAGE 10 =====
+1.2.3. MBN Selection 
+You can check whether the automatic MBN selection is enabled by AT+QMBNCFG="AutoSel". When 
+MBN Auto Selection is enabled, the MBN file is activated based on the IMSI of the inserted SIM card. In 
+case of no MBN file including the IMSI of the inserted SIM card, ROW MBN file will be activated. 
+ 
+1.3. Introduction of IMS 
+ 
+IMS (IP Multimedia Subsystem)  includes all CN ele ments f or prov ision of IP multimedia se rvices 
+comprising audio, video, text, etc. and a combination of them delivered over the PS domain. 
+ 
+VoLTE (Voice over LTE) is a new voice solution utilizing IMS technology. IMS is more like the bearer for 
+the voice service. Except voice, IMS network also supports SMS, emergency calls, DTMF, etc. 
+ 
+ 
+
+===== PAGE 11 =====
+1.3.2.2. SMS 
+Sender Network Receiver
+SIP REGISTER with "+g.3gpp.smsip" SIP REGISTER with "+g.3gpp.smsip"
+SIP REGISTER 200 OK SIP REGISTER 200 OK
+SIP MESSAGE
+Content Type: vnd.3gpp.sms
+RP-User-Data with SMS-SUBMIT
+SIP 202 ACCEPT
+SIP MESSAGE
+Content Type: vnd.3gpp.sms
+RP-ACK with SMS-SUBMIT REPORT
+SIP 200 OK
+SIP MESSAGE
+Content Type: vnd.3gpp.sms
+RP-User-Data with SMS-SUBMIT DELIVER
+SIP 200 OK
+SIP MESSAGE
+Content Type: vnd.3gpp.sms
+RP-ACK with SMS-DELIVER REPORT
+SIP 202 ACCEPT
+ 
+Figure 3: SMS over IMS Procedure 
+
+===== PAGE 14 =====
+                                                        

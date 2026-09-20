@@ -19,12 +19,25 @@ measurement exists to detect, and the reading is therefore never taken. The whol
 watching IMS is that it must be observable at the moments nobody is willing to cause an
 outage — which is all of them.
 
-The reading SHALL carry two facts kept apart: whether IMS is **enabled on the module**, and
-whether the **network has admitted it**. They fail for different reasons and have different
-cures. A module with IMS switched off is a setting somebody must change and a reboot
-somebody must accept; a module the network refuses is the operator's business with the
-carrier, and nothing local will fix it. Collapsing them into one "IMS is down" reports the
-wrong cure at the moment a person is deciding what to do.
+The reading SHALL carry two facts kept apart: **what the module is configured to do about
+IMS**, and **whether the voice route is available**. They fail for different reasons and
+have different cures, and collapsing them into one "IMS is down" reports the wrong cure at
+the moment a person is deciding what to do.
+
+The configuration is a local setting, held in non-volatile memory and taking effect at the
+module's next reboot. It has **three** states, not two: this gateway has asked for IMS
+compulsorily, and the alternatives are an explicit compulsory disable and a factory position
+that defers the decision to the carrier profile stored on the module. A gateway that reports
+the configuration as a yes-or-no cannot tell "somebody disabled it" from "nobody decided,
+and the profile is deciding" — two different conversations with two different people. The
+state SHALL therefore be reported in the vendor's own three-way terms and not as a boolean.
+
+The availability of the route is an outcome, and the gateway SHALL report it as one. It
+SHALL NOT be reported as the carrier's verdict: the vendor's reference names this field the
+capability of VoLTE in its parameter table and the IMS registration status in its prose one
+page earlier, and neither of those is "the network refused this subscriber". Naming a cause
+the gateway did not observe is already forbidden to this project's alerts, and it is
+forbidden here.
 
 A firmware that does not know the command SHALL be reported as not measured rather than as
 not registered. `AT+CIREG?` answers `ERROR` on the build in service and the vendor has
@@ -36,9 +49,13 @@ project three days and very nearly a replacement module.
 - **WHEN** the diagnostic sweep reads the module's IMS state
 - **THEN** it is read through the command port's ordinary locking, with no send interrupted and no service stopped
 
-#### Scenario: IMS is enabled but the network has not admitted the module
-- **WHEN** the module has IMS switched on and the network has not admitted it
+#### Scenario: The configuration holds but the route is unavailable
+- **WHEN** the module is configured for IMS and the voice route is not available
 - **THEN** the two facts are reported separately rather than as one condition
+
+#### Scenario: The configuration defers to the carrier profile
+- **WHEN** the module's IMS configuration is neither a compulsory enable nor a compulsory disable, but the factory position that defers to the carrier profile
+- **THEN** it is reported as that third state, and not as IMS being switched off
 
 #### Scenario: The firmware does not know the command
 - **WHEN** the command used to read IMS is refused by the firmware
@@ -58,21 +75,35 @@ restored so whoever was woken learns it is over without opening a page.
 
 **The two conditions are alerted separately, and only one of them is gated.**
 
-The gateway SHALL NOT report the network's admission as lost while the module is not
-registered to the network. The vendor reading's second digit is zero on an unregistered
-module whether or not the network would admit it — measured 2026-09-18, where the module
-sat outside the network for about three minutes after a reset and read zero throughout. A
-watcher without this gate announces a lost voice route after every modem reset, every radio
-cycle and every recovery, which is the surest way to make the alert ignored before the first
-real one arrives. An unregistered module is already the watchdog's condition and has a
-ladder of its own.
+The gateway SHALL NOT report the route as unavailable while the module is not registered to
+the network. That reading is negative on an unregistered module whether or not the route
+would otherwise be available — measured 2026-09-18, where the module sat outside the network
+for about three minutes after a reset and read negative throughout. A watcher without this
+gate announces a lost voice route after every modem reset, every radio cycle and every
+recovery, which is the surest way to make the alert ignored before the first real one
+arrives. An unregistered module is already the watchdog's condition and has a ladder of its
+own.
 
-IMS being **disabled on the module** SHALL be alerted whether or not the module is
-registered, because that digit is a local setting the radio state does not affect, and
-because the state that produces it — a module whose stored setting did not survive a reset
-or a replacement — is both the more alarming condition and one that occurs precisely while
-the module is off the network and rebooting. Gating it would silence the change's most
-valuable alert in the one scenario that generates it.
+**The configuration drifting from the one this gateway set** SHALL be alerted whether or not
+the module is registered, and SHALL be alerted even while the route is still available.
+
+This is a different statement from "IMS has been switched off", and the difference is the
+point. The configuration this gateway wrote is a compulsory enable. It can move off that in
+two ways, and both matter: an explicit compulsory disable, and a return to the factory
+position that defers to the carrier profile. The second is not a fault in itself — a module
+in that state whose profile enables VoLTE has a working voice route — but it is no longer
+the state the gateway asked for, and it holds only for as long as that profile does. The
+vendor's own reference says a profile activated or deactivated restores the setting to the
+profile's default, and that profiles are selected automatically from the SIM's identity, so
+changing the SIM is enough to disarm the route without anyone touching the setting.
+
+Gating this condition on registration would silence it in the one scenario that generates
+it: every state that moves the configuration arises while the module is rebooting and off
+the network.
+
+**Neither alert SHALL name a cause the gateway did not observe.** In particular the alert
+SHALL NOT tell an operator that the carrier has refused the module: the gateway has no
+reading that says so.
 
 **A route already lost when the gateway starts is an episode too.** Episode state does not
 survive the process, and the process ends itself on the recovery ladder's top rung and on
@@ -94,17 +125,21 @@ unmeasured reading, not an exception: it SHALL NOT stop the recovery ladder adva
 NOT prevent an escalation being carried out, and SHALL NOT prevent the service exiting when
 the ladder has decided it must.
 
-#### Scenario: The network stops admitting the module
-- **WHEN** a module registered to the network and admitted to IMS stops being admitted
-- **THEN** one alert is raised for that episode
+#### Scenario: The route stops being available
+- **WHEN** a registered module whose voice route was available stops having it available
+- **THEN** one alert is raised for that episode, naming the observation and not a cause
 
 #### Scenario: The module is off the network
 - **WHEN** the module is not registered to the network
-- **THEN** no alert is raised about the network's admission, and the condition is left to the watchdog
+- **THEN** no alert is raised about the route's availability, and the condition is left to the watchdog
 
-#### Scenario: IMS is switched off while the module is off the network
-- **WHEN** the module reports IMS disabled and is not registered to the network
-- **THEN** the alert about IMS being disabled is still raised
+#### Scenario: The configuration drifts while the module is off the network
+- **WHEN** the module's IMS configuration is no longer the one the gateway set and the module is not registered to the network
+- **THEN** the alert about the configuration is still raised
+
+#### Scenario: The configuration drifts while the route still works
+- **WHEN** the module's IMS configuration has returned to deferring to the carrier profile, and the profile leaves the voice route available
+- **THEN** the alert about the configuration is raised, and no alert claims the route is lost
 
 #### Scenario: The route was already lost when the gateway started
 - **WHEN** the first reading after startup finds the voice route unavailable

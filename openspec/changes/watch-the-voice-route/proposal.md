@@ -6,11 +6,14 @@ for an incoming voice call, an incoming voice call is a way to authorise a perso
 nothing in this gateway watches it.
 
 **The voice route exists, and that is new.** On 2026-09-18 the live `EP06-E`
-(`EP06ELAR03A08M4G`) had IMS switched off — `+QCFG: "ims",0,0`. After `AT+QCFG="ims",1`
-and `AT+CFUN=1,1` it read `+QCFG: "ims",1,1` — the second digit is the network's answer,
-and Билайн admits this module — and an incoming call to the SIM landed: fifteen `RING` /
-`+CLIP` pairs in the gateway's journal, carrying the caller's number. The same call to the
-same modem had previously left not one line anywhere.
+(`EP06ELAR03A08M4G`) read `+QCFG: "ims",0,0` — by the vendor's reference, a module still on
+the factory setting that defers IMS to its carrier profile, and a profile that was not
+enabling VoLTE. After `AT+QCFG="ims",1` and `AT+CFUN=1,1` it read `+QCFG: "ims",1,1`, and an
+incoming call to the SIM landed: fifteen `RING` / `+CLIP` pairs in the gateway's journal,
+carrying the caller's number. The same call to the same modem had previously left not one
+line anywhere. ⚠️ That the route works on Билайн is proved by the call. That the second digit
+*means* the carrier's verdict is not proved by anything, and this change no longer says it
+— see `design.md` and `captures/`.
 
 That falsifies one sentence elsewhere, and it is worth stating exactly which.
 `verify-by-inbound-code`'s proposal says *"The modem in service cannot supply the second —
@@ -53,17 +56,24 @@ than after it.
 ## What Changes
 
 - **IMS is read as part of the ordinary read-only sweep**, through the command port's
-  existing locking, with the gateway running. Two facts, kept apart: whether IMS is enabled
-  on the module, and whether the network has admitted it.
-- **IMS is watched rather than displayed.** Losing the network's admission means the
-  authorisation-by-call route is gone, and an operator learns it from an alert instead of
-  from opening a page. Edge-triggered, as the link alert already is, with a notification
-  when it returns.
-- **Only the network's half is gated on registration.** Measured on 2026-09-18: after
+  existing locking, with the gateway running. Two facts, kept apart: what the module is
+  **configured** to do about IMS — a three-state setting, not a switch — and whether the
+  voice route is **available**.
+- **IMS is watched rather than displayed.** Losing the route takes the authorisation-by-call
+  path away, and an operator learns it from an alert instead of from opening a page.
+  Edge-triggered, as the link alert already is, with a notification when it returns. The
+  alert reports what was read and does not name the carrier as the culprit, because no
+  reading says so.
+- **The configuration drifting from the one this gateway set is its own alert**, raised even
+  while the route still works. The vendor's reference says the setting is restored to the
+  carrier profile's default whenever that profile is activated, and that profiles are chosen
+  automatically from the SIM's identity — so a SIM swap disarms the route silently, and the
+  state that follows is not a fault today and is a lost route at the next reboot.
+- **Only availability is gated on registration.** Measured on 2026-09-18: after
   `AT+CFUN=1,1` the module was outside the network for about three minutes, and the second
   digit reads zero throughout — so an ungated watcher would announce a lost voice route
-  after every modem reset. The module's own setting is not gated: that digit does not depend
-  on the radio, and the state that clears it happens while the module is rebooting.
+  after every modem reset. The configuration is not gated: it does not depend on the radio,
+  and every state that moves it arises while the module is rebooting.
 - **A route already lost at startup is an episode.** Episode state dies with the process,
   and the process ends itself on the ladder's top rung and on every deploy. Without this the
   gateway says nothing about exactly the condition it was built to find.

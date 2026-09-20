@@ -22,7 +22,7 @@ Each row SHALL show the modem's own response whatever the outcome, so a reader c
 firmware without the command from a gateway that has stopped asking properly.
 
 A reading SHALL be rendered in words rather than as the raw fields it was decoded into. The
-rows on this page are read by a person deciding what to do next, and `enabled=1 admitted=0`
+rows on this page are read by a person deciding what to do next, and `ims_conf=1 volte_cap=0`
 asks them to remember a vendor's digit order; the decoders this page already renders supply
 a named state beside the number for exactly that reason.
 
@@ -40,18 +40,24 @@ a named state beside the number for exactly that reason.
 
 ### Requirement: The voice route's state is visible on the diagnostics page
 
-The page SHALL show whether IMS is enabled on the module, whether the network has admitted
-it, and when that was last successfully measured.
+The page SHALL show what the module is configured to do about IMS, whether the voice route
+is available, and when that was last successfully measured.
+
+The configuration has three states and the page SHALL render all three distinctly: a
+compulsory enable, a compulsory disable, and the factory position that defers the decision
+to the carrier profile stored on the module. Rendering the third as "off" tells a reader
+somebody disabled the route when nobody did, and sends them looking for a person who does
+not exist.
 
 This is the page an operator opens when asking whether an incoming call can still reach this
 SIM. The alert says the state changed; the page is where somebody checks the answer before
-and after acting on it, where the two halves are told apart — a setting to change locally,
-or a conversation with the carrier — and where a state that has not been measurable for
-hours is distinguishable from one that is fine.
+and after acting on it, where the configuration is told apart from the outcome it produced,
+and where a state that has not been measurable for hours is distinguishable from one that is
+fine.
 
 #### Scenario: An operator checks the voice route
 - **WHEN** the modem diagnostics page is opened
-- **THEN** it reports whether IMS is enabled on the module, whether the network has admitted it, and when it was last measured
+- **THEN** it reports what the module is configured to do about IMS, whether the voice route is available, and when it was last measured
 
 #### Scenario: The state has not been measurable
 - **WHEN** the voice route has not been successfully measured recently
