@@ -18,7 +18,7 @@ from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANS
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
-from app.verification import routes
+from app.verification import refusals, routes, rule
 from app.verification.dispatch import announce_verification_outcomes
 from app.verification.probes import build_probes
 from app.modem.parser import (
@@ -555,7 +555,110 @@ class ModemManager:
                 self._held.discard(msg.message_id)
                 self._queue.task_done()
 
+    async def _refuse_what_the_rule_routes_elsewhere(
+        self, msg: OutgoingMessage
+    ) -> bool:
+        """Refuse an item the rule does not route to this sender. True when refused.
+
+        The rule exists because operators withdraw the modem route, and the replacement
+        rungs have no field for words: a flash call's whole payload is the last four
+        digits of the calling number, and `sendVerificationMessage` accepts a `code` and
+        a `code_length` with no message body at all. Free text addressed to a subscriber
+        of a diverted operator is therefore something nothing in force for that operator
+        can carry — and until this check existed the send path never asked, so it went
+        out over the modem instead. That is the automatic failover this capability
+        refuses by name: not decided by anybody, merely arrived at, and for a МегаФон
+        subscriber it reads to the application as a delivery and behaves to the person as
+        a silence.
+
+        Four properties, each of which an implementation could drop while looking right:
+
+        - **It stands before `encode_submit` and before the modem gate**, so a refused
+          item costs no AT command, no registration query and no place in the queue for
+          the serial port.
+        - **It consumes no attempt.** A refusal is not a failed send: retried, it would
+          ask the same rule four more times and then be reported as a send failure, which
+          names the modem for something the modem was never offered.
+        - **It is counted, per operator and per application.** That count is the one
+          instrument that says what a rule set during an outage is still costing after
+          the outage, and `refusals.record` is where it is kept.
+        - 🔴 **It is audible on a stock install.** `refusals.record` alerts on the
+          `routing` event, which ships **on**; `_finally_fail` alerts on `send_error`,
+          which ships **off**. A refusal raised only through the latter is silent on
+          exactly the installs that have the rule in force, which is all of them.
+
+        The operator is read from the cache and never waited for. A number with no row
+        takes the rule's `?` entry, which ships pointing at the modem — so this check
+        changes nothing for a first-time recipient, and not waiting for the lookup stays
+        where it belongs, in tasks 4.4 and 4.5.
+        """
+        row = await queries.get_number_operator(msg.phone)
+        operator = row["operator"] if row is not None else None
+
+        try:
+            assigned_routes = rule.route_for(operator)
+        except rule.UnreadableRule as exc:
+            # Never read as an empty rule — empty, it would send the whole of a diverted
+            # operator's traffic straight back to the route that is rejecting it. The
+            # alert was raised by `route_for` itself; what is left here is to refuse.
+            await self._refuse(
+                msg, operator, rule.REFUSE,
+                f"the stored routing rule cannot be read, so no route can be named for "
+                f"this number: {exc}",
+            )
+            return True
+
+        if rule.refuses(assigned_routes):
+            await self._refuse(
+                msg, operator, rule.REFUSE,
+                f"the routing rule offers no way out for "
+                f"{operator or 'an operator it could not resolve'}",
+            )
+            return True
+
+        # The first route named, and only it. Walking further down the entry looking for
+        # a route that happens to fit would be the rerouting this requirement forbids in
+        # the same sentence — and it would put the modem back under a paid rung by
+        # accident, which is what the whole capability exists to stop.
+        assigned = assigned_routes[0]
+        if assigned == routes.SMS_OUT:
+            return False
+
+        named = operator or "an operator that could not be resolved"
+        if routes.carries(assigned, routes.ARBITRARY_TEXT):
+            why = (f"the route the rule names for {named} is {assigned}, and this is "
+                   f"the modem")
+        else:
+            why = (f"the route the rule names for {named} is {assigned}, which cannot "
+                   f"carry {routes.ARBITRARY_TEXT}")
+        await self._refuse(msg, operator, assigned, why)
+        return True
+
+    async def _refuse(
+        self, msg: OutgoingMessage, operator: str | None, route: str, error: str
+    ) -> None:
+        """Count the refusal, then fail the message. In that order, deliberately.
+
+        A count written after the failure would be lost to anything that threw between
+        them, and the count is the only record that survives the message. Written first,
+        the worst case is a refusal counted for a message the catch-all then fails with a
+        worse-worded reason — the item did not go out either way.
+        """
+        logger.warning(
+            "Refused message %d (app=%s to=%s operator=%s): %s",
+            msg.message_id, msg.app_id or "?", msg.phone, operator or "?", error,
+        )
+        await refusals.record(
+            operator=operator, app_id=msg.app_id or "?", route=route)
+        await self._finally_fail(msg, error, attempt=0, dedup=f"unroutable:{route}")
+
     async def _send_one(self, msg: OutgoingMessage) -> None:
+        # First of everything, and before the text is so much as encoded: this sender is
+        # the `sms_out` route, and the rule decides whether that is the route this item
+        # was assigned. Below this line the modem is asked to do things.
+        if await self._refuse_what_the_rule_routes_elsewhere(msg):
+            return
+
         parts = encode_submit(msg.phone, msg.text, ref=msg.message_id % 256)
         if len(parts) > store.max_sms_parts:
             error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"

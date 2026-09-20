@@ -71,6 +71,46 @@ ALL_ROUTES = frozenset({
 # three bound is this gateway's spending.
 PAID_ROUTES = frozenset({FLASH_CALL, TG_GATEWAY})
 
+# The two kinds of item this gateway hands to a route, and what each route is capable of
+# carrying. Declared here, beside the names, because it is a property of the route rather
+# than a branch inside whoever happens to be sending: a sender deciding it for itself
+# would decide it differently from the ladder, and the difference would show up as free
+# text going out over a route the rule did not name.
+#
+# `sms_out` carries words, a link, a second sentence — and a code, which is only text with
+# a shape. The two paid rungs carry a code and nothing else, for two different reasons
+# that arrive at the same place: a flash call's whole payload is the last four digits of
+# the calling number, and `sendVerificationMessage` accepts a `code` and a `code_length`
+# with no message body at all. `call_in` and `sms_in` are the subscriber reaching us,
+# which is a code by construction.
+#
+# 🔴 **The three messenger routes are absent deliberately, and absent means "cannot".**
+# No adapter carries them yet, and what a messenger user account may put in front of a
+# person is a wire contract nobody here has read. Guessing them into this map would be
+# guessing in the one direction that cannot be taken back: an item let out over a route
+# on a supposition is an item delivered.
+ARBITRARY_TEXT = "arbitrary text"
+VERIFICATION_CODE = "a verification code"
+
+_CARRIES: dict[str, frozenset[str]] = {
+    CALL_IN: frozenset({VERIFICATION_CODE}),
+    SMS_IN: frozenset({VERIFICATION_CODE}),
+    SMS_OUT: frozenset({ARBITRARY_TEXT, VERIFICATION_CODE}),
+    FLASH_CALL: frozenset({VERIFICATION_CODE}),
+    TG_GATEWAY: frozenset({VERIFICATION_CODE}),
+}
+
+
+def carries(route: str, item: str) -> bool:
+    """Whether this route is capable of carrying this kind of item at all.
+
+    An unknown route answers no. That is the failing direction and it is the wanted one:
+    the rule is configuration, a route may be named in it before anything can carry it,
+    and the cost of answering yes by default is a message sent somewhere nobody chose.
+    """
+    return item in _CARRIES.get(route, frozenset())
+
+
 # What the person is told to do, per rung. Addresses, never identities: "call this number"
 # is the address, and which SIM answers it is the identity.
 _INSTRUCTIONS = {

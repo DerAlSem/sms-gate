@@ -66,14 +66,76 @@ rather than on code.
 
 
 - [ ] 4.1 Test: a verification for an operator the rule routes to `flash_call` is not picked up by the modem sender, and one routed to `sms_out` is
-- [ ] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
+      🔴 **Half of this is now a live hazard rather than an open test, and it was created
+      by 4.6a.** The modem sender refuses anything whose **first** rung in the rule is
+      not `sms_out`. A verification the ladder deliberately routed to a modem rung
+      standing behind a paid one would therefore be refused by the sender — the ladder
+      chose `sms_out`, and the sender asks the rule instead of asking what was chosen.
+      It is unreachable today because nothing enqueues an `sms_out`-borne code: the
+      carrier is task 4.17, blocked on 1.1. **When 4.17 lands, the item handed to
+      `enqueue` has to carry what the ladder selected**, and this test is what must
+      fail until it does. Asserting "flash_call is not picked up" alone would be hollow
+      in the way twice caught on this change.
+- [x] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
+      Taken **in the same file and the same session as 4.6**, not after it: three times
+      on this change a guard has stood green over a place nothing could reach, and the
+      last two were caught only because a positive control sat beside them. Four
+      controls carry it — an operator with no entry (`*`), a number with no
+      `number_operators` row at all (`?`), the identical МегаФон send once its entry is
+      rewritten to `sms_out`, and the two undiverted sends asserting `attempts == 1` and
+      a PDU actually handed to the modem. The third is the one with teeth: it is the
+      same message, the same harness and the same modem as the refusal beside it, and
+      the only thing that differs is the rule.
 - [x] 4.3 Test: the rule matches `МЕГАФОН` and `МегаФон` identically, and matches a name with surrounding whitespace. **This test fails on any implementation built on SQLite `upper()`/`LIKE` or on `==`**
 - [ ] 4.4 Test: a number with no row in `number_operators` takes the default route without waiting for a lookup, and the missing operator is recorded
       Half done 20.09.2026: the rule answers the unresolved case through its `?`
       entry (`tests/test_routing_rule.py`). What remains is the door's half — not
       waiting on the lookup, and recording the missing operator.
 - [ ] 4.5 Test: the operator lookup being unreachable fails nothing and delays nothing
-- [ ] 4.6 Test: arbitrary text addressed to an operator routed to `flash_call` is `failed` at once with a reason naming the operator, notifies the app, alerts the operator, issues no AT command and consumes no retry
+- [x] 4.6 Test: arbitrary text addressed to an operator routed to `flash_call` is `failed` at once with a reason naming the operator, notifies the app, alerts the operator, issues no AT command and consumes no retry
+      `tests/test_send_path_refuses_an_uncarryable_route.py`, fifteen tests, each of the
+      five claims asserted separately — four of them can hold while the fifth does not.
+      Thirteen mutations in `bite-send-refusal.sh`, all red.
+      🔴 **Two of those thirteen survived the first round, and what they found was
+      real:** declaring `tg_gateway` able to carry words, and making an unknown route
+      carry everything, left every send-path test green. The send path asks "is this
+      item assigned to me?" before it asks "could the assigned route carry it?", so the
+      declaration only ever decided the wording of the reason — a second filter above it
+      swallowing the mutation, which is the failure `_gates.md` names. The remedy was to
+      assert the declaration where it lives (`routes.carries`) rather than through a
+      path that dominates it, plus one test on the wording the declaration feeds
+      directly. A third survivor is benign and left alone: deleting the `rule.refuses`
+      branch still refuses, because the general path refuses identically — it is kept
+      for the empty-list case and for a reason an operator can act on.
+      ⚠️ The verification half of this mechanism is **task 4.1 and is not reachable
+      yet**: no carrier enqueues an `sms_out`-borne code, because that is task 4.17.
+      When it lands, the guard below refuses it on any operator whose first rung is
+      paid, and 4.1 is what must catch that.
+- [x] 4.6a Implement the refusal on the send path — `rule.route_for` called from `_send_one`, before `encode_submit` and before the modem gate
+      Entered as its own task for the reason 4.14a was: 4.6 is a test task, and the
+      mechanism under it did not exist at all. `rule.route_for` was called from nowhere
+      on the send path, and the requirement it serves was marked `[unbacked]`.
+      **This is the first change on this branch that alters live behaviour.** Plain text
+      to a МегаФон subscriber stops going out: the shipped rule routes that operator to
+      `[tg_gateway, flash_call]`, and neither rung has a field for words. The owner chose
+      it as the next task on 20.09.2026 knowing that.
+      🔴 **The alert is raised by `refusals.record` on the `routing` event, not by
+      `_finally_fail`.** `_finally_fail` notifies `send_error`, which ships **off** — a
+      refusal carried only by it is silent on exactly the installs that have the rule in
+      force, which is all of them. This is the trap task 4.25 already caught once.
+      **The send path is the missing producer of the refusal count.** Until now
+      `refusals.record` had one caller, `ladder.walk`, which has no live caller of its
+      own; the seventy-odd refusals a month the count was built for are these.
+      Where each piece sits: `routes._CARRIES` and `routes.carries` declare what a route
+      can carry (absent means cannot — the three messenger routes have no adapter and no
+      wire contract anybody has read); `ModemManager._refuse_what_the_rule_routes_elsewhere`
+      reads the operator from the cache without waiting for a lookup, reads the rule live,
+      and refuses unless the **first** route named is `sms_out`; `ModemManager._refuse`
+      counts first and fails second, so that the record that outlives the message is the
+      one written under the fewer assumptions.
+      ⚠️ **Not waiting for the lookup is not this task's** — a number with no row takes
+      the rule's `?` entry, which ships pointing at the modem, so the send path is
+      unchanged for a first-time recipient. Tasks 4.4 and 4.5 stay open and untouched.
 - [ ] 4.7 Test: an application-supplied code is rejected by `POST /verifications`
 - [ ] 4.8 Test: `call_status: 1` does not confirm a verification; only a correct code at `/check` does
 - [ ] 4.9 Test: `call_status: -1` that never resolves within the bound is recorded as unknown, not as success and not as failure

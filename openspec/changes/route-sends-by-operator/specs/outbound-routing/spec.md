@@ -298,7 +298,27 @@ route and what it cannot carry.
 The alternative — quietly sending such a message over the modem instead — is the automatic
 failover this change refuses, arrived at by accident rather than by decision.
 
-[unbacked]
+**The route an item is assigned is the first one its entry names, and only it.** The
+requirement forbids rerouting in the same sentence as it forbids attempting, so an entry
+reading `[tg_gateway, sms_out]` does not hand free text to the modem: it refuses it, out
+loud, counted. Nothing in the rule in force distinguishes the two readings — no entry
+names a modem route behind a paid one — so the narrower one costs nothing today, and it
+is the one that cannot put the modem back underneath a paid rung by accident. ⚠️ **This
+is a reading of the requirement rather than something the requirement said**, taken
+20.09.2026 because an implementation had to take one; the owner may widen it, and the
+cost of having taken the narrow side is a refusal an operator sees on the first message
+rather than a silence they find out about later.
+
+**A route this gateway has not declared able to carry an item carries nothing.** The
+three messenger ways out are named in the vocabulary with no adapter behind them and no
+wire contract anybody here has read; "not a paid rung" is not "mine", and a sender that
+read it that way would put free text out over a route the rule did not name.
+
+[normative · evidence: app/verification/routes.py:74-111 (`_CARRIES`, `carries`) ·
+app/modem/manager.py:558-653 (`_refuse_what_the_rule_routes_elsewhere` and `_refuse`,
+called at the head of `_send_one` before `encode_submit` and before the modem gate) · app/verification/refusals.py:49 (counted and
+alerted on `routing`, which ships on) · tests/test_send_path_refuses_an_uncarryable_route.py
+· conf: high]
 
 #### Scenario: Free text addressed to an operator routed to the call route
 - **WHEN** an application sends arbitrary text to a number whose operator is routed `flash_call`
