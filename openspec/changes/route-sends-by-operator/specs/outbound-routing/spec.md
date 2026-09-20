@@ -528,6 +528,23 @@ Automatic failover between routes is deliberately absent. Escalating into a paid
 without a spend ceiling turns a modem fault into an unbounded bill, and escalating out of one
 turns a vendor outage into traffic on a route an operator has already refused.
 
+🔴 **That holds even where a rule names the modem behind a paid rung, and the owner settled
+it on 20.09.2026.** A ladder written `[tg_gateway, sms_out]` is configuration rather than
+failover, and the gateway honours it — but not on a refusal of **us**. When a vendor refuses
+this gateway rather than the subscriber, a modem rung later in the same ladder SHALL NOT be
+attempted: it SHALL be recorded as withheld, with the rung whose vendor refused named in the
+log, and the ladder SHALL continue past it.
+
+The two cases are separated by whom the vendor refused, and nothing else. A **decline of the
+subscriber** is a statement about one person — that person is not in Telegram — and a modem
+rung behind it is an ordinary fallback that goes on working. A **refusal of us** is
+gateway-wide: a rotated token or an empty account refuses every verification, and refuses them
+all inside the same minute. Carrying those over the modem is precisely the flood the paragraph
+above forbids, arriving through the one door a rule can open.
+
+Withholding SHALL NOT raise a second alert. The refusal that caused it already woke the
+operator with the vendor named, and two lines about one event is how the first one is buried.
+
 That argument applies to the paid route itself, not only to escalation into it. A paid route
 SHALL have a configured ceiling on how many paid items it may carry per rolling hour and per
 rolling day, counted across every number and every application. A request that would exceed it
@@ -568,7 +585,7 @@ route "the vendor is out of credit" was unambiguous; with two it is the question
 has to answer before they can act, and answering it by reading a log is the difference between
 a two-minute top-up and an outage.
 
-[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1). 🔴 **"SHALL NOT be transmitted over the other route" is guarded as the absence of *automatic* failover, and measurement is what fixed that reading** (task 4.14, `tests/test_vendor_failure_spares_the_modem.py`, five mutations in `bite-modem.sh`): driven directly, `ladder.walk` does carry a verification over an `sms_out` rung when the rule names one behind a paid rung, and that is configuration with an operator's name on it rather than a fallback. What the gateway guarantees, and what is now guarded, is that the rungs attempted are exactly `rule.route_for`'s answer — nothing is appended when a vendor refuses us for credentials or for want of credit, and when every rung the rule named has refused, the verification fails rather than finding its way onto the modem. ⚠️ **Whether a rule that explicitly names `sms_out` behind a paid rung should still be honoured on a refusal of *us* — as against a decline of the subscriber — is the owner's and is not decided here.** A refusal of us is gateway-wide and will refuse every verification until it is fixed, which is the case for stopping; an operator whose modem works fine configured that ladder on purpose, which is the case against. Both readings ship the same code today, because the rule in force names no such ladder]
+[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1). 🔴 **"SHALL NOT be transmitted over the other route" is guarded as the absence of *automatic* failover, and measurement is what fixed that reading** (task 4.14, `tests/test_vendor_failure_spares_the_modem.py`, five mutations in `bite-modem.sh`): driven directly, `ladder.walk` does carry a verification over an `sms_out` rung when the rule names one behind a paid rung, and that is configuration with an operator's name on it rather than a fallback. What the gateway guarantees, and what is now guarded, is that the rungs attempted are exactly `rule.route_for`'s answer — nothing is appended when a vendor refuses us for credentials or for want of credit, and when every rung the rule named has refused, the verification fails rather than finding its way onto the modem. 🟢 **The owner settled on 20.09.2026 that a rule naming `sms_out` behind a paid rung is not honoured on a refusal of *us*, and that is now implemented** (task 4.14a, `ladder._MODEM_ROUTES` and the withholding branch of `ladder.walk`, `WITHHELD` recorded as the rung's outcome). Guarded by the same file and by six further mutations in `bite-withhold.sh`, among them the norm reaching too far — withholding the modem after a decline of the *subscriber* turns the positive control red, which is what keeps the rule narrow enough to leave a working modem working]
 
 #### Scenario: The vendor rejects our credentials
 - **WHEN** a vendor answers with an authentication error
@@ -577,6 +594,14 @@ a two-minute top-up and an outage.
 #### Scenario: The vendor is out of credit
 - **WHEN** a vendor reports insufficient balance
 - **THEN** the operator is alerted with that reason and that vendor's name, and nothing is rerouted
+
+#### Scenario: A rule names the modem behind the rung whose vendor refused us
+- **WHEN** an operator's ladder is `[tg_gateway, sms_out]` and the Telegram rung answers with a refusal of this gateway
+- **THEN** the modem rung is recorded as withheld rather than attempted, the verification fails naming it, and no second alert is raised
+
+#### Scenario: A rule names the modem behind a rung the subscriber declined
+- **WHEN** the same ladder's Telegram rung declines the subscriber rather than refusing this gateway
+- **THEN** the modem rung carries the verification as the rule configured it
 
 #### Scenario: The ceiling counts the ladder, not the rung
 - **WHEN** verifications advance from the first rung to the second often enough that the two rungs together reach the configured ceiling

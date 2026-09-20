@@ -70,12 +70,14 @@ def alerts(monkeypatch):
     return sent
 
 
-def _refusing_vendor(monkeypatch, error, verification_id):
+def _vendor_answering(monkeypatch, error, verification_id):
     """The Telegram rung's own carrier, with the vendor answering `ok: false`.
 
     The real carrier rather than a stub: the alert this task is half about is raised
     inside it, and a stub returning `REFUSED` would assert the ladder's half while
-    silently dropping the operator's.
+    silently dropping the operator's. The error string decides which of the two cases
+    this is — `_classify` is what separates a refusal of *us* from a decline of the
+    subscriber, and the whole norm below turns on that line.
     """
     async def check(phone, *, token, timeout=5.0, client=None):
         return tg_gateway.Ability(kind=tg_gateway._classify(error), error=error)
@@ -86,6 +88,18 @@ def _refusing_vendor(monkeypatch, error, verification_id):
     monkeypatch.setattr(tg_gateway, "check_send_ability", check)
     monkeypatch.setattr(tg_gateway, "send_verification_message", send)
     return tg_carrier.carrier(verification_id, app_id="app1", token="tok")
+
+
+def _rule_with_the_modem_behind_the_paid_rung():
+    """The one rule that can exercise the norm: the modem standing behind a paid rung.
+
+    Written out rather than taken from `rule.SHIPPED`, because the point of the tests
+    that use it is precisely that the shipped rule does **not** look like this.
+    """
+    return json.dumps(
+        [{"operator": OPERATOR, "routes": [TG_GATEWAY, SMS_OUT]},
+         {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
+         {"operator": rule.UNKNOWN, "routes": [SMS_OUT]}], ensure_ascii=False)
 
 
 def _recording(route, seen, outcome):
@@ -117,7 +131,7 @@ async def _walk_the_rule(monkeypatch, *, error, seen, second=ladder.DECLINED):
     return rungs, await ladder.walk(
         vid, app_id="app1", operator=OPERATOR, phone=PHONE, rungs=rungs, gates=(),
         carriers={
-            TG_GATEWAY: _refusing_vendor(monkeypatch, error, vid),
+            TG_GATEWAY: _vendor_answering(monkeypatch, error, vid),
             FLASH_CALL: _recording(FLASH_CALL, seen, second),
             SMS_OUT: _recording(SMS_OUT, seen, ladder.CARRIED),
         },
@@ -187,25 +201,71 @@ def test_the_ladder_appends_nothing_to_the_rungs_the_rule_names(monkeypatch, ale
     _run(body)
 
 
-def test_the_modem_carrier_is_reached_when_the_rule_itself_names_it(monkeypatch, alerts):
+def test_a_declined_subscriber_still_reaches_the_modem_the_rule_names(
+        monkeypatch, alerts):
     """The positive control, without which every assertion above is empty.
 
-    It also states the boundary plainly: a modem rung behind a paid one is configuration,
-    not failover, and the gateway carries it. What the guards above hold is that nobody
-    reaches it without an operator having written it down.
+    It is also what keeps the norm narrow. A rung the **subscriber** declined says
+    nothing about this gateway — one person is not in Telegram — and the modem behind it
+    is an ordinary configured fallback that must go on working. Only a refusal of *us*
+    withholds it. Without this test the whole of the above would pass on a modem carrier
+    nothing could ever reach, and the narrowness would be an intention rather than a
+    measured fact.
     """
     async def body():
-        await store.set_many({rule.KEY: json.dumps(
-            [{"operator": OPERATOR, "routes": [TG_GATEWAY, SMS_OUT]},
-             {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
-             {"operator": rule.UNKNOWN, "routes": [SMS_OUT]}], ensure_ascii=False)})
+        await store.set_many({rule.KEY: _rule_with_the_modem_behind_the_paid_rung()})
         seen = []
         rungs, walk, vid = await _walk_the_rule(
-            monkeypatch, error="ACCESS_TOKEN_INVALID", seen=seen)
+            monkeypatch, error="PHONE_NUMBER_NOT_AVAILABLE", seen=seen)
 
         assert rungs == [TG_GATEWAY, SMS_OUT]
         assert seen == [SMS_OUT], (
             "the modem carrier was never reachable, so the guards above prove nothing")
         assert walk.carried_by == SMS_OUT
+
+    _run(body)
+
+
+def test_a_refusal_of_us_withholds_the_modem_rung_the_rule_does_name(
+        monkeypatch, alerts):
+    """The owner's decision of 20.09.2026, on the one rule that can exercise it.
+
+    Every other test here rests on the rule in force naming no modem rung behind the
+    paid ladder — true today, and a fact about configuration rather than about the
+    gateway. This one hands the ladder exactly the rule that would carry the traffic of
+    a vendor outage onto the modem, and asserts it does not.
+
+    The rung is **recorded** rather than skipped: a rung that vanishes from the row list
+    is a verification whose failure has no reason on any screen.
+    """
+    async def body():
+        await store.set_many({rule.KEY: _rule_with_the_modem_behind_the_paid_rung()})
+        seen = []
+        rungs, walk, vid = await _walk_the_rule(
+            monkeypatch, error="ACCESS_TOKEN_INVALID", seen=seen)
+
+        assert rungs == [TG_GATEWAY, SMS_OUT], "the stand must hand over that very rule"
+        assert seen == [], "a vendor refusing us was carried over the modem"
+        assert walk.carried_by is None
+
+        rows = [(r["route"], r["outcome"]) for r in await queries.verification_rungs(vid)]
+        assert rows == [(TG_GATEWAY, ladder.REFUSED), (SMS_OUT, ladder.WITHHELD)]
+        assert alerts and "Telegram" in alerts[0][1], (
+            "the refusal that withheld the modem must still name its vendor")
+        assert len(alerts) == 1, (
+            "withholding raises no second alert: one event, one line for the operator")
+
+    _run(body)
+
+
+def test_withholding_the_modem_says_why_in_the_verifications_reason(
+        monkeypatch, alerts):
+    """A failure whose reason reads "expired" is the one thing that did not happen."""
+    async def body():
+        await store.set_many({rule.KEY: _rule_with_the_modem_behind_the_paid_rung()})
+        rungs, walk, vid = await _walk_the_rule(
+            monkeypatch, error="ACCESS_TOKEN_INVALID", seen=[])
+
+        assert SMS_OUT in walk.reason and ladder.WITHHELD in walk.reason, walk.reason
 
     _run(body)

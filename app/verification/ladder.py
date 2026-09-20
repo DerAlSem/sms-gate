@@ -42,6 +42,7 @@ from typing import Awaitable, Callable, Sequence
 
 from app.db import queries
 from app.verification import refusals, rule
+from app.verification.routes import SMS_OUT
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ UNCLASSIFIED = "unclassified"  # a refusal we cannot place; advance, and say so 
 UNANSWERED = "unanswered"    # no answer inside the bound — possibly charged
 ABSENT = "absent"            # nothing is configured to carry this rung at all
 INCAPABLE = "incapable"      # this rung cannot carry *this* item; not a decline
+WITHHELD = "withheld"        # not attempted: a vendor refused *us* and this is the modem
 FAILED = "failed"            # it carried and then failed — the ladder does not advance
 
 # Three classes, not two, and the third is the expensive one. The ladder advances only
@@ -63,6 +65,11 @@ FAILED = "failed"            # it carried and then failed — the ladder does no
 # same code at the second vendor while the first one's fee cannot be refunded until its
 # `ttl` runs out.
 _ADVANCING = frozenset({DECLINED, REFUSED, UNCLASSIFIED, UNANSWERED, ABSENT, INCAPABLE})
+
+# The routes on which **this gateway transmits over the modem**. `call_in` and `sms_in`
+# use the same modem and are deliberately absent: the subscriber originates those, and
+# offering someone "text us the code" is not transmitting to them.
+_MODEM_ROUTES = frozenset({SMS_OUT})
 
 # The outcomes that leave the verification in flight rather than failing it when they are
 # the last thing that happened. A vendor that never answered may yet deliver what it never
@@ -146,6 +153,33 @@ async def walk(
                         verification_id, route)
             break
 
+        if route in _MODEM_ROUTES and any(a.outcome == REFUSED for a in attempts):
+            # Decided by the owner, 20.09.2026. A vendor refusing *us* — a rotated token,
+            # an empty account — is gateway-wide: it will refuse every verification until
+            # somebody fixes it, and it refuses them all within the same minute. Carrying
+            # them over the modem then turns one vendor's outage into a flood of traffic
+            # on the route this capability exists to route *away* from, and for a МегаФон
+            # subscriber that route has been refusing — so it would read to the
+            # application as a delivery and behave to the person as a silence.
+            #
+            # A rung the **subscriber** declined is the opposite case and still advances
+            # here: that is a statement about one person, not about the gateway.
+            #
+            # Not alerted again: the refusal that caused this already woke the operator
+            # with the vendor named, and a second alert on one event is the noise that
+            # buries the first. Recorded rather than skipped, because a rung that
+            # vanishes from the row list is a verification whose failure has no reason.
+            logger.warning("verification %d: %s was refused by its vendor, so the modem "
+                           "rung %s is withheld rather than carrying this verification",
+                           verification_id, _refused_by(attempts), route)
+            await queries.record_verification_rung(
+                verification_id, route=route, outcome=WITHHELD)
+            attempts.append(Attempt(
+                outcome=WITHHELD, route=route,
+                reason="a vendor refused this gateway; the modem does not carry the "
+                       "traffic of a vendor outage"))
+            continue
+
         rung_id = await queries.record_verification_rung(
             verification_id, route=route, outcome=ATTEMPTING)
 
@@ -215,6 +249,11 @@ async def _attempt(
         return Attempt(outcome=UNANSWERED, route=route, reason=str(e))
     return Attempt(outcome=attempt.outcome, reason=attempt.reason,
                    vendor_ref=attempt.vendor_ref, cost=attempt.cost, route=route)
+
+
+def _refused_by(attempts: Sequence[Attempt]) -> str:
+    """Which rung's vendor refused us, for the line that says why the modem was withheld."""
+    return ", ".join(a.route or "?" for a in attempts if a.outcome == REFUSED) or "a rung"
 
 
 def _why_nothing_carried(attempts: Sequence[Attempt]) -> str:

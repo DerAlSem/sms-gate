@@ -104,6 +104,20 @@ rather than on code.
       string in eleven samples, so it arrives as an `ok: false` the gateway cannot
       place — `unclassified`, loud, advancing as past a decline, and never onto the
       modem.
+- [x] 4.14a Implement the withholding of a modem rung that stands behind a rung whose vendor refused **us** — the owner's decision of 20.09.2026, taken on the question 4.14 opened
+      Entered as its own task rather than folded into 4.14: 4.14 is a test task, and
+      what the measurement under it found was a **behaviour** nobody had specified.
+      `ladder._MODEM_ROUTES` and the withholding branch of `ladder.walk`; the rung is
+      recorded with the new outcome `withheld` rather than skipped, because a rung that
+      vanishes from the row list is a verification whose failure has no reason on any
+      screen. No second alert: the refusal already woke the operator with its vendor
+      named.
+      🔴 **The norm is narrow on purpose, and the positive control is what holds it
+      there.** It turns on who the vendor refused and nothing else — a decline of the
+      *subscriber* still falls through to the modem the rule names, because that is a
+      statement about one person rather than about this gateway. A mutation widening the
+      condition to every advancing outcome turns that control red. `WITHHELD` needs no
+      migration: `verification_rungs.outcome` carries no CHECK constraint.
 - [ ] 4.15 Test: a verification outcome pushed to the application is distinguishable from a message status push, so a verification id cannot be read as a message id
 - [x] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, flash_call]` — as data, not as a branch, and with no `app_id` in the rule
       Built 20.09.2026 as the typed setting `operator_routes` in

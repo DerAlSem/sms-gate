@@ -99,6 +99,35 @@ def test_the_rungs_of_a_verification_are_visible_beside_the_messages():
     _run(body)
 
 
+def test_a_withheld_modem_rung_is_on_the_screen_with_its_reason():
+    """Task 4.14a. A rung withheld is the whole explanation of why the verification
+    failed, so it has to be readable by whoever takes the support call.
+
+    The outcome column interpolates the stored value rather than looking it up in a
+    table of today's outcomes, which is why a new outcome does not arrive as an empty
+    cell — asserted here rather than assumed, because a blank cell is exactly what a
+    lookup table would give and nothing would go red.
+    """
+    async def body():
+        await _message()
+        vid = await _verification()
+        tg = await queries.record_verification_rung(vid, route="tg_gateway",
+                                                    outcome=ladder.ATTEMPTING)
+        await queries.set_rung_outcome(tg, outcome=ladder.REFUSED,
+                                       reason="ACCESS_TOKEN_INVALID", vendor_ref=None,
+                                       cost=None)
+        await queries.record_verification_rung(vid, route="sms_out",
+                                               outcome=ladder.WITHHELD)
+
+        html = await _page()
+        assert _anchor(vid) in html
+        assert ladder.WITHHELD in html, "a withheld rung is not shown at all"
+        assert "sms_out" in html, "the rung that was withheld is not named"
+        assert ladder.REFUSED in html, "the refusal that withheld it is not shown"
+
+    _run(body)
+
+
 def test_the_code_is_on_no_screen():
     """Task 4.22. The row holds a subscriber's number next to a live secret, and the
     console is the one place both are rendered together."""
