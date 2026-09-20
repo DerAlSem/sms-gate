@@ -19,6 +19,7 @@ from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
 from app.verification import refusals, routes, rule
+from app.lookup.operator import record_operator
 from app.verification.dispatch import announce_verification_outcomes
 from app.verification.probes import build_probes
 from app.modem.parser import (
@@ -555,6 +556,62 @@ class ModemManager:
                 self._held.discard(msg.message_id)
                 self._queue.task_done()
 
+    async def _operator_for(self, phone: str) -> str | None:
+        """This number's operator, resolved under the sender's own bound. None if not.
+
+        🔴 **The waiting lives here and nowhere else, and that placement is the norm
+        rather than an optimisation.** The application's answer must not wait for
+        enrichment — an unreachable resolver as a slow API is what this replaced. But
+        since the route is read from the operator, an empty cache is not the same fact as
+        an unresolvable number: routed on an empty cache, the first message ever
+        addressed to a diverted operator's subscriber takes the rule's `?` entry and goes
+        out over the modem — the route that operator has been rejecting, on exactly the
+        message the rule exists for. Only the sender can tell the two apart without
+        putting anybody on hold, so `?` here means "the lookup did not answer" and never
+        "the lookup has not been asked".
+
+        **A stale row is used as it stands.** It still names an operator; refreshing it
+        changes no decision this rule can make — numbers move between operators on a
+        scale of years and the rule is reviewed on a scale of months — and every message
+        behind this one in the single-file queue would pay for the refresh.
+
+        Nothing here fails a send. The bound expiring, the lookup raising and the lookup
+        answering with nobody are one outcome as far as this sender is concerned: the
+        unknown-operator entry answers, and what it answers with is the owner's.
+        """
+        named = await self._cached_operator(phone)
+        if named is not None:
+            return named
+
+        bound = store.operator_lookup_bound
+        try:
+            await asyncio.wait_for(record_operator(phone), timeout=bound)
+        except asyncio.TimeoutError:
+            # Abandoned, not cancelled in spirit: the lookup is still worth having for
+            # the next message to this number, but this one is not waiting any longer.
+            logger.info("operator lookup for %s did not answer within %.2fs; routing by "
+                        "the rule's unknown-operator entry", phone, bound)
+            return None
+        except Exception:
+            logger.exception("operator lookup for %s failed; routing by the rule's "
+                             "unknown-operator entry", phone)
+            return None
+        return await self._cached_operator(phone)
+
+    @staticmethod
+    async def _cached_operator(phone: str) -> str | None:
+        """The operator already on record, or None — including when the row names nobody.
+
+        A row that exists and holds a NULL operator is the absence, not the presence:
+        `save_number_operator` accepts `None`, and treating "there is a row" as "there is
+        an operator" would route the number on nobody, invisibly.
+        """
+        row = await queries.get_number_operator(phone)
+        if row is None:
+            return None
+        named = (row["operator"] or "").strip()
+        return named or None
+
     async def _refuse_what_the_rule_routes_elsewhere(
         self, msg: OutgoingMessage
     ) -> bool:
@@ -587,13 +644,13 @@ class ModemManager:
           which ships **off**. A refusal raised only through the latter is silent on
           exactly the installs that have the rule in force, which is all of them.
 
-        The operator is read from the cache and never waited for. A number with no row
-        takes the rule's `?` entry, which ships pointing at the modem — so this check
-        changes nothing for a first-time recipient, and not waiting for the lookup stays
-        where it belongs, in tasks 4.4 and 4.5.
+        Where the operator comes from is `_operator_for`, and it is not simply the cache:
+        a number with no row is resolved here, under a bound of this sender's own, so
+        that `?` means "the lookup did not answer" rather than "the lookup has not been
+        asked". Routing a first message on an empty cache would take the `?` entry — the
+        modem — for the very subscriber this rule diverts away from it.
         """
-        row = await queries.get_number_operator(msg.phone)
-        operator = row["operator"] if row is not None else None
+        operator = await self._operator_for(msg.phone)
 
         try:
             assigned_routes = rule.route_for(operator)
@@ -622,6 +679,8 @@ class ModemManager:
         # accident, which is what the whole capability exists to stop.
         assigned = assigned_routes[0]
         if assigned == routes.SMS_OUT:
+            await queries.record_message_routing(
+                msg.message_id, route=assigned, operator=operator)
             return False
 
         named = operator or "an operator that could not be resolved"
@@ -648,6 +707,8 @@ class ModemManager:
             "Refused message %d (app=%s to=%s operator=%s): %s",
             msg.message_id, msg.app_id or "?", msg.phone, operator or "?", error,
         )
+        await queries.record_message_routing(
+            msg.message_id, route=route, operator=operator)
         await refusals.record(
             operator=operator, app_id=msg.app_id or "?", route=route)
         await self._finally_fail(msg, error, attempt=0, dedup=f"unroutable:{route}")

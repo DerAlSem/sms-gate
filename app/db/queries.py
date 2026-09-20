@@ -1565,6 +1565,28 @@ async def _delete_refusal_reason(message_id: int) -> str:
 
 
 
+async def record_message_routing(
+    message_id: int, *, route: str, operator: str | None
+) -> None:
+    """What the rule answered for this message, and the operator it was answered for.
+
+    Written at the moment the sender decides, because that is the only moment both facts
+    are true together: a lookup that resolves the number afterwards would make this
+    message look as though it had been routed for an operator nobody knew at the time.
+
+    The pair is the point. `routed_operator IS NULL` on its own cannot tell an unresolved
+    operator from a row older than the column; `routed_route IS NOT NULL AND
+    routed_operator IS NULL` is exactly "routed without a known operator", which is the
+    case the rule's cost is read from.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE messages SET routed_route = ?, routed_operator = ? WHERE id = ?",
+        (route, operator, message_id),
+    )
+    await db.commit()
+
+
 async def get_number_operator(phone: str) -> aiosqlite.Row | None:
     db = await get_db()
     async with db.execute(

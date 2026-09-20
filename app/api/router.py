@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import secrets
 import time
@@ -22,6 +23,27 @@ from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# Strong references to the spawned lookups: the event loop holds tasks weakly, and a
+# lookup collected mid-flight would leave the number unresolved with nothing said.
+_lookup_tasks: set = set()
+
+
+def _spawn_lookup(phone: str) -> None:
+    """Resolve this number's operator behind the answer, never in front of it."""
+    async def run() -> None:
+        try:
+            await record_operator(phone)
+        except Exception:
+            # Enrichment failing is not the caller's problem and never was. Logged
+            # rather than swallowed, because a resolver that has been dead for a week
+            # is something an operator should be able to find in the journal.
+            logger.exception("operator lookup failed for %s", phone)
+
+    task = asyncio.create_task(run())
+    _lookup_tasks.add(task)
+    task.add_done_callback(_lookup_tasks.discard)
+
+
 
 @router.post("/sms/send", response_model=SmsSendResponse)
 async def send_sms(
@@ -34,7 +56,12 @@ async def send_sms(
             status_code=422,
             detail={"error": "number_blacklisted", "phone": body.phone},
         )
-    await record_operator(body.phone)
+    # Spawned, never awaited. The lookup is enrichment and the application is not
+    # waiting for it — an unreachable resolver used to show up here as a slow API, five
+    # seconds per number nobody had messaged before. What routing needs from it is read
+    # by the sender, which has its own bound and is not in front of anybody's HTTP
+    # request (`ModemManager._operator_for`).
+    _spawn_lookup(body.phone)
     modem: ModemManager = request.app.state.modem
     message_id = await queries.create_message(app_id, body.phone, body.text)
     await modem.enqueue(message_id, body.phone, body.text, app_id)

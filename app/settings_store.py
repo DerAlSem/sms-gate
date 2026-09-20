@@ -222,6 +222,16 @@ SETTINGS_SPEC: list[Spec] = [
     # is the deploy the rule exists to avoid, merely spelled differently. Not carried by
     # `delivery_dispatch`, which requires a webhook URL on every entry and would reject
     # this rule outright.
+    # How long the **sender** may wait for an operator it has no row for, before the
+    # rule's unknown-operator entry answers instead. Its own setting rather than a share
+    # of `voxlink_timeout`, because the two bound different decisions: that one is how
+    # patient one HTTP call is, this one is how long a message may sit in a single-file
+    # queue while the gateway works out which way out it takes. Spent only on a number
+    # with no operator at all — a stale row still names one, and refreshing it changes
+    # no route.
+    Spec("operator_lookup_bound", "float", 5.0, "Routing", False,
+         "How long the sender waits for an unknown recipient's operator before routing "
+         "by the rule's \"?\" entry (seconds; the lookup keeps running either way)"),
     Spec("operator_routes", "oproutes", _shipped_rule(), "Routing", False,
          'Which way out each operator\'s traffic takes: JSON list, e.g. '
          '[{"operator":"МегаФон","routes":["tg_gateway","flash_call"]},'

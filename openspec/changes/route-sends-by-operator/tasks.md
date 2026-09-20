@@ -87,11 +87,55 @@ rather than on code.
       same message, the same harness and the same modem as the refusal beside it, and
       the only thing that differs is the rule.
 - [x] 4.3 Test: the rule matches `МЕГАФОН` and `МегаФон` identically, and matches a name with surrounding whitespace. **This test fails on any implementation built on SQLite `upper()`/`LIKE` or on `==`**
-- [ ] 4.4 Test: a number with no row in `number_operators` takes the default route without waiting for a lookup, and the missing operator is recorded
-      Half done 20.09.2026: the rule answers the unresolved case through its `?`
-      entry (`tests/test_routing_rule.py`). What remains is the door's half — not
-      waiting on the lookup, and recording the missing operator.
-- [ ] 4.5 Test: the operator lookup being unreachable fails nothing and delays nothing
+- [x] 4.4 Test: a number with no row in `number_operators` takes the default route without waiting for a lookup, and the missing operator is recorded
+      `tests/test_send_path_operator_lookup.py`. 🔴 **"Without waiting" turned out to
+      name the DOOR and not the gateway, and settling that was the owner's**
+      (20.09.2026): the application's answer does not wait, the sender does, under a
+      bound of its own. Taken literally — nobody waits anywhere — this task would have
+      **defeated 4.6 on the message 4.6 exists for**: the first text ever addressed to a
+      МегаФон subscriber would be routed against an empty cache, take the `?` entry,
+      which ships pointing at the modem, and go out over the route that operator has
+      been rejecting. The test named for that race is the first in the file.
+      The recording half is `messages.routed_route` + `messages.routed_operator`, written
+      by the sender at the moment it decides — the only moment both facts are true
+      together, since a later lookup fills `number_operators` in and would make the
+      message look as though it had been routed for an operator nobody knew at the time.
+      **Two columns rather than one, and that is the guarantee:** `routed_operator IS
+      NULL` alone cannot tell an unresolved operator from a row older than the column,
+      while `routed_route IS NOT NULL AND routed_operator IS NULL` is exactly "routed
+      without a known operator".
+- [x] 4.5 Test: the operator lookup being unreachable fails nothing and delays nothing
+      Same file. "Delays nothing" was **not** held before today — every send of an
+      unresolved number waited `voxlink_timeout` at the door — and it is asserted on the
+      clock rather than on a mock: a bound living inside the thing being waited for is
+      not a bound, and `voxlink.lookup` fails open on `httpx` errors only. Stated as a
+      run of twelve sends rather than one, because the failure is cumulative: a bound
+      spent per message turns a dead lookup into a queue that never drains, and one
+      message cannot show that.
+- [x] 4.4a Implement the division of waiting — the door spawns the lookup, the sender resolves under `operator_lookup_bound`
+      Entered as its own task for the reason 4.14a and 4.6a were: 4.4 and 4.5 are test
+      tasks, and what they needed did not exist.
+      `app/api/router.py` spawns `record_operator` with a strong reference instead of
+      awaiting it; `ModemManager._operator_for` reads the cache and, only where it holds
+      no operator at all, waits on the lookup under `operator_lookup_bound` (its own
+      setting, 5 s — `voxlink_timeout` bounds how patient one HTTP call is, this bounds
+      how long a message may sit in a single-file queue while its way out is decided).
+      **A stale row is used as it stands:** it still names an operator, refreshing it
+      changes no decision this rule can make, and every send behind it would pay.
+      Expiry, a raise and an answer naming nobody are one outcome — `?` answers.
+      🔴 **The suite reached the real network for the first time in its life, and that
+      was this task's doing.** `record_operator` used to be awaited only at the door,
+      which most tests bypass; now the sender calls it, so every send of an unresolved
+      number made an HTTP request — slow where voxlink is unreachable and
+      **non-deterministic where it is not**, which is how one existing test went red
+      against somebody else's database. Closed by `conftest._no_real_operator_lookup`,
+      which replaces the name `httpx` **inside `app.lookup.voxlink`** and nothing else:
+      the first attempt set `AsyncClient` on the shared module object and took the
+      Gateway adapter's transport down with it, in nine red tests.
+      Ten mutations in `bite-lookup.sh`, all red — among them one that survived the
+      first round and was right to: NULL and blank are not the same test, and the fold
+      that makes a blank operator absent exists for the writer that has not been written
+      yet.
 - [x] 4.6 Test: arbitrary text addressed to an operator routed to `flash_call` is `failed` at once with a reason naming the operator, notifies the app, alerts the operator, issues no AT command and consumes no retry
       `tests/test_send_path_refuses_an_uncarryable_route.py`, fifteen tests, each of the
       five claims asserted separately — four of them can hold while the fifth does not.
@@ -133,9 +177,11 @@ rather than on code.
       and refuses unless the **first** route named is `sms_out`; `ModemManager._refuse`
       counts first and fails second, so that the record that outlives the message is the
       one written under the fewer assumptions.
-      ⚠️ **Not waiting for the lookup is not this task's** — a number with no row takes
-      the rule's `?` entry, which ships pointing at the modem, so the send path is
-      unchanged for a first-time recipient. Tasks 4.4 and 4.5 stay open and untouched.
+      ⚠️ **Written on the assumption that the door resolves the operator first, and
+      that assumption lasted one task.** It was true here: `record_operator` was awaited
+      before `create_message`, so the cache always held the row by the time the sender
+      read it. 4.4a removed that, and moved the resolving into the sender under a bound
+      of its own — see 4.4. Nothing in this task was wrong; the reason it was safe moved.
 - [ ] 4.7 Test: an application-supplied code is rejected by `POST /verifications`
 - [ ] 4.8 Test: `call_status: 1` does not confirm a verification; only a correct code at `/check` does
 - [ ] 4.9 Test: `call_status: -1` that never resolves within the bound is recorded as unknown, not as success and not as failure

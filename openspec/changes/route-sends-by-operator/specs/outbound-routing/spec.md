@@ -49,7 +49,20 @@ either does everything or does not participate at all.
 favour of `sms_out`, which states the direction the old name left to be inferred. The gateway
 SHALL hold exactly this vocabulary, and SHALL NOT carry a second one for the same choice.
 
-[unbacked · no route concept exists in the code today]
+[partly backed · the vocabulary is `app/verification/routes.py` (the eight names, `call`
+absent and named as retired), and the verification half is `verification_rungs`, one row
+per rung with its own route, vendor reference and cost. **The message half arrived
+20.09.2026 with task 4.4a**: `messages.routed_route` and `messages.routed_operator`,
+written by `ModemManager._refuse` and by the passing branch of
+`_refuse_what_the_rule_routes_elsewhere` — that is, by the sender, before it hands
+anything to the modem, and on both outcomes. Guarded by
+`tests/test_send_path_operator_lookup.py` and two mutations in `bite-lookup.sh`
+(the decision not recorded on the passing branch, and not on the refusing one).
+🔴 **Still unbacked: "SHALL NOT be carried by a route other than the one recorded" is not
+enforced for a message** — the column records what was decided, and nothing reads it back
+to check what carried it. Reading it back needs a second route to carry a message at all,
+and today only the modem does. Also unbacked: the mapping from route to the method an
+application is told about, which belongs to the verification door]
 
 #### Scenario: A route is decided and recorded before transmission
 - **WHEN** a send or a verification is accepted
@@ -257,12 +270,36 @@ with the default route when it could not.
 
 This matters more than it looks: the numbers most likely to lack an operator row are the ones
 never messaged before, and a first-time recipient is exactly who a confirmation code is
-usually for. Today a send resolves such a number synchronously — `record_operator` is awaited
-before the message is created and waits on the lookup up to its timeout — so what is unknown
-at routing time is not "every new number" but every number whose lookup failed, and for those
-the default route is a guess.
+usually for.
 
-[normative · evidence: app/lookup/operator.py:23-45 (awaited before create_message at app/api/router.py:26, and waits on a cache miss) · conf: high]
+🔴 **Where the waiting happens is the whole of this requirement, and the owner settled it on
+20.09.2026.** The application's answer SHALL NOT wait for the lookup: the enrichment is not
+the application's business and an unreachable lookup must not show up as a slow API. **The
+send path MAY resolve a missing operator under a short bound of its own**, and SHALL treat
+the bound expiring as the unknown-operator case.
+
+That division is forced rather than chosen. Since the route is read from the operator, "the
+lookup has not answered yet" and "the lookup will not answer" are different facts with
+different right answers, and only the send path is in a position to tell them apart without
+making the application wait. Were the door to stop waiting and the sender not to start, the
+first message ever addressed to a diverted operator's subscriber would be routed on an empty
+cache — it would take the unknown-operator entry and go out over the modem, which is the
+route that operator has been rejecting. **The entry `?` therefore means "the lookup did not
+answer", never "the lookup has not been asked."**
+
+The bound SHALL be spent only where the cache holds no operator at all. A stale row still
+names one, and refreshing it changes no routing decision this rule can make: operators move
+numbers on a scale of years and the rule is reviewed on a scale of months, so waiting on a
+refresh would buy nothing and cost every send behind it in the queue.
+
+Nothing SHALL be failed when the bound expires or the lookup raises. The unknown-operator
+entry answers, whatever it is configured to be, and the item is recorded as having been
+routed without a known operator so the case stays countable.
+
+[normative · evidence: app/lookup/operator.py:23-45 · app/api/router.py:36 (`record_operator`
+spawned, not awaited) · app/modem/manager.py (`_operator_for`, bounded by
+`operator_lookup_bound`) · app/db/migrate.py (`messages.routed_route`,
+`messages.routed_operator`) · tests/test_send_path_operator_lookup.py · conf: high]
 
 #### Scenario: A first-time number whose lookup has not resolved
 - **WHEN** a message is addressed to a number with no row in `number_operators`

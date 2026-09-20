@@ -461,6 +461,23 @@ async def run_migrations() -> None:
     # worse than the `expired` it replaces — nobody trusted `expired`.
     await _add_column_if_missing(db, "messages", "delivery_inferred", "INTEGER NOT NULL DEFAULT 0")
 
+    # What the routing rule answered for this message, and the operator it was answered
+    # for. Written by the sender at the moment it decides, which is the only moment both
+    # facts are true together: a later lookup fills `number_operators` in, and reading
+    # the operator back from there would say this message was routed for МТС when it was
+    # routed for nobody.
+    #
+    # 🔴 **The pair is what makes "routed without a known operator" countable, and the
+    # pair is why it is two columns rather than one.** `routed_operator IS NULL` alone
+    # cannot tell an unresolved operator from a row that predates this migration or from
+    # a message the sender never reached; `routed_route IS NOT NULL AND routed_operator
+    # IS NULL` names exactly the case the requirement asks to be able to count. Both
+    # NULL for every existing row, which is the truth about them: nothing recorded.
+    #
+    # Additive and reversible by deploying the old code.
+    await _add_column_if_missing(db, "messages", "routed_route", "TEXT")
+    await _add_column_if_missing(db, "messages", "routed_operator", "TEXT")
+
     # Whether this application may have a verification carried by a **paid** route. An
     # ALTER rather than a column in the CREATE above, and the distinction is the whole
     # guarantee: `DEFAULT 0` on a new column applies to every row that already exists, so

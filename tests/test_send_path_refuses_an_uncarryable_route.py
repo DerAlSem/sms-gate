@@ -280,12 +280,12 @@ def test_a_plain_send_to_an_operator_outside_the_rule_is_unchanged(alerts, pushe
 
 
 def test_a_number_with_no_operator_row_is_unchanged(alerts, pushes):
-    """`?` answers for a number never looked up, and it ships pointing at the modem.
+    """`?` answers for a number the lookup could not resolve, and it ships at the modem.
 
-    Asserted rather than assumed, because it is the whole reason this change can leave
-    tasks 4.4 and 4.5 — not waiting for the lookup, recording its absence — alone: the
-    send path reads the cache it finds and takes the route the rule names for "unknown",
-    which today is the route it was taking before.
+    The suite reaches no network (`conftest._no_real_operator_lookup`), so the sender's
+    own resolution attempt — added by task 4.4a — finds nobody, which is precisely the
+    `?` case. Asserted rather than assumed, because "unknown operator" is the entry most
+    likely to be reached in production and the one whose route an owner may repoint.
     """
     async def body():
         modem = _Modem()
