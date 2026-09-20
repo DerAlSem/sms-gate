@@ -316,21 +316,28 @@ charged** and counted separately from both outcomes. A confirmation we never saw
 cannot be spent and cannot be refunded, and without a count an unexplained fall in the vendor's
 reported balance has no name to look for.
 
-🔴 **The vendor names no error for "this subscriber is not in Telegram", and the decline
-this whole ladder is built on therefore has no known spelling.** Its reference documents
-exactly one error string — `ACCESS_TOKEN_INVALID` — and says only that "an appropriate error
-will be returned" otherwise. Read on 20.09.2026, and it is a gap in our knowledge rather than
-in the vendor: no refusal has ever been captured, because the account was never funded and
-`checkSendAbility` was never called.
+🟢 **The decline this whole ladder is built on is spelled `PHONE_NUMBER_NOT_AVAILABLE`, and
+that spelling comes from a captured refusal rather than from any document.** The vendor's
+reference names exactly one error string — `ACCESS_TOKEN_INVALID` — and for "this subscriber
+is not in Telegram" says only that "an appropriate error will be returned". Task 1.7, run
+20.09.2026 against a real working number whose owner has no Telegram, is what closed the gap:
+`{"ok": false, "error": "PHONE_NUMBER_NOT_AVAILABLE"}`, on HTTP 200, charged nothing. The
+gateway SHALL recognise it as a decline of the **subscriber**.
 
-Until a refusal is captured (task 1.7), an `ok: false` the gateway cannot place SHALL be
-treated as **unclassified**: the ladder SHALL advance past it as it would past a decline,
-**and** the operator SHALL be alerted. Both, because the two ways of guessing fail in
-opposite directions and each is invisible. Read as a decline, a rotated token would advance
-every verification to the dearer rung and tell nobody — the bill would be the only symptom.
-Read as a failure, an ordinary unreachable subscriber would raise an alert per verification
-and the noise would bury the real one. Advancing and alerting is wrong in neither direction;
-it is merely loud, and it stops being loud the moment a decline is captured and named.
+⚠️ **One capture fixes the spelling and does not bound the meaning.** Whether the vendor
+answers the same string for a number that is malformed, unallocated or merely unroutable is
+not established, and SHALL NOT be assumed in either direction. Nothing turns on it while both
+readings send the ladder the same way; what will turn on it is the decline count, because a
+rung that appears to decline everyone is a rung taken out of the rule for the wrong reason.
+
+An `ok: false` the gateway still cannot place SHALL be treated as **unclassified**: the ladder
+SHALL advance past it as it would past a decline, **and** the operator SHALL be alerted. Both,
+because the two ways of guessing fail in opposite directions and each is invisible. Read as a
+decline, a rotated token would advance every verification to the dearer rung and tell nobody —
+the bill would be the only symptom. Read as a failure, an ordinary unreachable subscriber
+would raise an alert per verification and the noise would bury the real one. Advancing and
+alerting is wrong in neither direction; it is merely loud, and with the ordinary decline now
+named it is no longer loud about the ordinary case.
 
 An error string the gateway *can* place — today only `ACCESS_TOKEN_INVALID` — SHALL be
 recorded as a refusal of **us** rather than of the subscriber, and SHALL NOT be counted as a
@@ -344,10 +351,10 @@ one that cannot spend money on a decision nobody has taken; the argument for the
 the fee is refunded anyway, and it is a real argument, which is why this is an open question
 and not an omission.
 
-[unbacked · vendor reference: Telegram Gateway API, `checkSendAbility`, `sendVerificationMessage`, read 18.09.2026 and re-read 20.09.2026 — no live sample captured. The re-read establishes one thing the earlier reading did not: the error vocabulary is undocumented apart from `ACCESS_TOKEN_INVALID`, so the decline this requirement turns on cannot be recognised by name yet]
+[backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running]
 
 #### Scenario: The subscriber is not reachable in Telegram
-- **WHEN** `checkSendAbility` reports the subscriber cannot be reached
+- **WHEN** `checkSendAbility` answers `ok: false` with `PHONE_NUMBER_NOT_AVAILABLE`
 - **THEN** nothing is charged for it, the ladder advances to `flash_call`, and the decline is recorded against the `tg_gateway` rung
 
 #### Scenario: The vendor refuses with an error string the gateway cannot place

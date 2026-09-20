@@ -242,9 +242,18 @@ remained `read` and `delivered` respectively — it never became `revoked`. The 
 therefore reports that the request was accepted, not that anything was withdrawn, and the two
 are indistinguishable through the API.
 
-⚠️ The trials ran on an unfunded account using free messages to the account holder's own
-number. Whether a **paid** message to a third party revokes differently is not known and SHALL
-NOT be assumed in either direction; a live sample decides it, not this paragraph.
+⚠️ Those two trials ran on an unfunded account using free messages to the account holder's own
+number, and this paragraph used to say that a **paid** message to a third party might revoke
+differently. **It does, and the sample that decided it was taken 20.09.2026.** Revoking a
+billed message to a third party answered the same `true` — and the status that followed
+carried `verification_status: expired`, a field absent from all seven earlier captures, the
+one taken after a revocation among them, while `delivery_status` read `delivered` and still
+not `revoked`. So revocation is not inert on the paid path: it closes the verification.
+
+**What does not change is the requirement.** What still nobody has observed, on either path,
+is a message leaving the recipient's screen — and that, not the verification's state, is what
+a guarantee would have to rest on. `delivery_status` never becoming `revoked` is now measured
+on both paths rather than one.
 
 This is the same shape as `call_status: 1` on the other rung, and it earns the same treatment:
 a vendor's acknowledgement is a fact about our request, never about the subscriber's screen.
@@ -261,7 +270,9 @@ person. That does not make the rungs interchangeable, and it does not reorder th
 means the two rungs will never be equally well evidenced, and a comparison of their success
 rates is comparing two different measurements.
 
-[normative · live sample captured 18.09.2026 in `captures/` — `sendVerificationMessage`, `checkVerificationStatus`, `revokeVerificationMessage` against the account holder's own number. Delivery `sent`→`delivered` in one second, `read` at 71 s; `request_cost: 0` with `remaining_balance: 0`; the number echoed back without its leading `+`; `verification_status`, `is_refunded` and `remaining_balance` absent from responses that do not need them; revocation observably inert · conf: high for the free self-send path, unknown for paid third-party sends]
+[normative · live samples captured 18.09.2026 and 20.09.2026 in `captures/`. 18.09, free, to the account holder's own number: delivery `sent`→`delivered` in one second, `read` at 71 s; the number echoed back without its leading `+`; `verification_status`, `is_refunded` and `remaining_balance` absent from responses that do not need them; revocation inert. ⚠️ The 18.09 reading of `request_cost: 0` with `remaining_balance: 0` is superseded — the zero was the account's real balance, not evidence about the field. 20.09, billed, to a third party (`probe-1.7-*`): the subscriber is reachable, the decline is spelled `PHONE_NUMBER_NOT_AVAILABLE`, revocation sets `verification_status: expired` while leaving `delivery_status` at `delivered`, and one `updated_at` serves two delivery statuses. · conf: high for both paths on everything the samples touch; the refund remains untouched by any sample]
+
+⚠️ **One thing the 20.09 sample unsettles rather than settles, and it is left open deliberately.** Expiry arrived under `verification_status`, not under `delivery_status` — so the scenario below that watches `delivery_status.status` for `expired` may be watching the wrong field. Whether the vendor's delivery vocabulary carries `expired` at all is a question for its reference, which has not been re-read against this; a gateway that watched only `delivery_status` would have missed this one, and that is a fact about the sample rather than a settled fact about the vendor. Task 1.13 carries it.
 
 #### Scenario: The message is delivered
 - **WHEN** the vendor reports `delivery_status.status` of `delivered`
@@ -427,9 +438,24 @@ The gateway SHALL record the vendor's reported cost of each paid verification an
 an operator alert when the vendor's reported balance falls below a configured floor.
 
 A prepaid vendor fails by running out, and it fails at the worst moment: the balance is fine
-until it is not, and the first symptom is every verification failing at once. Both vendors
-report it for nothing: uCaller's `getInfo` returns `cost` and `balance` on every enquiry, and
-Telegram's `RequestStatus` returns `request_cost` and `remaining_balance`.
+until it is not, and the first symptom is every verification failing at once. uCaller reports
+it for nothing: `getInfo` returns `cost` and `balance` on every enquiry.
+
+🔴 **Telegram does not, and the shape of this alert follows from that.** Measured 20.09.2026
+within one request: `checkSendAbility` answered `remaining_balance: 99.99`, and the send that
+followed it answered `remaining_balance: 0` with nothing in between that could have spent it.
+So on the `tg_gateway` rung the gateway SHALL read the balance **only from a confirming
+`checkSendAbility`**, and SHALL NOT read it from a send, from a status or from a decline —
+where the field is either absent or not the account's balance. An 18.09 reading that took the
+zero at face value was wrong and had no way to know it: the account genuinely held zero then,
+and the field agreed by coincidence.
+
+The consequence is normative because it costs money: a confirming check is the billed call, so
+**Telegram's balance cannot be polled for free.** The floor on this vendor SHALL therefore be
+held against the balance that arrives with ordinary traffic, and the gateway SHALL NOT place a
+check of its own merely to read it. A balance late by one verification is the cheaper error; a
+paid poll buys nothing the next real check does not deliver, and on an idle rung it spends
+exactly when nothing is being verified.
 
 **There are two balances now, and the floor SHALL be held against each of them separately.** A
 single floor over a sum would be satisfied by one funded account while the other is empty, and
@@ -446,11 +472,15 @@ charged at the vendor without our ever learning the `request_id`. Such a fee can
 and cannot be refunded. It is the only class of spend this design cannot attribute to a
 verification, and if it is not counted it appears as a balance that drifts for no reason.
 
-[unbacked · vendor references: uCaller `getInfo` (`cost`, `balance`) read 08.09.2026; Telegram Gateway `RequestStatus` (`request_cost`, `is_refunded`, `remaining_balance`) read 18.09.2026]
+[partly backed · uCaller half unbacked — vendor reference `getInfo` (`cost`, `balance`) read 08.09.2026, no live sample. Telegram half backed by `captures/probe-1.7-check-able.json` and `captures/probe-1.7-send.json`, 20.09.2026, which are what establish that `remaining_balance` is the account's balance only in the answer to `checkSendAbility`; guarded by `tests/test_tg_gateway_adapter.py`. The refund half is backed by nothing at all: `is_refunded` has been absent from ten captures running and no message has been left to expire unread (task 1.8)]
 
 #### Scenario: The balance runs low
 - **WHEN** one vendor's reported balance falls below the configured floor while the other's is healthy
 - **THEN** the operator is alerted once within the dedup window, with that vendor named, before verifications start failing
+
+#### Scenario: Telegram's balance is read from the only call that tells the truth
+- **WHEN** a send or a status answers with a `remaining_balance` of its own
+- **THEN** it is not taken as the account's balance, and the floor is held against the figure last returned by a confirming `checkSendAbility`
 
 #### Scenario: A refunded request
 - **WHEN** the vendor reports a request as refunded

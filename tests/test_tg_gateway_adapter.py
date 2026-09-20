@@ -74,6 +74,40 @@ def test_verification_status_and_is_refunded_are_absent_and_that_is_not_an_error
         assert status.verification_status is None
 
 
+def test_the_captured_ability_check_parses_and_carries_what_it_cost():
+    """`captures/probe-1.7-check-able.json`, live 20.09.2026 — the first confirmed
+    ability check there has ever been, and the first proof that a subscriber who is
+    not the account holder is reachable at all. It carries no `delivery_status`,
+    because at that moment there is no delivery to report."""
+    status = tg.parse_request_status(capture("probe-1.7-check-able")["result"])
+    assert status.request_id == "222370177540343"
+    assert status.phone_number == "79851600019"
+    assert status.request_cost == 0.01
+    assert status.remaining_balance == 99.99
+    assert status.delivery_status is None
+
+
+def test_remaining_balance_in_a_send_answer_is_not_the_account_balance():
+    """Both captures belong to one request, seconds apart on 20.09.2026. The ability
+    check says the account holds 99.99; the send that follows says `remaining_balance:
+    0` — and that send is the free half, so nothing drained it. 18.09 could not see
+    this: the balance genuinely was zero then and the field agreed with it by accident.
+    Only `checkSendAbility` may be read as the account's balance."""
+    able = tg.parse_request_status(capture("probe-1.7-check-able")["result"])
+    sent = tg.parse_request_status(capture("probe-1.7-send")["result"])
+    assert able.request_id == sent.request_id
+    assert able.remaining_balance == 99.99
+    assert sent.remaining_balance == 0
+
+
+def test_is_refunded_was_absent_from_the_paid_captures_too():
+    """Three more samples, now on a message that was actually billed: still no
+    `is_refunded`. The debt it leaves — a two-state column against a vendor with
+    three answers — belongs to the change that owns the table."""
+    for name in ("probe-1.7-send", "probe-1.7-status", "probe-1.7-status-after-revoke"):
+        assert tg.parse_request_status(capture(name)["result"]).is_refunded is None
+
+
 def test_a_response_with_no_delivery_status_at_all_parses():
     """The field is optional in the reference and the ability check has no delivery to
     report. Absent must not be read as a delivery status of the empty string."""
@@ -233,6 +267,25 @@ def test_an_error_string_the_vendor_never_documented_is_unclassified():
     asyncio.run(go())
 
 
+def test_the_captured_decline_is_recognised_as_a_decline():
+    """Captured live 20.09.2026 against a real, working number whose owner has no
+    Telegram: `captures/probe-1.7-check-declined.json`. The vendor spells it
+    `PHONE_NUMBER_NOT_AVAILABLE`, documents it nowhere, and charges nothing for it.
+    This is the string the whole ladder turns on. Until it was captured the gateway
+    had to read it as unclassified and alert on every ordinary unreachable
+    subscriber."""
+    async def go():
+        payload = capture("probe-1.7-check-declined")
+        assert payload == {"ok": False, "error": "PHONE_NUMBER_NOT_AVAILABLE"}
+        async with transport(answering(payload, status_code=200)) as c:
+            ability = await tg.check_send_ability("+79035011303", token="t", client=c)
+        assert ability.kind == tg.DECLINED
+        assert ability.error == "PHONE_NUMBER_NOT_AVAILABLE"
+        assert ability.request_id is None
+
+    asyncio.run(go())
+
+
 def test_an_ability_check_that_does_not_answer_is_possibly_charged():
     """Not a decline. A confirmation we never saw is a fee that can be neither spent
     nor refunded, and without its own name an unexplained fall in the balance has
@@ -286,6 +339,38 @@ def test_the_status_after_revoking_an_unread_message_is_still_delivered():
     """The second trial: revoked within a second of delivery, before it could be read."""
     after = tg.parse_request_status(capture("probe-1.5b-status")["result"])
     assert after.delivery_status == "delivered"
+
+
+def test_revoking_a_paid_message_closes_the_verification_but_not_the_delivery():
+    """The positive control for `verification_status`, and a correction to 18.09.
+
+    Captured 20.09.2026 on a paid message to a third party. After a `true` revocation
+    the verification reads `expired` — a field absent from all seven earlier captures,
+    the one taken after a revocation among them — while `delivery_status` is
+    `delivered` and never `revoked`. So the free-path finding "revocation is
+    observably inert" does not carry to the paid path unchanged: something moves. What
+    still does not move is the delivery.
+
+    ⚠️ `probe-1.7-status.json` is transcribed from the terminal rather than copied:
+    the harness writes both status calls to one filename and the second overwrote the
+    first. Its `request_cost` and stamps match the send capture, which is what a
+    transcription can be checked against."""
+    before = tg.parse_request_status(capture("probe-1.7-status")["result"])
+    after = tg.parse_request_status(capture("probe-1.7-status-after-revoke")["result"])
+    assert before.verification_status is None
+    assert before.delivery_status == "sent"
+    assert after.verification_status == "expired"
+    assert after.delivery_status == "delivered"
+    assert after.delivery_status != "revoked"
+
+
+def test_one_stamp_serves_two_delivery_statuses_so_it_is_not_a_transition_clock():
+    """`sent` and `delivered` came back carrying the same `updated_at` on 20.09.2026.
+    Anything that detects a transition by watching that number would never see one."""
+    before = tg.parse_request_status(capture("probe-1.7-status")["result"])
+    after = tg.parse_request_status(capture("probe-1.7-status-after-revoke")["result"])
+    assert before.delivery_status != after.delivery_status
+    assert before.delivery_updated_at == after.delivery_updated_at
 
 
 def test_a_revocation_the_vendor_refuses_is_false_rather_than_an_exception():

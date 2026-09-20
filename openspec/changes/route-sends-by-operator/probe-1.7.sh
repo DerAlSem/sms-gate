@@ -59,8 +59,8 @@ case "${1:-}" in
     n="${2:?номер без плюса, например 79851600019}"
     call checkSendAbility "{\"phone_number\":\"+$n\"}" "check-$n"
     echo
-    echo "ok:false  -> отказ. БЕСПЛАТНО. Это и есть написание отказа,"
-    echo "             ради которого DECLINE_ERRORS стоит пустым."
+    echo "ok:false  -> отказ. БЕСПЛАТНО. 20.09 отказ написан как"
+    echo "             PHONE_NUMBER_NOT_AVAILABLE; другое написание — находка."
     echo "ok:true   -> подтверждение. ПЛАТА УЖЕ СПИСАНА. Возьмите request_id"
     echo "             из result и запустите send — иначе плата сгорит."
     ;;
@@ -77,13 +77,19 @@ case "${1:-}" in
     rid="${2:?request_id}"
     # В адаптере этот вызов сознательно не используется — счётчик попыток наш.
     # Здесь он инструмент замера, а не часть продукта.
-    call checkVerificationStatus "{\"request_id\":\"$rid\"}" "status-$rid"
+    #
+    # Имя файла с порядковым номером: 20.09.2026 два вызова status писали в одно
+    # имя, и второй затёр первый — сэмпл «до отзыва» пришлось восстанавливать с
+    # экрана. Потеря замера молчит, поэтому имя считает само.
+    i=1
+    while [ -e "$OUT/status-$rid-$i.json" ]; do i=$((i + 1)); done
+    call checkVerificationStatus "{\"request_id\":\"$rid\"}" "status-$rid-$i"
     ;;
   revoke)
     rid="${2:?request_id}"
-    echo "Напоминание: 18.09 отзыв ответил true ДВАЖДЫ и оба раза ничего не убрал."
-    echo "Здесь проверяется ровно одно: ведёт ли себя ПЛАТНОЕ сообщение третьему"
-    echo "лицу иначе. Сразу после — status, и смотрим, стал ли он revoked."
+    echo "Напоминание: отзыв возвращает true всегда. 18.09 на бесплатном не сдвинул"
+    echo "ничего; 20.09 на ПЛАТНОМ поставил verification_status=expired, а"
+    echo "delivery_status так и не стал revoked. Сразу после — status."
     call revokeVerificationMessage "{\"request_id\":\"$rid\"}" "revoke-$rid"
     ;;
   *)

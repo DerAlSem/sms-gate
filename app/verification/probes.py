@@ -114,6 +114,18 @@ def _tg_gateway_probe(token, reachability):
     check is recorded as possibly charged, and the ladder advances to `flash_call`. A
     loud, bounded failure is handled where it happens rather than pre-empted here.
 
+    🟢 **That argument stopped being an argument on 20.09.2026 and became a number.**
+    "Dies loudly" is only worth anything if the noise arrives inside the ladder's
+    patience, and until 1.7 nobody had measured how long the vendor takes to speak.
+    Measured from derserver over the wire: a **confirmation** in 260 ms, a **decline**
+    in 190 ms, and every other method between 178 and 285 ms. The floor of the round
+    trip — three calls with a deliberately invalid token, which reach the vendor and
+    are refused without touching the balance — is 180, 188 and 241 ms, so nearly all
+    of it is network and TLS rather than the vendor thinking. Against a
+    `verification_probe_timeout` of 5 s that is roughly eighteenfold headroom. The
+    rung's failure is therefore loud *and* prompt on the wired path, and the probe
+    stays as it is written here.
+
     That leaves one real weakness — on a failed-over uplink `gatewayapi.telegram.org`
     times out at fifteen seconds (measured 18.09.2026), which is longer than the
     ladder's patience. Its remedy is the adapter's bound plus the reading this seam

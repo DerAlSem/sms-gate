@@ -1,27 +1,39 @@
 """The Telegram Gateway rung: our code, carried to a subscriber reachable in Telegram.
 
-Written against the samples captured live on 18.09.2026 and kept in
+Written against the samples captured live on 18.09.2026 and 20.09.2026 and kept in
 `openspec/changes/route-sends-by-operator/captures/`, not against the documentation
-alone. Four things the captures say that the reference does not, and each of them is a
+alone. Five things the captures say that the reference does not, and each of them is a
 line of code here:
 
 - **the number comes back without its `+`.** We send `+79267889888`; every response
   says `79267889888`. A response compared to its own request by string equality never
   finds the row it belongs to, so the join is `same_number`, on digits;
-- **fields arrive when they are needed and not otherwise.** `remaining_balance` is in
-  the answer to a send and absent from the answer to a status; `verification_status`
-  and `is_refunded` were absent from all seven captures. A parser that requires them
-  falls over on a perfectly ordinary response, so every optional field parses to None;
-- **`request_cost: 0` with `remaining_balance: 0`.** The whole mechanism runs before
-  the account is funded, because a free send is tied to the account holder's own
-  number. That is why this module has no "is the balance sufficient" precondition of
-  its own: the vendor decides, and it decides per request;
-- 🔴 **revocation is observably inert.** `revokeVerificationMessage` answered
-  `{"ok": true, "result": true}` twice — once for a message already read, once for one
-  revoked a second after delivery — and both stayed in the chat, with
-  `delivery_status.status` never becoming `revoked`. So the function here is called
-  `request_revocation` and returns whether the request was **accepted**. Nothing in
-  this capability may rest on it having removed anything.
+- **fields arrive when they are needed and not otherwise.** An ability check carries no
+  `delivery_status`; a status answer carries no `remaining_balance`; `is_refunded` has
+  now been absent from ten captures running, the billed ones included. A parser that
+  requires any of them falls over on a perfectly ordinary response, so every optional
+  field parses to None — and `None` stays distinguishable from a vendor that said
+  `false`, which is the whole of what `is_refunded` costs us;
+- 🔴 **`remaining_balance` is the account's balance only in the answer to
+  `checkSendAbility`.** Measured 20.09.2026 within one request: the check answered
+  `remaining_balance: 99.99`, and the free send that followed it answered
+  `remaining_balance: 0` with nothing in between to spend it. 18.09 could not tell —
+  the account really did hold zero then, and the field agreed by accident. So this
+  module parses the number wherever the vendor puts it and **names no balance**:
+  whatever comes to hold a "the balance is running out" alarm reads it from the check
+  and from nowhere else. It is also why there is no "is the balance sufficient"
+  precondition here: the vendor decides, and it decides per request;
+- 🔴 **revocation moves something on the paid path, and it is not the delivery.**
+  On 18.09 `revokeVerificationMessage` answered `{"ok": true, "result": true}` twice
+  for free messages to the account holder's own number, and both stayed in the chat
+  with `delivery_status.status` never becoming `revoked`. On 20.09 the same call
+  against a **billed** message to a third party answered the same `true` — and the
+  status afterwards carried `verification_status: expired`, a field no earlier capture
+  had ever shown, while `delivery_status` read `delivered` and still not `revoked`. So
+  "inert" was the free path's answer and does not carry over; what carries over is the
+  narrower fact. The function here is called `request_revocation` and returns whether
+  the request was **accepted**, and nothing in this capability may rest on it having
+  removed anything from anyone's screen — which remains unobserved on both paths.
 
 Three vendor methods are reachable from here and a fourth deliberately is not.
 `checkVerificationStatus` matches a code and counts attempts on a counter of the
@@ -74,15 +86,24 @@ REFUSED = "refused"              # the vendor refused *us*: token, balance, our 
 UNANSWERED = "unanswered"        # no readable answer within the bound — possibly charged
 UNCLASSIFIED = "unclassified"    # `ok: false` with an error string we cannot place
 
-# The error strings the vendor documents. Its reference names exactly one, and names
-# none at all for "this subscriber is not in Telegram" — which is the decline the whole
-# ladder is built on. So `DECLINE_ERRORS` is empty, and that emptiness is the honest
-# state of our knowledge rather than an oversight: a captured refusal (task 1.7) is
-# what fills it. Until then an unplaceable error is `UNCLASSIFIED`, which the ladder
-# treats as a decline **and** alerts on, because choosing silently between the two is
-# choosing which way to be invisibly wrong.
+# The error strings we can place. The vendor's reference documents exactly one of them
+# and names none at all for "this subscriber is not in Telegram" — the decline the
+# whole ladder is built on. `PHONE_NUMBER_NOT_AVAILABLE` is therefore not read out of
+# any document: it was captured live on 20.09.2026 (`captures/probe-1.7-check-
+# declined.json`) against a real, working number whose owner has no Telegram, and it
+# cost nothing, as a decline must.
+#
+# ⚠️ One sample names the spelling; it does not bound the meaning. Whether the vendor
+# answers the same string for a number that is malformed, unallocated or merely
+# unroutable is **not** established, and both readings send the ladder the same way,
+# so nothing here turns on it yet. What would turn on it is a count: a rung that
+# appears to decline everyone is a rung taken out of the rule for the wrong reason.
+#
+# Everything still unplaceable stays `UNCLASSIFIED` — the ladder advances as it would
+# past a decline **and** the operator is told — because choosing silently between the
+# two is choosing which way to be invisibly wrong.
 FATAL_ERRORS = frozenset({"ACCESS_TOKEN_INVALID"})
-DECLINE_ERRORS: frozenset[str] = frozenset()
+DECLINE_ERRORS: frozenset[str] = frozenset({"PHONE_NUMBER_NOT_AVAILABLE"})
 
 
 @dataclass(frozen=True)
