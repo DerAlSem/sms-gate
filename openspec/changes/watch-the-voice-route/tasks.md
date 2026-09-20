@@ -50,26 +50,31 @@
       which is why the window still has to be sat out.
       🔴 The registry row is **not** closed by this session: `ack` / `taken` / `done` are the
       owner's call alone. It is ripe and waiting for that word
-- [ ] 1.4 **Measure whether the route's availability lags network registration, and by how
-      long.** ⚠️ **The only task left in section 1, and the owner's:** it needs a soft
-      recovery on the live gateway. The vendor reference does not answer it — nothing in the
-      application note says when `<VoLTE_cap>` turns positive relative to attach.
-      After a soft recovery (`CFUN=4→1`, the watchdog's own first rung), sample
-      `AT+QCFG="ims"` and `AT+CEREG?` together every few seconds and record whether the
-      second digit trails registration. The gate in the second requirement, and the rejection
-      of debounce in `design.md`, both assume this window does not exist; the 2026-09-18
-      measurement cannot separate "off network, reads zero" from "on network, route not yet
-      up". **If it lags, the gate widens to "registered and settled" or debounce comes
-      back** — and `design.md` is rewritten rather than left standing.
-      ✅ **The probe is written and lives in the repository:** `deploy/ims-lag-probe.py`.
-      It reproduces the watchdog's own soft recovery in full — `CFUN=4` → `CFUN=1` →
-      `COPS=0`, then re-subscribes `CNMI` — and samples `AT+CEREG?` and `AT+QCFG="ims"`
-      together at the production poll cadence of 2 s, stopping early once the route has
-      been up for three consecutive samples so the outage stays short. ⚠️ It reads only
-      the **second** field for "route up": the first has three states and reading it as a
-      boolean is the bug this change exists to avoid. Put in the repository deliberately —
-      the owner's `/tmp/ims_set.py` lives in no repository, and this proposal complains
-      about exactly that
+- [x] 1.4 **Measure whether the route's availability lags network registration, and by how
+      long.** **No lag observed at or after the moment the gateway can look.** Run on
+      2026-09-20 with `deploy/ims-lag-probe.py` on the live gateway, two attempts:
+      🔴 **the first answered `LAG: 0.0` and had measured nothing** — it blocked about eleven
+      seconds on its own command waits, so the whole reattach happened inside its pause, and
+      it never sampled between `CFUN=4` and `CFUN=1`, so it could not even show the radio
+      had cycled. The probe was rewritten to sample throughout and to print
+      `radio never cycled - measures nothing` rather than a number it had not earned.
+      The second run is the measurement: `left the network: True`, thirty seconds off the
+      network over eight samples, **every one `+CEREG: 0,0` with `+QCFG: "ims",1,0`** —
+      registration never read positive while the route read negative. Both returned positive
+      at the same sample, 37.4 s, which was also the first moment after `AT+COPS=0` returned,
+      and therefore the first moment the production path could look at all.
+      ⚠️ **Bound, not a zero:** a lag shorter than about six seconds sits in an unobserved
+      gap between `CFUN=1` and the first sample after it. It would be invisible to the
+      gateway too, so the gate stands as written — on that named basis, recorded in
+      `design.md`, not on "no lag exists".
+      ✅ **Bonus the run settles:** the configuration digit held `1` unchanged across the
+      whole radio cycle while availability swung 1 → 0 → 1, which is the split this change
+      is built on, observed rather than assumed. And `+QCFG: "ims",1,1` before the run
+      answers task 7.1 early: two days on, the setting and the route are both still there.
+      The probe lives in the repository — `deploy/ims-lag-probe.py` — deliberately: the
+      owner's `/tmp/ims_set.py` lives in no repository, and this proposal complains about
+      exactly that. It reads only the **second** field for "route up"; the first has three
+      states, and reading it as a boolean is the bug this change exists to avoid.
 - [x] 1.5 **Correct the false premise in the neighbour.** Done —
       `openspec/changes/verify-by-inbound-code/proposal.md`, the paragraph on remedies. The
       sentence is withdrawn rather than deleted, with the 2026-09-18 measurement recorded and

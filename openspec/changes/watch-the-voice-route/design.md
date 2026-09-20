@@ -93,13 +93,30 @@ throughout, then came back at `1,1`.
 - **Gate the reading** — while unregistered, the route's availability is *not measured* and
   says so. Chosen.
 
-⚠️ **The rejection of debounce assumes the unregistered window is the only false-positive
-source, and that assumption is not measured.** A module attaches to the network first and to
-IMS afterwards, so there may be a window where registration is true and the second digit is
-still zero — and every soft recovery walks through it, releasing as soon as registration
-answers. Task 1.4 exists to measure whether that window is real and how long it is. If it
-is, the gate widens to "registered and settled" or the debounce comes back, and this section
-is rewritten rather than quietly left standing.
+✅ **That assumption is now measured, and it holds — with a stated limit.** The worry was
+that a module attaches to the network first and to IMS afterwards, leaving a window where
+registration is true and the second digit is still zero, which every soft recovery would
+walk through. Task 1.4 ran `deploy/ims-lag-probe.py` against the live gateway on
+2026-09-20, sampling both readings together through a full soft recovery:
+
+- off the network for about thirty seconds, eight samples, **every one of them `+CEREG: 0,0`
+  paired with `+QCFG: "ims",1,0`**. Not once did registration read positive while the route
+  read negative;
+- both came back positive at the same sample, 37.4 s in, which was also the first moment
+  after `AT+COPS=0` returned — that is, **the first moment the production path could look at
+  all**, since the watchdog's recovery blocks through that command.
+
+⚠️ **What the run does not exclude is a lag shorter than about six seconds.** Between
+`AT+CFUN=1` being issued and the first sample after it there is an unobserved gap of roughly
+that length, so a window that opened and closed inside it would not have been seen. The
+claim this section now rests on is therefore the weaker and true one: **there is no window
+at or after the moment the gateway can first observe.** A shorter one would be invisible to
+the gateway as well, which is why it does not change the design — but it is a bound, not a
+zero, and it is written down as a bound.
+
+One run, one soft recovery, on a module that was already IMS-registered beforehand. A cold
+attach — after a hard reset, or after a SIM change — is not covered, and falls under the same
+gate: unregistered means not measured.
 
 **Only the second digit is gated.** The first is a local setting the radio state does not
 affect — the vendor stores it automatically and it takes effect on the next reboot — and

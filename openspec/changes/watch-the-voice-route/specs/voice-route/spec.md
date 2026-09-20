@@ -25,7 +25,9 @@ have different cures, and collapsing them into one "IMS is down" reports the wro
 the moment a person is deciding what to do.
 
 The configuration is a local setting, held in non-volatile memory and taking effect at the
-module's next reboot. It has **three** states, not two: this gateway has asked for IMS
+module's next reboot. It does not move with the radio — measured 2026-09-20, where it held
+its value unchanged across a full soft recovery while the availability of the route went
+from up to down and back. It has **three** states, not two: this gateway has asked for IMS
 compulsorily, and the alternatives are an explicit compulsory disable and a factory position
 that defers the decision to the carrier profile stored on the module. A gateway that reports
 the configuration as a yes-or-no cannot tell "somebody disabled it" from "nobody decided,
@@ -77,8 +79,11 @@ restored so whoever was woken learns it is over without opening a page.
 
 The gateway SHALL NOT report the route as unavailable while the module is not registered to
 the network. That reading is negative on an unregistered module whether or not the route
-would otherwise be available — measured 2026-09-18, where the module sat outside the network
-for about three minutes after a reset and read negative throughout. A watcher without this
+would otherwise be available. Measured twice: on 2026-09-18 the module sat outside the
+network for about three minutes after a hard reset and read negative throughout, and on
+2026-09-20 a soft recovery was sampled end to end — thirty seconds off the network, eight
+samples, every one of them reporting the module unregistered and the route unavailable
+together, and both returning positive at the same sample. A watcher without this
 gate announces a lost voice route after every modem reset, every radio cycle and every
 recovery, which is the surest way to make the alert ignored before the first real one
 arrives. An unregistered module is already the watchdog's condition and has a ladder of its
