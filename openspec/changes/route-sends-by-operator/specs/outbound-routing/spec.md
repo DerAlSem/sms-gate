@@ -195,7 +195,7 @@ rung leaves nothing to advance to, and the quiet answer — sending it over the 
 silent fallback this capability forbids everywhere else, reached here by exhausting a list
 rather than by deciding anything.
 
-[unbacked · `is_secret` precedent and `seed_from_env()`: app/settings_store.py]
+[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by four mutations in `bite-credentials.sh` — the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute, and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives. Still unbacked: uCaller has no credential at all (task 1.1), the environment half (`seed_from_env()` behaviour at send time), and every rung-skipping clause below, which needs the door]
 
 #### Scenario: A credential placed in the environment after the first run
 - **WHEN** a vendor credential is written to `.env` for a key that already has a row in `settings`

@@ -177,7 +177,16 @@ rather than on code.
       alerted on stock settings (`notify_routing_errors` defaults on), ladder advances.
       The credential-shaped half — a rung whose token is blank — belongs with the
       wiring that decides which carriers exist, and that is the door's.
-- [ ] 4.51 Test: the settings page reports each vendor credential as configured or not and renders neither value
+- [x] 4.51 Test: the settings page reports each vendor credential as configured or not and renders neither value
+      Already held; the task was the guard. `tests/test_vendor_credentials.py`
+      reads the page in **both** locales — the console's default is Russian, and a
+      guard written against the English wording alone would pass while the Russian
+      page said nothing. Four mutations bite. One of them started green and was kept
+      after being understood: the view may hand a secret's value to the template and
+      the page still leaks nothing, because the markup ignores it for a password
+      field — so the whole guarantee rested on one line of markup. There is now a
+      guard on the row the view produces as well. **Half empty:** uCaller has no
+      credential to report (task 1.1), so what is guarded is one vendor of two.
 
 ### Money across two vendors
 
