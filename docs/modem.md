@@ -266,6 +266,29 @@ SIM's IMSI. §1.2.2: *"not all operator MBN files enable IMS by default"*.
 us and nothing in the journal saying so. If the SIM is swapped, read `AT+QCFG="ims"`
 afterwards and write `1` again if it has moved.
 
+### When an alert arrives
+
+The gateway reads `AT+QCFG="ims"` once per watchdog tick and alerts on three conditions.
+They are three different notifications on purpose: they ask for three different things, and
+two of them are not about the same half of the reading.
+
+An alert may reach somebody who was not here in September 2026 and has never run the
+measurement. Each one below says what to look at first and what to do.
+
+| alert | what the gateway saw | what to do |
+|---|---|---|
+| ⚙️ **IMS configuration** | `<IMS_conf>` is no longer `1` | Somebody or something moved the setting. Open `/admin/modem`, read the `ims` row. Write it back — *Turning it on* above — which costs a service stop and a module reboot. **First ask whether the SIM was changed**: §1.2.1 says an MBN activation resets it, and if the SIM is new the setting will move again the same way next time. |
+| 📵 **Voice route** | the module is registered and `<VoLTE_cap>` is `0` | Nothing local is known to fix this, and the gateway deliberately does not name a cause — it has no reading that says one. Check `/admin/modem`: if the `ims` row shows `1,0` the setting is still ours and the route is not there. An incoming call will not land. Escalate to the carrier only with the observation, not with a diagnosis. |
+| 🕒 **Voice route unknown** | no reading could be taken for over an hour | This is *not* the route being lost — it is nobody being able to look. Usually the modem is not answering at all, which the watchdog is already working on; check the gateway row on `/admin/modem` for `recovering` and the link state. If the modem is healthy and this still fires, the response format has changed and the decoder needs a look. |
+
+All three follow the system-errors notification switch, like the link alert does, and each
+is raised once per episode with a notification when it clears.
+
+⚠️ **The route's availability is not read while the module is off the network.** That is
+deliberate: the field reads `0` on an unregistered module whatever the truth. So a modem
+reset, a radio cycle and a recovery produce no voice-route alert — and produce no reading
+either, which is what the staleness alert above is counting.
+
 ---
 
 ## Useful Debug Commands

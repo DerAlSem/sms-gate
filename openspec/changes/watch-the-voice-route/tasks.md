@@ -95,7 +95,7 @@
 
 ## 2. IMS is read while the gateway serves
 
-- [ ] 2.1 A decoder for `AT+QCFG="ims"` in `app/modem/diag.py`, beside `decode_cireg` and
+- [x] 2.1 A decoder for `AT+QCFG="ims"` in `app/modem/diag.py`, beside `decode_cireg` and
       `decode_servicedomain`, returning the two facts separately **and a named state for
       each**, as the neighbouring decoders do — the page renders decoded fields directly, so
       a decoder that returns only digits puts `ims_conf=1 volte_cap=0` in front of a person.
@@ -104,19 +104,36 @@
       here is a bug, and a decoder that maps `0` to "disabled" states the opposite of the
       truth. A fourth value the vendor does not list SHALL decode as unrecognised, not as one
       of the three
-- [ ] 2.2 A row in `_DIAG_QUERIES` (`app/modem/manager.py:129-157`) on the local budget: a
+      ✅ `decode_qcfg_ims` in `app/modem/diag.py`. Three named configuration states from
+      the vendor's own words, a named state for the VoLTE field, and a value outside the
+      three decoding as `unrecognised`. The digits are kept beside the names, as the
+      neighbouring decoders do, so the page renders words and the raw number stays
+      readable.
+- [x] 2.2 A row in `_DIAG_QUERIES` (`app/modem/manager.py:129-157`) on the local budget: a
       register read the firmware answers out of its own memory. Confirmed by the reference —
       maximum response time **300 ms** (§2.3.1), so the local budget is the right one and no
       special case is owed
-- [ ] 2.3 An unparseable response returns `{}` — the convention `decode_servicedomain` and
+      ✅ Row `ims` in `_DIAG_QUERIES`, on `_DIAG_LOCAL`. The command string is named once
+      (`_IMS_QUERY`) because the watchdog's tick asks for it too and two spellings of one
+      command is how the sweep and the watcher would come to read different things.
+- [x] 2.3 An unparseable response returns `{}` — the convention `decode_servicedomain` and
       `decode_cireg` already follow, and for the same reason: zero is a meaningful value
       here, so a failed read must not render as one
-- [ ] 2.4 Decide and record whether `ims_reg` (`AT+CIREG?`) and `svc_domain`
+      ✅ `{}` on an unparseable response, tested against `ERROR`, an empty string, a
+      truncated `+QCFG: "ims",1` and a `servicedomain` reply.
+- [x] 2.4 Decide and record whether `ims_reg` (`AT+CIREG?`) and `svc_domain`
       (`AT+QCFG="servicedomain"`) stay in the sweep. They cannot answer on this build; the
       case for keeping them is that a firmware update could add them and section 4 makes
       their refusal legible, the case against is two round-trips per page load. **Follows
       1.1 and section 5, not preference**
-- [ ] 2.5 Decide whether the sweep reads an identity of the hardware — IMEI or ICCID. Without
+      ✅ **Decided: both stay.** Section 5 removed the reason to cut them — they are no
+      longer on the alert path at all, so the cost is two round-trips on a page an
+      operator chose to open, and both are *refusals*, answered at once rather than waited
+      out. Section 4 makes them legible instead of red. And keeping them is what the
+      `modem-link` delta requires of itself: *"a previously refused command begins to
+      answer → the value is reported, without any change to the gateway"*. Removing the
+      rows would make that scenario unreachable by construction.
+- [x] 2.5 Decide whether the sweep reads an identity of the hardware — IMEI or ICCID. Without
       one, "the configuration is no longer the one we set" cannot distinguish a replaced
       module from a reset NV, which is the distinction `design.md` uses to argue that
       condition's severity. 🔴 **The reference adds a third cause and makes ICCID the more
@@ -124,27 +141,52 @@
       default and §1.2.3 says the profile is chosen from the SIM's IMSI, so a swapped SIM
       disarms the route — and a SIM identity in the sweep is what would make that visible.
       Either add the row or let the caveat stand, deliberately
-- [ ] 2.6 Tests: the decoder against both captured samples (`0,0` and `1,1`), against the
+      ✅ **Decided: no identity row; the caveat stands, deliberately.** The distinction
+      `design.md` wants — a replaced module against a reset NV against a swapped SIM —
+      needs a *remembered* identity, not a displayed one. Nothing stores what the ICCID
+      was, so an ICCID on the page at the moment an alert arrives answers nothing: the
+      reader would have to already know the old value. Remembering it is new state with
+      its own lifecycle (who writes the baseline, what a deploy does to it), which is a
+      change of its own rather than a row. ⚠️ And the gate binds here: there is no vendor
+      reference for `AT+QCCID` in `captures/` and no live sample, so a parser for it
+      cannot be written under this change's own rule. The alert names the condition and
+      not its cause, which is the standard this project already holds alerts to.
+- [x] 2.6 Tests: the decoder against both captured samples (`0,0` and `1,1`), against the
       three configuration values including **`2` and the healthy `0,1`, which no live sample
       covers and which come from the reference**, against an unlisted fourth value, against
       `ERROR`, and against a malformed response; the sweep reporting the two facts apart
 
+      ✅ `tests/test_modem_diag.py` — both captured samples, all three configuration
+      values including the healthy `0,1` that no live sample covers, an unlisted fourth
+      value, `ERROR`, and three malformed shapes. `tests/test_modem_collect.py` — the
+      sweep reporting the two facts apart.
 ## 3. The voice route is watched
 
-- [ ] 3.1 The observation runs **above** the `modem_watchdog_enabled` check in
+- [x] 3.1 The observation runs **above** the `modem_watchdog_enabled` check in
       `watchdog_loop` (`app/modem/manager.py:1207`), which today `continue`s past the whole
       step. This means the registration answer has to come out of `_watchdog_step`, or the
       loop polls and passes it in. ⚠️ The switch governs remedies, not observation — the live
       `modem-link` spec refused this coupling once already, and archived task 4.9 of
       `recover-from-serial-transport-loss` records it being found and fixed once already
-- [ ] 3.2 The observation **cannot raise into the step**: a function with `_poll`'s explicit
+      ✅ `_observe_voice_route()` runs in `watchdog_loop` **above** the
+      `modem_watchdog_enabled` check, and the registration answer it takes is handed to
+      the step through `_take_poll()` rather than polled twice. Bitten: moving the call
+      below the switch turns the test red.
+- [x] 3.2 The observation **cannot raise into the step**: a function with `_poll`'s explicit
       never-raises contract. A raising read placed before the decision stops the ladder
       advancing; placed after it, it swallows the returned rung and with it the settle and
       the `os._exit(1)` that must follow a hard reset
-- [ ] 3.3 Edge-triggered alerting for the conditions, each raised once per episode, able to
+      ✅ Never raises, and both halves are guarded: the poll, and the AT command. A read
+      that fails is recorded as unmeasured. Bitten with a sender that raises on every IMS
+      command — the ladder still reaches HARD, `hard_reset` is still carried out, and
+      `os._exit(1)` still runs.
+- [x] 3.3 Edge-triggered alerting for the conditions, each raised once per episode, able to
       alert again after the state has been good in between, with a notification when the
       route returns — the shape `_notify_reopened` already uses for the link
-- [ ] 3.4 **A route already lost at startup raises the alert on the first reading that
+      ✅ `VoiceRouteWatch` latches one alert per episode per condition and clears on the
+      state being good in between; the route returning sends one notification. Bitten:
+      removing the latch turns the "one alert per episode" test red.
+- [x] 3.4 **A route already lost at startup raises the alert on the first reading that
       establishes it**, not only on a transition this process witnessed. Episode state dies
       with the process, and the process exits itself on the ladder's top rung and on every
       deploy. 🔴 **The two conditions start differently.** The *availability* reading waits
@@ -152,20 +194,37 @@
       *configuration* reading does not wait: it is local, readable while the module is still
       attaching, and a deploy that comes up on a drifted configuration should say so at once
       — that is exactly the 2026-09-18 state this change exists to stop being invisible
-- [ ] 3.5 **Staleness.** Record when the voice route was last successfully measured, and
+      ✅ All three latches start closed, so the first reading that establishes a condition
+      raises it. The two conditions start differently as required, and it falls out of the
+      gate rather than out of a special case: availability is simply not read as a verdict
+      while unregistered, and the configuration is read and judged immediately.
+- [x] 3.5 **Staleness.** Record when the voice route was last successfully measured, and
       alert when it has not been measurable for longer than the threshold. Both silencing
       mechanisms are real and verified: `registration_ok` returns `False` for a modem that
       does not answer at all (`app/modem/at_commands.py:662-666`), so the gate stays shut
       forever on an unanswerable modem; and an unparseable reading becomes "not measured",
       which section 4 then makes quiet on the page too
-- [ ] 3.6 **Name the delivery route.** `notify()` ignores an event type it does not know and
+      ✅ `STALE_AFTER = 3600.0`, with the reasoning written where the constant is: the
+      tick's ceiling is sixty seconds, so it is sixty consecutive failures to measure —
+      past any recovery the ladder performs, and short enough that an unreadable route
+      does not stay unread for a working day. An unregistered module counts as *not
+      measured*, which is the silencing mechanism the alert exists to catch.
+- [x] 3.6 **Name the delivery route.** `notify()` ignores an event type it does not know and
       returns silently (`app/alerting.py:403-418`), so `notify("voice_route", …)` would do
       nothing at all and a test asserting on the latch would still pass. Either add entries to
       `_EVENT_TOGGLE`/`_EVENT_TITLE` with a toggle named deliberately, or follow the `link`
       alert's route — and either way give the conditions **distinct templates**, since the
       ERROR-handler dedup is per template in a 300-second window and one condition would
       otherwise hide behind the other
-- [ ] 3.7 The alert text names which condition it is, and therefore who acts. 🔴 **Two
+      ✅ Three entries in `_EVENT_TOGGLE`/`_EVENT_TITLE` — `voice_route`,
+      `voice_route_config`, `voice_route_stale` — following the `link` alert's route and
+      sharing `notify_system_errors` rather than adding a setting no SHALL asks for.
+      Distinct types, so `notify`'s per-type dedup cannot hide one condition behind
+      another. Logged at `warning`, not `error`: an ERROR record is itself delivered by
+      the Telegram handler, and the two together would wake the same person twice.
+      🔴 The tests assert on **delivery** — `notify` is patched and its calls counted —
+      not on the latch.
+- [x] 3.7 The alert text names which condition it is, and therefore who acts. 🔴 **Two
       conditions, and the second does not name a culprit.** *The configuration is no longer
       the one this gateway set* — someone writes `AT+QCFG="ims",1` and accepts a reboot, and
       the text says which of the two off-states it is, since `0` (profile decides) and `2`
@@ -173,7 +232,16 @@
       gateway has no reading that says why, so the text reports the observation and stops.
       ⚠️ It must not say the carrier refused us: `outbound-send` already forbids naming a
       cause the gateway did not observe, and the first draft of this change broke that rule
-- [ ] 3.8 Tests, and each one bitten: mutate the gate away → the "module off the network"
+      ✅ Each text names its condition. The configuration alert says which of the two
+      off-states it is and what writing it back costs. The availability alert reports the
+      observation and stops; tested for the absence of "carrier", "operator", "refused"
+      and "rejected".
+      🔴 Found while biting: the meaning of the configuration value `0` was written down
+      **twice** — in the decoder's map and again in the alert's prose — so a mutation of
+      the map left the alert green. Two places that can come to disagree about one digit,
+      with the page saying one thing and the alert another. The second source is gone; the
+      alert now takes the state's name from the decoder.
+- [x] 3.8 Tests, and each one bitten: mutate the gate away → the "module off the network"
       test goes red; mutate edge-triggered to level-triggered → the "one alert per episode"
       test goes red; make the fake sender raise on the IMS command → the "ladder still
       advances and still exits on HARD" test goes red; **map the configuration value `0` to
@@ -181,15 +249,22 @@
       red**. A test that asserts on the latch rather than on delivery does not count for 3.6
       — assert the notifier was reached
 
+      ✅ Five mutations run, each red on its own test and green again after restoring:
+      the registration gate removed; the latch made level-triggered; the observation's
+      exception guard narrowed; configuration `0` mapped to "disabled"; the observation
+      moved below the watchdog switch.
 ## 4. A refusal stops looking like a fault
 
-- [ ] 4.1 Carry the outcome — value, refusal, silence, failure — and the modem's **raw
+- [x] 4.1 Carry the outcome — value, refusal, silence, failure — and the modem's **raw
       response** out of the place that still has them. Today `_command_unlocked` raises
       `ATCommandError` carrying only `describe_at_error`'s normalised string
       (`app/modem/parser.py:112-117`), the raw text is discarded, and `collect_diagnostics`
       never sets `raw` on the failure path — so the requirement that a row shows what the
       modem answered cannot be met by editing the template alone
-- [ ] 4.2 Classify from what the modem answered, not from a list of commands believed absent.
+      ✅ `ModemFailure` carries `response` beside the normalised message, set at both
+      raise sites — the `ERROR` path and the timeout path. `collect_diagnostics` reads it
+      and sets `raw` on the failure path too.
+- [x] 4.2 Classify from what the modem answered, not from a list of commands believed absent.
       ⚠️ **Not by sniffing the substring `ERROR`:** `+CME ERROR: 13` on `AT+CPIN?` is a failed
       SIM — the fault of the 2026-09-06 outage — and must stay a fault. **Settled by 1.1:** a
       refusal is a bare `ERROR`, or `+CME ERROR: 3` / `4` (operation not allowed / not
@@ -199,37 +274,74 @@
       accepted:** the live sample shows a bare `ERROR` for `AT+CIREG?`, but the EP06 manual
       promises only that `+CME ERROR` is *"similar to the ERROR result code"*, so a build that
       answers a missing command with a code is not ruled out
-- [ ] 4.3 `app/admin/templates/modem.html`: a refusal and a silence get their own rendering,
+      ✅ `classify_at_outcome` in `app/modem/parser.py`, decided from the response alone
+      and never from a list of commands. Refusal is a bare `ERROR`, `+CME 3`/`4`,
+      `+CMS 302`/`303` — both forms accepted, as 1.1 requires. A verbose firmware saying
+      the same in words is classified by the same rule, and an error about the modem's own
+      state stays a fault whichever form it arrives in.
+- [x] 4.3 `app/admin/templates/modem.html`: a refusal and a silence get their own rendering,
       neither in the fault style, both showing the modem's response; a genuine fault keeps
       the fault style
-- [ ] 4.4 New operator-visible strings added to `app/admin/translations/ru` and `.../en`,
+      ✅ 🔴 **Found on the way: `.err` was not defined in the stylesheet at all.** The
+      modem template had been asking for the class since it was written, so the "fault
+      style" this requirement distinguishes a refusal *from* did not exist — a fault
+      rendered as ordinary body text and looked exactly like everything else. The
+      requirement would have been satisfiable by changing nothing. The style is defined
+      now, and refusal and silence are rendered quietly beside it.
+- [x] 4.4 New operator-visible strings added to `app/admin/translations/ru` and `.../en`,
       as archived task 11.1 of the SMS-tab change already requires of this template
-- [ ] 4.5 Look at the rendered page before calling this done — the visual contour, not the
+      ✅ Two new strings in `app/admin/translations/ru` and `.../en`. Tested in both
+      languages, including that neither language claims the firmware lacks the command.
+- [x] 4.5 Look at the rendered page before calling this done — the visual contour, not the
       test. The whole requirement is about what a reader's eye does with the page
-- [ ] 4.6 The positive control is concrete: a row answered `+CME ERROR: 13` is still shown as
+      ✅ Looked at. The page was rendered through the real router with the live module's
+      actual sweep — `AT+CIREG?` and `AT+QCFG="servicedomain"` refused, `AT+CLIP?` silent,
+      everything else answering — served locally and opened in a browser, in both
+      languages and with and without a failed SIM. The contour is the one the requirement
+      is about: on healthy hardware the three permanently-unsuccessful rows are quiet, and
+      on the page with a failed SIM the single red row is the fault, with nothing else
+      competing for the eye. ⚠️ Headless Chrome does not start in this sandbox; the
+      screenshot was taken through the browser extension against a local http server.
+- [x] 4.6 The positive control is concrete: a row answered `+CME ERROR: 13` is still shown as
       a fault. Without it, an implementation that renders everything as "not measured" passes
 
+      ✅ `test_a_failed_sim_is_still_a_fault`, bitten: rendering every unsuccessful row as
+      "nothing was measured" turns it red.
 ## 5. The alert path stops paying for the page
 
-- [ ] 5.1 `_alert_observations` (`app/modem/manager.py:1162`) asks only for the readings the
+- [x] 5.1 `_alert_observations` (`app/modem/manager.py:1162`) asks only for the readings the
       alert prints. ⚠️ **The declaration it should ask from does not exist yet:**
       `_ALERT_READINGS` (`app/modem/diag.py:155`) is referenced nowhere, and
       `summarise_for_alert` hardcodes the four keys in its body. Make it one declaration
       serving both the asking and the printing
-- [ ] 5.2 Tests that pin it in both directions: adding a row to the page's sweep does not add
+      ✅ `_ALERT_READINGS` is now the declaration it was assumed to be — label, key and
+      renderer per reading — and `ALERT_KEYS` is derived from it. `summarise_for_alert`
+      prints from it and `collect_diagnostics(only=…)` asks from it. Four commands on the
+      alert path instead of fourteen; the output format is unchanged.
+- [x] 5.2 Tests that pin it in both directions: adding a row to the page's sweep does not add
       a command to the alert path; adding a key to what the alert prints without adding it to
       what it asks for goes red. Bite both
-- [ ] 5.3 Confirm the alert still says "observations unavailable" when the modem answers
+      ✅ Both directions, both bitten: restoring the full sweep on the alert path turns
+      the "asks only for what it prints" test red, and making the asked keys a subset of
+      the printed ones turns the "one declaration" test red.
+- [x] 5.3 Confirm the alert still says "observations unavailable" when the modem answers
       nothing — the behaviour `_alert_observations` exists for, which must survive the split
 
+      ✅ The liveness pre-check and the "observations unavailable" fallback are untouched
+      by the narrowing, and there is a test on the narrowed path that says so.
 ## 6. From alert to remedy
 
-- [ ] 6.1 `docs/modem.md` gains what to do on each condition, beside its existing "Serial
+- [x] 6.1 `docs/modem.md` gains what to do on each condition, beside its existing "Serial
       Port Locking" and "Useful Debug Commands" sections. Writing the setting still costs a
       service stop, and the script that does it lives in `/tmp` on one host and in no
       repository. An alert arriving in six months to somebody who did not run the 2026-09-18
       measurement needs a next step it can reach
 
+      ✅ `docs/modem.md`, new *When an alert arrives* subsection: a row per condition
+      saying what the gateway saw and what to do, written for somebody who was not here
+      for the 2026-09-18 measurement. It names the SIM-swap question first on the
+      configuration alert, because that is the cause that will move the setting again
+      after it is written back.
 ## 7. Acceptance on the live gateway
 
 - [ ] 7.1 Deploy, then read `/admin/modem` and record the live IMS state. **The first reading
