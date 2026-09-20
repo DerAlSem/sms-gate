@@ -1060,6 +1060,12 @@ async def set_rung_outcome(
     leave a fee attributable to nothing. For the same reason `vendor_ref` and `cost` are
     written only when this call has them — a carrier that already recorded a charge and
     then failed must not have that charge erased by the outcome that follows it.
+
+    The one exception runs the other way: a rung the vendor has refunded keeps its spend
+    at nothing. Nothing in the ordinary sequence writes a cost after a refund — the
+    charge is recorded between the ability check and the send, and the refund arrives
+    with a callback long after — but the rule belongs at the write rather than in a note,
+    because a resurrected charge would be a bill nobody could explain.
     """
     db = await get_db()
     await db.execute(
@@ -1067,7 +1073,7 @@ async def set_rung_outcome(
         "   SET outcome = ?, "
         "       reason = COALESCE(?, reason), "
         "       vendor_ref = COALESCE(?, vendor_ref), "
-        "       cost = COALESCE(?, cost) "
+        "       cost = CASE WHEN refunded THEN cost ELSE COALESCE(?, cost) END "
         " WHERE id = ?",
         (outcome, reason, vendor_ref, cost, rung_id),
     )
@@ -1107,6 +1113,13 @@ async def record_rung_delivery(
     `refunded` is written only when it is True. The column cannot say "the vendor did not
     mention it", so the affirmative is the only thing it is allowed to assert, and what
     the vendor actually said belongs in `reason`.
+
+    **A refund lowers the recorded spend to nothing rather than standing beside it as an
+    asterisk.** A verification whose fee came back cost nothing, and a ledger that keeps
+    the charge and files the refund next to it overstates the bill in the one direction
+    that makes the paid route look worse than it is — silently, because every reader
+    would have to remember to subtract. What the vendor actually said stays in `reason`,
+    which is where the vendor's own words belong; `refunded` stays as the fact.
     """
     db = await get_db()
     async with db.execute(
@@ -1119,9 +1132,10 @@ async def record_rung_delivery(
         return None
     await db.execute(
         "UPDATE verification_rungs SET outcome = ?, reason = ?, "
-        "       refunded = CASE WHEN ? THEN 1 ELSE refunded END "
+        "       refunded = CASE WHEN ? THEN 1 ELSE refunded END, "
+        "       cost = CASE WHEN ? THEN 0 ELSE cost END "
         " WHERE id = ?",
-        (outcome, reason, 1 if refunded else 0, row["id"]),
+        (outcome, reason, 1 if refunded else 0, 1 if refunded else 0, row["id"]),
     )
     await db.commit()
     return row["verification_id"]
