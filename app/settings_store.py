@@ -143,6 +143,28 @@ SETTINGS_SPEC: list[Spec] = [
     # made and present as a gateway that answers 404 to everyone.
     Spec("verification_retention_days", "posint", 30, "Verification", False,
          "Delete finished verifications after N days"),
+    # The vendor's numbers, not ours, and therefore settings: uCaller allows four
+    # authorisations per number per minute with at least fifteen seconds between them and
+    # thirty per number per day, and a number that exceeds them is blocked **for ten
+    # hours**. Being told to wait fifteen seconds costs a person fifteen seconds; being
+    # blocked at the vendor costs them a working day of not being able to log in.
+    #
+    # They bound the ladder as a whole rather than the call rung alone. Telegram's
+    # reference publishes no rate limits at all, and silence is the absence of a
+    # statement rather than a statement of absence — a rung whose block conditions are
+    # unpublished is the one to be more careful with.
+    Spec("verification_min_gap_seconds", "posint", 15, "Verification", False,
+         "Least time between two paid attempts on one number (s)"),
+    Spec("verification_per_minute", "posint", 4, "Verification", False,
+         "Paid attempts allowed on one number per rolling minute"),
+    Spec("verification_per_day", "posint", 30, "Verification", False,
+         "Paid attempts allowed on one number per rolling day"),
+    # Rolling, and stated rather than implied. This database stores naive UTC and the
+    # vendor is Russian: a calendar day read in the wrong zone resets three hours early,
+    # and in those three hours the gateway confidently places the call that costs the
+    # subscriber ten hours. A rolling window is the stricter reading of any calendar day.
+    Spec("verification_day_window_hours", "posint", 24, "Verification", False,
+         "The window the daily ceiling counts in, rolling backwards from now (h)"),
     # The routing rule, as data. Its shipped content and every norm about reading it live
     # in `app/verification/rule.py`; what belongs here is that it is a setting at all —
     # `.env` would need a restart to change, and a restart drops sending sessions, which

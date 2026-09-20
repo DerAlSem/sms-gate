@@ -24,6 +24,8 @@ def test_spec_has_all_soft_keys():
         "verification_call_in_ttl_seconds", "gateway_msisdn",
         "tg_gateway_token", "tg_gateway_callback_tolerance_seconds",
         "operator_routes",
+        "verification_min_gap_seconds", "verification_per_minute",
+        "verification_per_day", "verification_day_window_hours",
         "blacklist_threshold", "delivery_timeout_seconds",
         "delivery_report_max_age_hours", "delivery_report_strict_attribution",
         "phone_region", "max_sms_parts", "modem_watchdog_enabled",

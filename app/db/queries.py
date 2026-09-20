@@ -967,6 +967,29 @@ async def record_verification_rung(
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def paid_attempts_for_number(phone: str, *, within_seconds: int) -> list[int]:
+    """How long ago each paid rung was attempted for this number, newest first.
+
+    Counted over the rungs rather than over the verifications, because the thing the
+    vendor counts is an authorisation placed and a verification may place more than one —
+    that is what a ladder is. Both paid rungs are counted together for the same reason.
+
+    Ages in whole seconds, by the database's clock, so that the gate comparing them is
+    comparing against the clock that wrote them.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT CAST(strftime('%s', 'now') - strftime('%s', r.started_at) AS INTEGER) "
+        "  FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id "
+        " WHERE v.phone = ? AND r.route IN ('flash_call', 'tg_gateway') "
+        "   AND r.started_at > datetime('now', ? || ' seconds') "
+        " ORDER BY r.started_at DESC",
+        (phone, f"{-int(within_seconds):+d}"),
+    ) as cursor:
+        return [max(0, int(row[0])) for row in await cursor.fetchall()]
+
+
 async def verification_seconds_left(verification_id: int) -> int:
     """How much of this verification's life is left, in whole seconds, by the database's
     clock rather than ours.
