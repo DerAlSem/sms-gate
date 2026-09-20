@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-20 14:25+0300\n"
+"POT-Creation-Date: 2026-09-20 14:38+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -83,6 +83,7 @@ msgid "May spend"
 msgstr ""
 
 #: app/admin/templates/apps.html:32 app/admin/templates/apps.html:33
+#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
 msgid "yes"
 msgstr ""
 
@@ -254,7 +255,7 @@ msgstr ""
 msgid "Text"
 msgstr ""
 
-#: app/admin/templates/messages.html:54
+#: app/admin/templates/messages.html:54 app/admin/templates/messages.html:147
 msgid "Status"
 msgstr ""
 
@@ -300,40 +301,80 @@ msgstr ""
 msgid "No messages in this conversation"
 msgstr ""
 
-#: app/admin/templates/messages.html:140
-msgid "Reply"
+#: app/admin/templates/messages.html:139
+msgid "Verifications for this number"
 msgstr ""
 
-#: app/admin/templates/messages.html:141
-msgid "Send"
+#: app/admin/templates/messages.html:146
+msgid "Application"
+msgstr ""
+
+#: app/admin/templates/messages.html:148
+msgid "Proved by"
 msgstr ""
 
 #: app/admin/templates/messages.html:149
-msgid "Remove from blacklist"
+msgid "Rung"
 msgstr ""
 
 #: app/admin/templates/messages.html:150
+msgid "Vendor outcome"
+msgstr ""
+
+#: app/admin/templates/messages.html:151
+msgid "Vendor reference"
+msgstr ""
+
+#: app/admin/templates/messages.html:152
+msgid "Cost"
+msgstr ""
+
+#: app/admin/templates/messages.html:153
+msgid "Refunded"
+msgstr ""
+
+#: app/admin/templates/messages.html:154
+msgid "Started"
+msgstr ""
+
+#: app/admin/templates/messages.html:177
+msgid "No rung was attempted"
+msgstr ""
+
+#: app/admin/templates/messages.html:203
+msgid "Reply"
+msgstr ""
+
+#: app/admin/templates/messages.html:204
+msgid "Send"
+msgstr ""
+
+#: app/admin/templates/messages.html:212
+msgid "Remove from blacklist"
+msgstr ""
+
+#: app/admin/templates/messages.html:213
 msgid "Add to blacklist"
 msgstr ""
 
-#: app/admin/templates/messages.html:156
+#: app/admin/templates/messages.html:219
 msgid "This sender is not a phone number — no reply, no blacklist."
 msgstr ""
 
-#: app/admin/templates/messages.html:162
+#: app/admin/templates/messages.html:225
 msgid "No records"
 msgstr ""
 
-#: app/admin/templates/messages.html:170
+#: app/admin/templates/messages.html:233
 msgid "‹ Back"
 msgstr ""
 
-#: app/admin/templates/messages.html:172
+#: app/admin/templates/messages.html:235
 #, python-format
 msgid "Page %(page)s of %(pages)s"
 msgstr ""
 
-#: app/admin/templates/messages.html:174
+#: app/admin/templates/messages.html:237
 msgid "Forward ›"
 msgstr ""
 

@@ -154,7 +154,23 @@ rather than on code.
 - [ ] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
 - [ ] 4.29 Test: two concurrent checks confirm at most once and consume at most one attempt
 - [ ] 4.30 Implement verification retention and the destruction of a terminal verification's code
-- [ ] 4.31 Make a single verification visible in the admin console beside the messages for the same number — every rung attempted, each rung's vendor outcome, whether it was confirmed, recorded cost and whether it was refunded. The counters answer "how much", and a support call is always about one person
+- [x] 4.31 Make a single verification visible in the admin console beside the messages for the same number — every rung attempted, each rung's vendor outcome, whether it was confirmed, recorded cost and whether it was refunded. The counters answer "how much", and a support call is always about one person
+      Built 20.09.2026 in the expanded row of `/admin/messages`, under the
+      conversation — the owner's choice of placement on 20.09.2026, and the
+      literal reading of "beside the messages for the same number": a support
+      call arrives with a person's number, not with a verification id.
+      `verifications_for_phone` **lists its columns instead of starring them**,
+      and that is the guarantee rather than a style — `SELECT *` hands a live
+      code to a template, on the one screen that renders a subscriber's number
+      beside their conversation (task 4.22).
+      Five mutations bite. One started green and was understood: starring the
+      columns leaks nothing today because the template never prints `v.code` —
+      the same shape as 4.51, and answered the same way, with a guard on the row
+      the query produces directly.
+      ⚠️ **One assertion here is a tripwire rather than a guard**: since 4.54 a
+      refund zeroes the recorded cost, so there is no gross figure anywhere for a
+      screen to print, and the test that forbids it cannot go red against today's
+      code. It is kept for the day somebody adds one back.
 
 ### The ladder
 

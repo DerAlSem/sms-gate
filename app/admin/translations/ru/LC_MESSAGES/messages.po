@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-20 14:25+0300\n"
+"POT-Creation-Date: 2026-09-20 14:38+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -81,6 +81,7 @@ msgid "May spend"
 msgstr "Может тратить"
 
 #: app/admin/templates/apps.html:32 app/admin/templates/apps.html:33
+#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
 msgid "yes"
 msgstr "да"
 
@@ -256,7 +257,7 @@ msgstr "Оператор"
 msgid "Text"
 msgstr "Текст"
 
-#: app/admin/templates/messages.html:54
+#: app/admin/templates/messages.html:54 app/admin/templates/messages.html:147
 msgid "Status"
 msgstr "Статус"
 
@@ -302,40 +303,80 @@ msgstr "Удалить сообщение? Отменить будет нель�
 msgid "No messages in this conversation"
 msgstr "В этой переписке пока пусто"
 
-#: app/admin/templates/messages.html:140
+#: app/admin/templates/messages.html:139
+msgid "Verifications for this number"
+msgstr "Верификации этого номера"
+
+#: app/admin/templates/messages.html:146
+msgid "Application"
+msgstr "Приложение"
+
+#: app/admin/templates/messages.html:148
+msgid "Proved by"
+msgstr "Способ подтверждения"
+
+#: app/admin/templates/messages.html:149
+msgid "Rung"
+msgstr "Рунг"
+
+#: app/admin/templates/messages.html:150
+msgid "Vendor outcome"
+msgstr "Исход у вендора"
+
+#: app/admin/templates/messages.html:151
+msgid "Vendor reference"
+msgstr "Идентификатор у вендора"
+
+#: app/admin/templates/messages.html:152
+msgid "Cost"
+msgstr "Стоимость"
+
+#: app/admin/templates/messages.html:153
+msgid "Refunded"
+msgstr "Возврат"
+
+#: app/admin/templates/messages.html:154
+msgid "Started"
+msgstr "Начат"
+
+#: app/admin/templates/messages.html:177
+msgid "No rung was attempted"
+msgstr "Ни один рунг не начат"
+
+#: app/admin/templates/messages.html:203
 msgid "Reply"
 msgstr "Ответ"
 
-#: app/admin/templates/messages.html:141
+#: app/admin/templates/messages.html:204
 msgid "Send"
 msgstr "Отправить"
 
-#: app/admin/templates/messages.html:149
+#: app/admin/templates/messages.html:212
 msgid "Remove from blacklist"
 msgstr "Убрать из чёрного списка"
 
-#: app/admin/templates/messages.html:150
+#: app/admin/templates/messages.html:213
 msgid "Add to blacklist"
 msgstr "В чёрный список"
 
-#: app/admin/templates/messages.html:156
+#: app/admin/templates/messages.html:219
 msgid "This sender is not a phone number — no reply, no blacklist."
 msgstr "Отправитель — не телефонный номер: ответить и заблокировать нельзя."
 
-#: app/admin/templates/messages.html:162
+#: app/admin/templates/messages.html:225
 msgid "No records"
 msgstr "Нет записей"
 
-#: app/admin/templates/messages.html:170
+#: app/admin/templates/messages.html:233
 msgid "‹ Back"
 msgstr "‹ Назад"
 
-#: app/admin/templates/messages.html:172
+#: app/admin/templates/messages.html:235
 #, python-format
 msgid "Page %(page)s of %(pages)s"
 msgstr "Стр. %(page)s из %(pages)s"
 
-#: app/admin/templates/messages.html:174
+#: app/admin/templates/messages.html:237
 msgid "Forward ›"
 msgstr "Вперёд ›"
 

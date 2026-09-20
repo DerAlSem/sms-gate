@@ -1803,3 +1803,50 @@ async def delete_app(app_id: str) -> None:
     db = await get_db()
     await db.execute("DELETE FROM apps WHERE id = ?", (app_id,))
     await db.commit()
+
+
+async def verifications_for_phone(
+    phone: str, limit: int = 20
+) -> list[aiosqlite.Row]:
+    """This number's verifications, newest first, **without the code**.
+
+    The columns are listed rather than starred, and that is the guarantee rather than a
+    style: `SELECT *` here would hand a live secret to a template, and the one screen
+    that renders a subscriber's number renders it next to their conversation. A column
+    added to the table later must be added here deliberately.
+
+    Capped for the reason the dialog is: the panel is re-rendered after every action on
+    the list page.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, status, route, confirmed_by, reason, attempts, "
+        "       created_at, expires_at, confirmed_at "
+        "  FROM verifications WHERE phone = ? "
+        " ORDER BY created_at DESC, id DESC LIMIT ?",
+        (phone, limit),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def rungs_for_verifications(
+    verification_ids: list[int],
+) -> dict[int, list[aiosqlite.Row]]:
+    """Every rung of each of these verifications, oldest first, keyed by verification.
+
+    One query rather than one per verification: the panel is rendered inside the list
+    page, and a query per row is a cost paid on every redirect of every action.
+    """
+    if not verification_ids:
+        return {}
+    db = await get_db()
+    marks = ",".join("?" for _ in verification_ids)
+    grouped: dict[int, list[aiosqlite.Row]] = {v: [] for v in verification_ids}
+    async with db.execute(
+        f"SELECT * FROM verification_rungs WHERE verification_id IN ({marks}) "
+        " ORDER BY started_at, id",
+        tuple(verification_ids),
+    ) as cursor:
+        async for row in cursor:
+            grouped[row["verification_id"]].append(row)
+    return grouped

@@ -132,6 +132,7 @@ async def admin_messages(
     # Expansion is resolved from the row the key names, and rendered under that row
     # only — never under every row that happens to share its number.
     open_key, dialog, dialog_total, open_phone = "", [], 0, ""
+    verifications, rungs = [], {}
     parsed = _parse_open(open)
     if parsed is not None:
         row = await queries.get_thread_row(*parsed)
@@ -140,6 +141,11 @@ async def admin_messages(
             open_phone = row["phone"]
             dialog = await queries.dialog_for(open_phone, limit=DIALOG_LIMIT)
             dialog_total = await queries.dialog_total(open_phone)
+            # Beside the conversation, not on a page of its own: a support call is about
+            # one person, and the question "what did their login do" is asked with their
+            # messages already open.
+            verifications = await queries.verifications_for_phone(open_phone)
+            rungs = await queries.rungs_for_verifications([v["id"] for v in verifications])
 
     return render(
         "messages.html",
@@ -170,6 +176,8 @@ async def admin_messages(
             ),
             "dialog": dialog,
             "dialog_total": dialog_total,
+            "verifications": verifications,
+            "rungs": rungs,
             "dialog_limit": DIALOG_LIMIT,
             "error": request.query_params.get("error"),
             "active": "messages",

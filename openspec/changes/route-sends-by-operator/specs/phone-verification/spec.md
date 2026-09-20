@@ -577,7 +577,24 @@ holds subscriber data has a retention rule, and this one has the strongest reaso
 
 The recorded cost SHALL be answerable per application as well as in total.
 
-[unbacked · no verification storage exists; retention precedent at app/db/queries.py — inbound_seen and delivery_reports]
+**A single verification SHALL be readable by an operator beside the messages for the same
+number**, showing every rung attempted, each rung's vendor outcome and identifier, whether the
+verification was confirmed and by which method, the cost recorded against each rung and whether
+it was refunded. The counters answer "how much"; a support call is always about one person, and
+it arrives with that person's number rather than with a verification id.
+
+**The cost shown SHALL be the cost as recorded, and no gross figure SHALL be shown beside it.**
+A refund lowers the recorded spend to nothing rather than leaving an asterisk next to it, and a
+screen that helpfully prints what was originally charged restores the asterisk it replaced.
+
+[partly backed · the console half is `queries.verifications_for_phone` and
+`queries.rungs_for_verifications`, rendered under the conversation in the expanded row of
+`/admin/messages`; guarded by `tests/test_admin_verifications.py` and five mutations in
+`bite-verif-view.sh` — the query starring its columns, the number ceasing to filter, no rung
+reaching the page, the block never populated, and the row losing the anchor the guard finds it
+by. `verifications_for_phone` lists its columns rather than starring them, and that is the
+guarantee rather than a style: the code must reach no screen. The storage itself is
+`verify-by-inbound-contact`'s and the retention sweep with it]
 
 #### Scenario: The state outlives the process
 - **WHEN** the gateway restarts while a verification awaits the vendor's outcome
@@ -586,6 +603,14 @@ The recorded cost SHALL be answerable per application as well as in total.
 #### Scenario: Another application asks about a verification
 - **WHEN** an application that did not create a verification asks for it or checks a code against it
 - **THEN** it is answered as if no such verification exists, and no attempt is spent
+
+#### Scenario: One person's verification, beside their messages
+- **WHEN** an operator opens the conversation with a number that has verifications
+- **THEN** each of them is shown with every rung attempted, the vendor's outcome and reference for each, what it is recorded as costing and whether that cost was refunded
+
+#### Scenario: A refunded rung on the screen
+- **WHEN** a rung whose charge was refunded is shown
+- **THEN** its cost reads as the nothing it now is, with no charged figure beside it
 
 #### Scenario: A finished verification stops holding a usable secret
 - **WHEN** a verification is confirmed, expires or runs out of attempts
