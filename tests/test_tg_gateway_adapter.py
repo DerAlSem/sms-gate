@@ -191,6 +191,21 @@ def test_a_confirmed_ability_check_carries_the_request_id_forward():
     asyncio.run(go())
 
 
+def test_a_refusal_arrives_on_http_200_and_is_still_a_refusal():
+    """Captured live 20.09.2026 in `captures/ok-false-ACCESS_TOKEN_INVALID.json`: the
+    vendor answers a refused request with **HTTP 200** and `ok: false`. A parser that
+    decided by status code would read every refusal as a success."""
+    async def go():
+        payload = capture("ok-false-ACCESS_TOKEN_INVALID")
+        assert payload == {"ok": False, "error": "ACCESS_TOKEN_INVALID"}
+        async with transport(answering(payload, status_code=200)) as c:
+            ability = await tg.check_send_ability("+79267889888", token="t", client=c)
+        assert ability.kind == tg.REFUSED
+        assert ability.error == "ACCESS_TOKEN_INVALID"
+
+    asyncio.run(go())
+
+
 def test_a_vendor_refusal_naming_a_documented_error_is_not_a_decline():
     """`ACCESS_TOKEN_INVALID` is the only error string the vendor documents. Read as a
     decline it would spend the dear rung on every verification and tell nobody."""
