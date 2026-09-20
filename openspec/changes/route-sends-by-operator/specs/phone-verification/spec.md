@@ -242,6 +242,15 @@ remained `read` and `delivered` respectively — it never became `revoked`. The 
 therefore reports that the request was accepted, not that anything was withdrawn, and the two
 are indistinguishable through the API.
 
+🟢 **And the vendor says why, which a re-reading of its reference on 20.09.2026 established:**
+*"this does not guarantee that the message will be deleted. For example, if the message has
+already been delivered or read, it will not be removed."* So the inertness is documented
+behaviour rather than a defect, and the bound on it is now known: **what was never tried is
+revoking a message that had not yet been delivered.** All three trials — two free, one billed
+— revoked something already delivered or read, which is precisely the case the vendor excludes.
+The requirement stands unchanged, because a guarantee that holds only when delivery has not
+happened is no guarantee at the moment we would want one.
+
 ⚠️ Those two trials ran on an unfunded account using free messages to the account holder's own
 number, and this paragraph used to say that a **paid** message to a third party might revoke
 differently. **It does, and the sample that decided it was taken 20.09.2026.** Revoking a
@@ -272,7 +281,9 @@ rates is comparing two different measurements.
 
 [normative · live samples captured 18.09.2026 and 20.09.2026 in `captures/`. 18.09, free, to the account holder's own number: delivery `sent`→`delivered` in one second, `read` at 71 s; the number echoed back without its leading `+`; `verification_status`, `is_refunded` and `remaining_balance` absent from responses that do not need them; revocation inert. ⚠️ The 18.09 reading of `request_cost: 0` with `remaining_balance: 0` is superseded — the zero was the account's real balance, not evidence about the field. 20.09, billed, to a third party (`probe-1.7-*`): the subscriber is reachable, the decline is spelled `PHONE_NUMBER_NOT_AVAILABLE`, revocation sets `verification_status: expired` while leaving `delivery_status` at `delivered`, and one `updated_at` serves two delivery statuses. · conf: high for both paths on everything the samples touch; the refund remains untouched by any sample]
 
-⚠️ **One thing the 20.09 sample unsettles rather than settles, and it is left open deliberately.** Expiry arrived under `verification_status`, not under `delivery_status` — so the scenario below that watches `delivery_status.status` for `expired` may be watching the wrong field. Whether the vendor's delivery vocabulary carries `expired` at all is a question for its reference, which has not been re-read against this; a gateway that watched only `delivery_status` would have missed this one, and that is a fact about the sample rather than a settled fact about the vendor. Task 1.13 carries it.
+🔴 **Two different fields say `expired`, they mean different things, and one of them is about money.** Settled 20.09.2026 by re-reading the vendor's reference against the sample. `DeliveryStatus.status` carries `sent`, `delivered`, `read`, `expired` and `revoked`; `VerificationStatus.status` carries `code_valid`, `code_invalid`, `code_max_attempts_exceeded` and `expired`. So the scenario below is watching the right field for what it claims — **delivery** expiry, which is the one the refund is tied to — and the sample's `verification_status: expired` beside a `delivery_status` of `delivered` is coherent rather than contradictory: the message arrived, and the revocation closed the code window.
+
+The gateway SHALL therefore never record or act on a bare `expired`: every reading of that word SHALL name which of the two fields it came from. Delivery expiry means the fee comes back and nothing reached the subscriber; verification expiry means the code window is shut and says nothing about money or delivery. A ledger that confused them would refund a verification that was delivered, or charge for one that never arrived.
 
 #### Scenario: The message is delivered
 - **WHEN** the vendor reports `delivery_status.status` of `delivered`
@@ -460,6 +471,16 @@ exactly when nothing is being verified.
 **There are two balances now, and the floor SHALL be held against each of them separately.** A
 single floor over a sum would be satisfied by one funded account while the other is empty, and
 the empty one is a rung of the same ladder. Every alert SHALL name which vendor it is about.
+
+🔴 **A refund is tied to non-delivery and to nothing else, which makes it unobservable on
+demand.** The vendor is explicit both ways: *"If a message is not delivered within the
+specified `ttl`, the request fee will be refunded automatically"* and *"If a message is
+successfully delivered within the `ttl`, it will not be refunded."* A `checkSendAbility` that
+confirms is a statement that the subscriber is reachable, and every message we have ever sent
+was delivered within a second. So the refund path cannot be exercised by a probe: it is
+reached only by a subscriber who was confirmed reachable and then was not reached. Nothing
+here may be built on having seen one, and the ledger SHALL treat a refund as an event that
+arrives late and rarely rather than as a step in the ordinary sequence.
 
 **A refund SHALL lower the recorded spend, not be left as an asterisk.** Telegram reports
 `is_refunded` on the request it refunded, and a verification whose fee came back cost nothing;

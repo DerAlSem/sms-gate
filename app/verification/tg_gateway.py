@@ -34,6 +34,11 @@ line of code here:
   narrower fact. The function here is called `request_revocation` and returns whether
   the request was **accepted**, and nothing in this capability may rest on it having
   removed anything from anyone's screen — which remains unobserved on both paths.
+  The reference, re-read 20.09.2026, says why: revocation "does not guarantee that the
+  message will be deleted... if the message has already been delivered or read, it
+  will not be removed". All three trials revoked something already delivered, which is
+  the case the vendor excludes; revoking a still-undelivered message was never tried.
+  A guarantee that expires on delivery is not one this capability could lean on.
 
 Three vendor methods are reachable from here and a fourth deliberately is not.
 `checkVerificationStatus` matches a code and counts attempts on a counter of the
