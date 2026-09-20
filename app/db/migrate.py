@@ -350,6 +350,55 @@ async def run_migrations() -> None:
         CREATE INDEX IF NOT EXISTS idx_verification_rungs_v
             ON verification_rungs(verification_id);
 
+        -- What the routing rule costs, one row per item it refused. A rule set during an
+        -- outage outlives the outage: when the operator starts accepting traffic again
+        -- the rule stays in force, the applications that do not send codes stay refused,
+        -- and without this there is nothing on any screen to say so.
+        --
+        -- A row per refusal rather than a running total, because the question the count
+        -- exists to answer is not only "how many" but "how many since this entry came
+        -- into force", and a total cannot be asked that afterwards. At the measured rate
+        -- — about seventy a month — a row each costs nothing worth saving.
+        --
+        -- No retention sweep, deliberately, and it is the one table here without one:
+        -- the row holds an operator, an application and a route and no subscriber data,
+        -- so nothing here expires for privacy. Pruning it for size would answer "this
+        -- rule has cost nothing lately" about a rule that has been refusing traffic for
+        -- a year, which is the question the table exists to answer correctly.
+        --
+        -- `operator_key` is the folded spelling (NFKC + casefold, done in Python — the
+        -- shipped SQLite's `upper()`/`LIKE` are ASCII-only and leave Cyrillic untouched),
+        -- and `operator` is the spelling as it was seen. Grouping happens on the key, so
+        -- МегаФон and МЕГАФОН are one operator and not two half-sized counts.
+        CREATE TABLE IF NOT EXISTS route_refusals (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            operator_key TEXT NOT NULL,
+            operator     TEXT NOT NULL,
+            app_id       TEXT NOT NULL,
+            route        TEXT NOT NULL,
+            refused_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_route_refusals_op
+            ON route_refusals(operator_key, refused_at);
+
+        -- Since when each entry of the routing rule has been in force, so that a rule
+        -- nobody has revisited can say so. Reconciled against the rule on every review
+        -- tick rather than written by a save hook: a rule can change by paths that never
+        -- pass through the console — a restored database, a seeded environment, another
+        -- process — and a record kept only by the console would date those to never.
+        --
+        -- `reviewed_at` is when the operator was last told this entry is stale, not when
+        -- a human looked at it. Nothing here can know the second one; what it buys is
+        -- that a stale rule is reported once per review period instead of once per tick.
+        CREATE TABLE IF NOT EXISTS route_rule_entries (
+            operator_key   TEXT PRIMARY KEY,
+            operator       TEXT NOT NULL,
+            routes         TEXT NOT NULL,
+            in_force_since TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at    TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS notify_refs (
             message_id  INTEGER PRIMARY KEY,
             phone       TEXT NOT NULL,

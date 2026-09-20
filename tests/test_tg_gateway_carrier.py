@@ -270,7 +270,7 @@ def test_a_send_that_fails_after_the_fee_stops_the_ladder_rather_than_advancing(
             return ladder.Attempt(outcome=ladder.CARRIED)
 
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: tg_gateway_carrier_for(vid), FLASH_CALL: flash},
             bound=5.0)
 
@@ -299,7 +299,7 @@ def test_the_declined_subscriber_reaches_the_call_rung(monkeypatch):
                                   cost=0.8)
 
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: tg_gateway_carrier_for(vid), FLASH_CALL: flash},
             bound=5.0)
 

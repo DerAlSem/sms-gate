@@ -190,7 +190,7 @@ def test_an_unentitled_application_contacts_no_vendor_and_records_no_rung():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(gates.entitlement_gate("app1"),),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
@@ -212,7 +212,7 @@ def test_the_refusal_is_not_reported_as_a_vendor_failure_and_sends_nothing_by_mo
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(gates.entitlement_gate("app1"),),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 

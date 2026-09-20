@@ -405,11 +405,15 @@ async def admin_stats(
     by_bucket: dict[str, dict[str, int]] = {}
     for row in buckets:
         by_bucket.setdefault(row["bucket"], {})[row["status"]] = int(row["n"])
+    from app.verification import refusals as route_refusals
     return render(
         "stats.html",
         request,
         {
             "counts": counts,
+            "refusals": await route_refusals.counts(period=period),
+            "rule_entries": await route_refusals.rule_entries(),
+            "review_days": store.operator_route_review_days,
             "inbound_total": await queries.inbound_count(period),
             "by_bucket": sorted(by_bucket.items(), reverse=True),
             "period": period,

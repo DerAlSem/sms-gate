@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-20 13:25+0300\n"
+"POT-Creation-Date: 2026-09-20 14:25+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -101,7 +101,9 @@ msgstr "Активировать"
 msgid ""
 "Allow %(app_id)s to spend money on paid verifications? Calls and Telegram"
 " are billed to our own prepaid accounts."
-msgstr "Разрешить приложению %(app_id)s тратить деньги на платные подтверждения? Звонок и Telegram оплачиваются с наших счетов."
+msgstr ""
+"Разрешить приложению %(app_id)s тратить деньги на платные подтверждения? "
+"Звонок и Telegram оплачиваются с наших счетов."
 
 #: app/admin/templates/apps.html:45
 msgid "Revoke spending"
@@ -246,6 +248,7 @@ msgid "%(count)s records"
 msgstr "%(count)s записей"
 
 #: app/admin/templates/messages.html:53 app/admin/templates/ranges.html:9
+#: app/admin/templates/stats.html:61 app/admin/templates/stats.html:91
 msgid "Operator"
 msgstr "Оператор"
 
@@ -419,6 +422,50 @@ msgstr "Всего"
 #: app/admin/templates/stats.html:46
 msgid "No data"
 msgstr "Нет данных"
+
+#: app/admin/templates/stats.html:55
+msgid "Refused for want of a route"
+msgstr "Отказы: нет пригодного маршрута"
+
+#: app/admin/templates/stats.html:62
+msgid "Refused"
+msgstr "Отказов"
+
+#: app/admin/templates/stats.html:63
+msgid "By application"
+msgstr "По приложениям"
+
+#: app/admin/templates/stats.html:64
+msgid "By route"
+msgstr "По маршрутам"
+
+#: app/admin/templates/stats.html:65
+msgid "Last"
+msgstr "Последний отказ"
+
+#: app/admin/templates/stats.html:78
+msgid "Nothing has been refused for want of a route"
+msgstr "Отказов по этой причине ещё не было"
+
+#: app/admin/templates/stats.html:85
+msgid "The rule in force"
+msgstr "Правило в силе"
+
+#: app/admin/templates/stats.html:92
+msgid "Routes"
+msgstr "Маршруты"
+
+#: app/admin/templates/stats.html:93
+msgid "In force since"
+msgstr "В силе с"
+
+#: app/admin/templates/stats.html:94
+msgid "Days"
+msgstr "Дней в силе"
+
+#: app/admin/templates/stats.html:106
+msgid "No entry has been seen in force yet"
+msgstr "Ни одной записи в силе ещё не было"
 
 #~ msgid "Dialogs"
 #~ msgstr "Диалоги"

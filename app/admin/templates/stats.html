@@ -48,4 +48,65 @@
   </tbody>
 </table>
 </div>
+{# What the routing rule costs. Here rather than on a page of its own: this is the
+   counters page, and the question "is this rule still worth its traffic" is asked with
+   the same period control as every other count on it. #}
+<h3 style="margin-top: 24px; font-size: 14px; text-transform: uppercase; color: #6b7280;">
+  {% trans %}Refused for want of a route{% endtrans %}
+</h3>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Operator{% endtrans %}</th>
+      <th>{% trans %}Refused{% endtrans %}</th>
+      <th>{% trans %}By application{% endtrans %}</th>
+      <th>{% trans %}By route{% endtrans %}</th>
+      <th>{% trans %}Last{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in refusals %}
+    <tr>
+      <td>{{ r.operator }}</td>
+      <td><strong>{{ r.total }}</strong></td>
+      <td>{% for app_id, n in r.by_app.items() %}<code>{{ app_id }}</code> {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      <td>{% for route, n in r.by_route.items() %}<code>{{ route }}</code> {{ n }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+      <td class="muted">{{ r.last_at | msk }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5" class="muted">{% trans %}Nothing has been refused for want of a route{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h3 style="margin-top: 24px; font-size: 14px; text-transform: uppercase; color: #6b7280;">
+  {% trans %}The rule in force{% endtrans %}
+</h3>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>{% trans %}Operator{% endtrans %}</th>
+      <th>{% trans %}Routes{% endtrans %}</th>
+      <th>{% trans %}In force since{% endtrans %}</th>
+      <th>{% trans %}Days{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for e in rule_entries %}
+    <tr>
+      <td>{{ e.operator }}</td>
+      <td><code>{{ e.routes }}</code></td>
+      <td class="muted">{{ e.in_force_since | msk }}</td>
+      <td {% if e.days >= review_days %}style="color:#b91c1c;"{% endif %}>{{ e.days }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4" class="muted">{% trans %}No entry has been seen in force yet{% endtrans %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
 {% endblock %}

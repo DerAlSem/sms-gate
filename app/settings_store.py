@@ -239,6 +239,18 @@ SETTINGS_SPEC: list[Spec] = [
          '[{"app_id":"sp_app","template":"SokolParking: {code}"}] — exactly one '
          "{code} per template, and an application with no entry is refused an "
          "sms_out-carried code rather than given wording of the gateway's own"),
+    # How long an entry of the routing rule may stay in force before the gateway says it
+    # has not been revisited. The rule's own requirement asks for a way to observe
+    # recovery, and this is the half that costs nothing: the other — a rate-bounded probe
+    # send over the withdrawn route — puts a real message in front of a real person.
+    #
+    # Thirty days because the event the rule exists for is an operator's withdrawal, and
+    # those are settled or escalated on the scale of a month, not of a week. `posint`
+    # because zero would report every entry on every tick from the moment it was written,
+    # which is the shape that teaches an operator to ignore the channel.
+    Spec("operator_route_review_days", "posint", 30, "Routing", False,
+         "Report a routing-rule entry that has been in force this many days without "
+         "being revisited — a rule set during an outage outlives the outage"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93

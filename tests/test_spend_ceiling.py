@@ -254,7 +254,7 @@ def test_the_ceiling_refuses_before_any_rung_is_contacted():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(gates.ceiling_gate(),),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
@@ -278,7 +278,7 @@ def test_the_refusal_sends_nothing_over_the_modem_instead():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(gates.ceiling_gate(),),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
@@ -308,7 +308,7 @@ def test_the_assembled_gates_run_the_entitlement_and_the_ceiling_before_any_rung
             vid = await queries.create_verification(app_id, PHONE, code="4321",
                                                     ttl_seconds=300)
             return await ladder.walk(
-                vid, app_id=app_id, phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+                vid, app_id=app_id, operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
                 gates=gates.for_paid_ladder(app_id, PHONE),
                 carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
@@ -339,7 +339,7 @@ def test_the_assembled_gates_let_an_entitled_application_through():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=gates.for_paid_ladder("app1", PHONE),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
@@ -361,7 +361,7 @@ def test_the_assembled_gates_still_carry_the_per_number_limits():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=gates.for_paid_ladder("app1", PHONE),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 

@@ -101,14 +101,50 @@ rather than on code.
       `send_verification_message` have **no production caller** — the ladder that drives
       them is 4.16 and the route chooser, and neither exists yet. Everything downstream
       of a message the vendor already took is live; nothing yet sends one.
-- [ ] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
+- [x] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
+      Built 20.09.2026 as `app/verification/refusals.py` plus the table
+      `route_refusals`: a row per refusal, not a running total, because the
+      question is also "how many **since this entry came into force**" and a
+      total cannot be asked that afterwards. At seventy a month a row each costs
+      nothing. **In the database, not in the process** — the rule is reviewed on a
+      scale of months and this gateway is deployed on a scale of days.
+      Grouped on the folded operator name in Python: the two spellings of МегаФон
+      counted apart make the rule look half as expensive as it is, and this is the
+      one direction that matters. Shown at `/admin/stats` under the same period
+      control as the other counters — the counters page, not a new surface.
+      ⚠️ **Counted is not produced.** The only caller is `ladder.walk`, which has
+      no production caller of its own. The producer of the measured seventy a
+      month is the send-path refusal, task 4.6, and it calls `record` the same way.
+- [x] 4.18a Implement the way to observe recovery — the requirement carried a SHALL
+      and no task at all until 20.09.2026, and the owner chose the alert over the
+      probe send: the probe puts a real message in front of a real person.
+      `refusals.review_step` reconciles what is in force and reports an entry that
+      has outlived `operator_route_review_days` (30), once per period, naming what
+      it has cost per application. Hourly from `main.py` as the non-essential
+      `routing-review` loop. Reconciled on the tick rather than by a save hook: a
+      rule can change by paths that never pass through the console, and a record
+      kept only by the console dates those to never.
+      🔴 **This is the first thing on this branch that executes in production.**
+      It reads the rule and writes its own table; after thirty days it raises one
+      alert per operator entry.
 - [ ] 4.19 Update `docs/` with the two paid rungs: what each costs, how to change the rule **and its order**, how to top up each of the two balances, how to tell from a verification which rung carried it and what it cost, which application is entitled to spend, and what to do when МегаФон recovers
 - [ ] 4.20 Test: a verification belonging to one application cannot be read, checked or exhausted by another — by id, with a valid token
 - [ ] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
 - [ ] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
 - [ ] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
 - [x] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
-- [ ] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
+- [x] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
+      🔴 **The handoff sent the previous session at the wrong alert.** It named
+      `dedup_extra="absent:{route}"` in `ladder._attempt`, which belongs to a
+      different requirement — a route nothing is configured to carry. This task's
+      own scenario says "a **message is refused for want of a usable route**", and
+      no such refusal existed anywhere in the code: `rule.route_for` has no caller
+      in the sending path, and `ladder.walk`'s rule-refusal branch wrote no log
+      line and raised no alert. So 4.18 and 4.25 turned out to be one mechanism
+      that was missing, not a guard on one that was there.
+      The guard drives the **real** `notify` over a fake notifier rather than
+      patching `notify` itself: the toggle lives inside `notify`, and patching it
+      would step over the half of the task that says "on stock settings".
 - [x] 4.26 Test: the spend ceiling refuses a paid verification with its own reason, places no vendor call, and is not reported to the application as a vendor failure
       `gates.ceiling_gate` in `app/verification/gates.py`, counted over the rungs of
       both paid routes in rolling windows. The test asserts on the carrier not being

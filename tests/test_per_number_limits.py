@@ -176,7 +176,7 @@ def test_a_number_over_its_limit_reaches_no_rung_at_all():
         vid = await queries.create_verification("app1", PHONE, code="4321",
                                                 ttl_seconds=300)
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(limits.per_number_gate(PHONE),),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 

@@ -80,8 +80,8 @@ def test_the_order_of_the_rungs_comes_from_the_rule_and_not_from_the_code():
             seen = []
             carriers = {r: _noting(r, seen, ladder.DECLINED)
                         for r in (TG_GATEWAY, FLASH_CALL)}
-            await ladder.walk(await _open(), app_id="app1", phone=PHONE,
-                              rungs=rule.route_for("МегаФон"), gates=(),
+            await ladder.walk(await _open(), app_id="app1", operator="МегаФон",
+                              phone=PHONE, rungs=rule.route_for("МегаФон"), gates=(),
                               carriers=carriers, bound=5.0)
             order.append(tuple(seen))
 
@@ -122,7 +122,7 @@ def test_a_declining_rung_advances_the_ladder_and_is_recorded_against_that_rung(
         seen = []
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, seen, ladder.DECLINED,
                                           reason="PHONE_NUMBER_NOT_AVAILABLE"),
                       FLASH_CALL: _noting(FLASH_CALL, seen, ladder.CARRIED)},
@@ -146,7 +146,7 @@ def test_a_rung_that_does_not_answer_is_counted_as_possibly_charged_not_as_a_dec
     async def body():
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, [], ladder.UNANSWERED),
                       FLASH_CALL: _noting(FLASH_CALL, [], ladder.CARRIED)},
             bound=5.0)
@@ -165,7 +165,7 @@ def test_a_vendor_refusing_us_is_not_counted_as_a_decline_against_the_rung():
     async def body():
         vid = await _open()
         await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, [], ladder.REFUSED,
                                           reason="ACCESS_TOKEN_INVALID"),
                       FLASH_CALL: _noting(FLASH_CALL, [], ladder.CARRIED)},
@@ -186,7 +186,7 @@ def test_a_gate_that_refuses_contacts_no_rung_at_all():
         asked = []
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
             gates=(_gate(""), _gate("spend_ceiling_reached"), _gate("")),
             carriers={TG_GATEWAY: _carrier(ladder.CARRIED, asked=asked),
                       FLASH_CALL: _carrier(ladder.CARRIED, asked=asked)},
@@ -204,7 +204,7 @@ def test_a_refusal_by_a_gate_is_not_reported_as_a_vendor_failure():
     async def body():
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY], carriers={},
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY], carriers={},
             gates=(_gate("entitlement_off"),), bound=5.0)
         assert walk.refused_by == "entitlement_off"
         assert walk.attempts == ()
@@ -217,7 +217,7 @@ def test_a_rule_that_refuses_contacts_nothing():
         asked = []
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[rule.REFUSE], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[rule.REFUSE], gates=(),
             carriers={TG_GATEWAY: _carrier(ladder.CARRIED, asked=asked)}, bound=5.0)
         assert asked == []
         assert walk.refused_by == "rule"
@@ -244,7 +244,7 @@ def test_one_bound_covers_the_whole_ladder_rather_than_each_rung():
 
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: slow, FLASH_CALL: quick}, bound=0.4)
 
         assert walk.carried_by == FLASH_CALL
@@ -265,7 +265,7 @@ def test_a_ladder_out_of_time_does_not_contact_the_next_rung():
 
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: eats_the_bound,
                       FLASH_CALL: _carrier(ladder.CARRIED, asked=asked)},
             bound=0.2)
@@ -291,7 +291,7 @@ def test_a_rung_with_nothing_to_carry_it_is_not_attempted_alerts_and_the_ladder_
 
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={FLASH_CALL: _noting(FLASH_CALL, [], ladder.CARRIED)}, bound=5.0)
 
         assert walk.carried_by == FLASH_CALL
@@ -320,7 +320,7 @@ def test_every_rung_is_recorded_before_it_is_contacted():
             assert rung_id == rows[-1]["id"]
             return ladder.Attempt(outcome=ladder.CARRIED)
 
-        await ladder.walk(vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY], gates=(),
+        await ladder.walk(vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY], gates=(),
                           carriers={TG_GATEWAY: look}, bound=5.0)
 
         assert seen_rows[0][0][0] == TG_GATEWAY
@@ -336,7 +336,7 @@ def test_the_verification_names_the_rung_that_carried_it_not_the_first_tried():
     async def body():
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, [], ladder.DECLINED),
                       FLASH_CALL: _noting(FLASH_CALL, [], ladder.CARRIED)}, bound=5.0)
 
@@ -354,7 +354,7 @@ def test_a_ladder_every_rung_of_which_declined_fails_the_verification_with_that_
     async def body():
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, [], ladder.DECLINED),
                       FLASH_CALL: _noting(FLASH_CALL, [], ladder.DECLINED)}, bound=5.0)
 
@@ -372,7 +372,7 @@ def test_a_last_rung_that_did_not_answer_leaves_the_verification_in_flight():
     async def body():
         vid = await _open()
         walk = await ladder.walk(
-            vid, app_id="app1", phone=PHONE, rungs=[TG_GATEWAY], gates=(),
+            vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY], gates=(),
             carriers={TG_GATEWAY: _noting(TG_GATEWAY, [], ladder.UNANSWERED)}, bound=5.0)
 
         row = await queries.get_verification(vid, "app1")

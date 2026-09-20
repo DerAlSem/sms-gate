@@ -593,7 +593,13 @@ the rule will still be in force, and the applications that do not send codes wil
 refused — with nothing on any screen to say so. A count is the difference between a rule that
 is reviewed and a rule that is forgotten.
 
-[unbacked]
+[backed · `app/verification/refusals.py`, counting rows of `route_refusals` grouped on the
+folded operator name (`rule.fold` — NFKC + casefold, in Python, never in SQL), reachable at
+`/admin/stats` beside the message counters and under the same period control. Guarded by
+`tests/test_route_refusals.py` and by thirteen mutations in `bite-refusals.sh`. ⚠️ **Counted is
+not produced:** the only caller today is `ladder.walk`, which has no production caller of its
+own — the send-path refusal that produces the measured seventy a month is task 4.6 and calls
+`refusals.record` the same way]
 
 The count SHALL be answerable per application as well as per operator: it decides whether to
 call the developer of a particular application or to drop the rule, and "seventy refusals"
@@ -607,12 +613,33 @@ observe recovery: either a rate-bounded probe send to that operator over the `sm
 counted separately, or an alert once a rule entry has been in force longer than a configured
 review period.
 
+**The entries that name no operator are outside that report.** `*` and `?` are the gateway's
+baseline rather than a diversion — they answer for an operator with no entry and for one that
+could not be resolved — and a rule holding only them has diverted nothing to review. Reporting
+them every review period would teach an operator to ignore the channel that also carries the
+entries that did divert. Either set to `refuse` remains audible: every item it refuses is
+counted and alerted as a refusal.
+
+**When an entry's routes change, its review period SHALL start again**, because the decision
+was revisited and that is what the period measures. An entry removed from the rule SHALL stop
+being reported: a rule that no longer names an operator is not one anybody needs reminding
+about.
+
 A refusal SHALL reach the operator on the configuration the gateway ships with. It SHALL NOT
 depend on a notification toggle that is off by default — `notify_send_errors` is such a toggle
 — and it SHALL be deduplicated on the operator and the route rather than raised once per
 refused message, since the measured traffic is about seventy refusals a month and rising.
 
-[unbacked · the default-off toggle: app/settings_store.py, notify_send_errors]
+[backed · `refusals.record` raises it on the `routing` category, which `notify_routing_errors`
+carries and which ships **on** — `notify_send_errors` is untouched by this path — with
+`dedup_extra=f"refused:{folded operator}:{route}"`. The review report is `refusals.review_step`,
+hourly from `main.py` as the non-essential `routing-review` loop, bounded by the
+`operator_route_review_days` setting (30) and raised at most once per period per operator.
+Guarded by `tests/test_route_refusals.py`, which drives the real `notify` over a fake notifier
+so the toggle is exercised rather than stepped over, and by the mutations above — the alert
+moved to the default-off toggle, the dedup key losing the route, losing the operator, and
+dropped entirely; the review reported on every tick; the baseline entries reported; and the
+review period hard-coded]
 
 #### Scenario: Refusals accumulate against an operator
 - **WHEN** three applications are refused for one operator over a day
@@ -624,7 +651,15 @@ refused message, since the measured traffic is about seventy refusals a month an
 
 #### Scenario: A rule outlives the outage that justified it
 - **WHEN** an operator's entry has been in force longer than the configured review period
-- **THEN** the operator is alerted that the rule is still in force and has not been reviewed
+- **THEN** the operator is alerted that the rule is still in force and has not been reviewed, once per period rather than once per check, and the alert names what the entry has cost since it came into force
+
+#### Scenario: An entry that was revisited
+- **WHEN** an entry's routes are rewritten
+- **THEN** its review period starts again, and it is not reported until the new period has passed
+
+#### Scenario: The rule holds only its baseline entries
+- **WHEN** the rule holds `*` and `?` and no operator entry, for longer than the review period
+- **THEN** nothing is reported, because neither entry diverts anything to review
 
 #### Scenario: The refusal alert arrives on the shipped configuration
 - **WHEN** a message is refused for want of a usable route on a gateway whose settings are untouched

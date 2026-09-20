@@ -1,4 +1,9 @@
-# English is the msgid language; real translations live in ru/.
+# Translations template for PROJECT.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+#, fuzzy
 msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
@@ -6,9 +11,7 @@ msgstr ""
 "POT-Creation-Date: 2026-09-20 14:25+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: en\n"
-"Language-Team: en <LL@li.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -274,7 +277,7 @@ msgstr ""
 #: app/admin/templates/messages.html:81
 #, python-format
 msgid "retry %(n)s"
-msgstr "retry %(n)s"
+msgstr ""
 
 #: app/admin/templates/messages.html:96
 #, python-format
@@ -461,37 +464,4 @@ msgstr ""
 #: app/admin/templates/stats.html:106
 msgid "No entry has been seen in force yet"
 msgstr ""
-
-#~ msgid "Dialogs"
-#~ msgstr ""
-
-#~ msgid "All dialogs"
-#~ msgstr ""
-
-#~ msgid "No messages"
-#~ msgstr ""
-
-#~ msgid "Last activity"
-#~ msgstr ""
-
-#~ msgid "open →"
-#~ msgstr ""
-
-#~ msgid "No dialogs"
-#~ msgstr ""
-
-#~ msgid "Received"
-#~ msgstr ""
-
-#~ msgid "dialog →"
-#~ msgstr ""
-
-#~ msgid "Last 14 days"
-#~ msgstr ""
-
-#~ msgid "Day"
-#~ msgstr ""
-
-#~ msgid "Let this app spend money on paid verifications?"
-#~ msgstr ""
 

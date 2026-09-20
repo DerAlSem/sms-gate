@@ -14,6 +14,7 @@ from app.modem.manager import ModemManager
 from app.alerting import setup_telegram_alerts
 from app.settings_store import store, seed_from_env
 from app.supervision import supervise
+from app.verification import refusals as route_refusals
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,6 +73,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         # on an answer that is never computed.
         ("verification", modem_manager.verification_loop(), True),
         ("retry", modem_manager.retry_loop(), True),
+        # Not the modem's, but supervised beside it: a rule set during an outage outlives
+        # the outage, and this is the only thing that will ever say so. Non-essential —
+        # losing it costs the gateway nothing it sends or receives.
+        ("routing-review", route_refusals.review_loop(), False),
         ("keepalive", modem_manager.keepalive_loop(), False),
         ("parts-flush", modem_manager.parts_flush_loop(), False),
     ]

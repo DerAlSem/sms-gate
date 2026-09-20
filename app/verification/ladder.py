@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Sequence
 
 from app.db import queries
-from app.verification import rule
+from app.verification import refusals, rule
 
 logger = logging.getLogger(__name__)
 
@@ -105,14 +105,24 @@ async def walk(
     verification_id: int,
     *,
     app_id: str,
+    operator: str | None,
     phone: str,
     rungs: Sequence[str],
     gates: Sequence[Gate],
     carriers: dict[str, Carrier],
     bound: float,
 ) -> Walk:
-    """Walk this verification down its rungs and stop at the first that carries it."""
+    """Walk this verification down its rungs and stop at the first that carries it.
+
+    `operator` is required rather than defaulted, and for the reason `gates` is: the
+    caller resolved it in order to read the rule at all, and a default would file every
+    refusal under "could not be resolved" — silently, and in the one number the rule is
+    reviewed by.
+    """
     if rule.refuses(list(rungs)):
+        # Counted, not just returned. A rule set during an outage outlives the outage,
+        # and this is the number that says what it is costing while it does.
+        await refusals.record(operator=operator, app_id=app_id, route=rule.REFUSE)
         return Walk(refused_by="rule",
                     reason="the routing rule offers no way out for this number")
 
