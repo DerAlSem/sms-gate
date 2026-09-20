@@ -109,7 +109,11 @@ rather than on code.
 - [ ] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
 - [x] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
 - [ ] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
-- [ ] 4.26 Test: the spend ceiling refuses a paid verification with its own reason, places no vendor call, and is not reported to the application as a vendor failure
+- [x] 4.26 Test: the spend ceiling refuses a paid verification with its own reason, places no vendor call, and is not reported to the application as a vendor failure
+      `gates.ceiling_gate` in `app/verification/gates.py`, counted over the rungs of
+      both paid routes in rolling windows. The test asserts on the carrier not being
+      called rather than on the outcome, and on no rung row existing: a refusal of ours
+      inside the vendors' count would be our refusal reported as their failure.
 - [ ] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
 - [ ] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
 - [ ] 4.29 Test: two concurrent checks confirm at most once and consume at most one attempt
@@ -127,11 +131,14 @@ rather than on code.
       **before** the send, and the send is made exactly once.
 - [x] 4.35 Test: the same `request_id` is never sent twice — the second send is not attempted, because the vendor answers it with an error rather than a second message
 - [x] 4.36 Test: a `checkSendAbility` that does not answer within the bound advances to `flash_call` **and** is counted as possibly-charged spend attributable to no verification. **This test fails on any implementation that treats a timeout as a decline**, which is the natural way to write it and the way that hides money
-- [ ] 4.37 Test: the spend ceiling and the application's entitlement are evaluated **before** any rung is contacted — a refusal by either makes no ability check at all. Assert on the vendor client not being called, not on the outcome
-      The driver's half is built and guarded: `gates` is a required parameter of
-      `ladder.walk`, every gate runs before the first rung is contacted, and the test
-      asserts on the carrier not being called. The two gates this task names do not
-      exist yet (4.26, 4.45), so the task stays open until they do and are passed in.
+- [x] 4.37 Test: the spend ceiling and the application's entitlement are evaluated **before** any rung is contacted — a refusal by either makes no ability check at all. Assert on the vendor client not being called, not on the outcome
+      Both gates now exist and are passed in by `gates.for_paid_ladder(app_id, phone)`,
+      which assembles all three — entitlement, ceiling, per-number limits — in one
+      place, so that a door added later cannot be a door that forgot one. Three
+      mutations guard the assembly by dropping each gate in turn.
+      ⚠️ **Assembled is not reached.** `for_paid_ladder` has no production caller: the
+      door that walks the paid ladder belongs to `verify-by-inbound-contact` and does
+      not exist yet. The same caveat as 4.17a, and for the same reason.
 - [ ] 4.38 Test: one acceptance bound covers the whole ladder, not each rung — a slow first rung does not double the time the application waits, and the response still names a method rather than pending
       The ladder's half is built and guarded (`tests/test_ladder_walk.py`). The
       response naming a method rather than pending is the door's half and is not built.
@@ -151,8 +158,17 @@ rather than on code.
 
 ### Entitlement, template, credentials
 
-- [ ] 4.45 Test: an application whose entitlement is off is refused a paid verification with a reason naming the entitlement, no vendor is contacted, nothing goes over the modem instead, and the refusal is not reported as a vendor failure
-- [ ] 4.46 Test: a newly issued token is refused a paid verification — the entitlement defaults to off, and this is the positive control for 4.45
+- [x] 4.45 Test: an application whose entitlement is off is refused a paid verification with a reason naming the entitlement, no vendor is contacted, nothing goes over the modem instead, and the refusal is not reported as a vendor failure
+      A schema change rather than a setting: `apps.may_spend`, read per call so the
+      switch needs no restart, operated at `POST /admin/apps/entitlement`. Being active
+      stays the stronger switch — a deactivated application does not spend whatever its
+      entitlement says. "Nothing over the modem instead" is guarded by counting the
+      `messages` rows after the refusal, not by reading the reason string.
+- [x] 4.46 Test: a newly issued token is refused a paid verification — the entitlement defaults to off, and this is the positive control for 4.45
+      And the half a schema change gets wrong silently: a second test builds `apps` in
+      its pre-change shape, populates it, then migrates, and asserts the row that
+      predates the column comes out switched off. A default that reached only new rows
+      would leave the guarantee empty on exactly the installations that have the defect.
 - [ ] 4.47 Test: an application with no template is refused **at accept** for a `sms_out`-routed verification, and is **not** refused for a paid-rung one, because neither paid rung carries text of ours
 - [ ] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
 - [ ] 4.49 Test: a vendor credential written to `.env` for a key that already has a row in `settings` is not used, and the value in `settings` stays in force
@@ -165,9 +181,30 @@ rather than on code.
 
 ### Money across two vendors
 
-- [ ] 4.52 Test: the spend ceiling counts both rungs together — verifications that advance from the first rung to the second reach it even though neither rung reaches it alone
-- [ ] 4.53 Test: the balance floor is held against each vendor separately, and the alert names which vendor it is about
-- [ ] 4.54 Test: a request the vendor reports as refunded lowers the recorded spend for that verification to nothing, rather than keeping the charge with a note beside it
+- [x] 4.52 Test: the spend ceiling counts both rungs together — verifications that advance from the first rung to the second reach it even though neither rung reaches it alone
+      With its control: five on each rung does **not** reach a ceiling of eleven, so it
+      is the count that refuses and not the mixing of two routes. Every attempt counts,
+      including the free ones — an ability check that never answered may have been
+      confirmed and billed without our learning its `request_id`, which is the spend
+      most likely to be invisible.
+- [x] 4.53 Test: the balance floor is held against each vendor separately, and the alert names which vendor it is about
+      `app/verification/balance.py`. 🔴 The floor is never polled: `remaining_balance`
+      is the account's balance only in the answer to a **confirming** ability check,
+      which is the billed call, so the floor is held against what arrives with ordinary
+      traffic. The test drives the carrier through a check reporting 2.5 and a send
+      reporting 9999 and asserts the floor fires on the check's number — a gateway that
+      believed the send would announce that a draining account had refilled itself.
+      A rung with no floor configured is reported as unwatched rather than read as fine.
+      ⚠️ The uCaller floor ships at zero: that rung has no account (1.1) and no observed
+      cost, so any number would be a guess dressed as a setting.
+- [x] 4.54 Test: a request the vendor reports as refunded lowers the recorded spend for that verification to nothing, rather than keeping the charge with a note beside it
+      `record_rung_delivery` zeroes the cost on an affirmative refund; `refunded` keeps
+      the fact and the vendor's own words stay in `reason`. A settled refund is not
+      recharged by a later write, and that rule sits at the write rather than in a note.
+      🔴 Backed by no observation: the refund path cannot be reached by a probe, so the
+      tests drive the recording directly and claim nothing about having seen one.
+      The two-state `refunded` column is untouched — the three-state column is the debt
+      of `verify-by-inbound-contact`, which owns the table.
 - [x] 4.55 Test: the per-number limits are applied to the ladder as a whole, not to the `flash_call` rung alone — a second request inside the window is refused before the Gateway is asked, because the Gateway publishes no limits and silence is not their absence
       The window is rolling rather than a calendar day, and the count is taken
       over the rung attempts of both paid routes.

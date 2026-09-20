@@ -467,6 +467,21 @@ paid verification, and three of the four applications on this gateway never send
 route exists to carry. A default of on would mean that the first mistake in any of them is
 billed rather than logged.
 
+**The default SHALL also apply to every application that already exists when the entitlement
+arrives**, and not only to applications created afterwards. Recorded as a norm because it is
+the half a schema change silently gets wrong: a default written to take effect for new rows
+leaves the guarantee empty on exactly the installations that have the defect, which are the
+ones already running. The change that introduces the entitlement SHALL therefore switch every
+existing application off, and SHALL be reversible by deploying the previous code rather than
+by removing what an operator has since decided — a column dropped on the way back revokes that
+decision silently the next time the newer code is deployed.
+
+**Being active remains the stronger switch.** An application an operator has deactivated SHALL
+NOT spend, whatever its entitlement says. The two answer different questions — whether an
+application may talk to this gateway at all, and whether it may spend money doing so — and a
+deactivated application that went on buying verifications because a second switch was left on
+from before would be the deactivation failing to mean anything.
+
 A refusal for want of the entitlement SHALL place no vendor call and make no ability check,
 SHALL NOT be reported to the application as a vendor failure, and SHALL NOT be quietly carried
 over the `sms_out` route instead — for a МегаФон subscriber that is the route that has been
@@ -480,7 +495,7 @@ changeable without a restart, by the same means as the rule.
 **Owner's decision of 18.09.2026.** It was raised by the critic round of 11.09.2026 as a
 finding left for the owner rather than written as a norm; it is now written as one.
 
-[unbacked · no entitlement concept exists in the model today; token store at app/db/queries.py]
+[backed · `apps.may_spend`, added by `app/db/migrate.py` as an `ALTER` so that its default reaches the rows already there; the gate is `gates.entitlement_gate` in `app/verification/gates.py`, read per call so that no restart is needed; operated at `POST /admin/apps/entitlement`. Guarded by `tests/test_paid_entitlement.py` and `tests/test_admin_apps.py`, including a test that builds the table in its pre-change shape, populates it and then migrates. ⚠️ **Implemented is not reachable**: the gate has no production caller, because the door that walks the paid ladder belongs to `verify-by-inbound-contact` and does not exist yet]
 
 #### Scenario: An application without the entitlement
 - **WHEN** an application whose entitlement is off requests a verification for an operator routed to a paid ladder
@@ -493,6 +508,14 @@ finding left for the owner rather than written as a norm; it is now written as o
 #### Scenario: An entitled application
 - **WHEN** an application whose entitlement is on requests the same verification
 - **THEN** the ladder is attempted normally
+
+#### Scenario: An application that existed before the entitlement did
+- **WHEN** the change that introduces the entitlement is deployed onto an installation whose applications predate it
+- **THEN** every one of them is switched off, and none of them can open a paid verification until an operator grants it
+
+#### Scenario: A deactivated application that still holds the entitlement
+- **WHEN** an application an operator has deactivated requests a paid verification
+- **THEN** it is refused, whatever its entitlement says
 
 ### Requirement: A route that cannot be used fails loudly and does not silently fall back
 
@@ -522,12 +545,30 @@ verifications spend twice the intended amount by advancing from one rung to the 
 is exactly what the ladder does by design. What is being bounded is the bill, and the bill is
 one.
 
+**The ceiling SHALL count every attempt on a paid route, including the ones that turn out to
+cost nothing.** A ceiling counted over confirmed charges would be blind to exactly the
+attempts most likely to have cost money in silence: an ability check that never answered may
+have been confirmed and billed at the vendor without our ever learning its `request_id`, which
+is the one class of spend this design cannot attribute to anything. Counting attempts also
+makes the ceiling decidable before a vendor is contacted, which is what lets it refuse without
+spending.
+
+**Its windows SHALL roll rather than reset on a clock**, for the reason the per-number limits
+do: this database stores naive UTC and both vendors are Russian, and a calendar window read in
+the wrong zone resets early and spends confidently in the gap.
+
+**Its numbers SHALL be settings, and SHALL be set against observed traffic rather than
+chosen.** A ceiling below the busiest hour this gateway has really had stops being a guard
+against a runaway and becomes a refusal of legitimate work — and that failure is the harder of
+the two to attribute, because it presents as a gateway that has quietly stopped verifying
+anyone.
+
 Every alert this requirement raises SHALL name **which** vendor it is about. With one paid
 route "the vendor is out of credit" was unambiguous; with two it is the question the operator
 has to answer before they can act, and answering it by reading a log is the difference between
 a two-minute top-up and an outage.
 
-[unbacked]
+[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1)]
 
 #### Scenario: The vendor rejects our credentials
 - **WHEN** a vendor answers with an authentication error

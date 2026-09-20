@@ -483,6 +483,13 @@ exactly when nothing is being verified.
 single floor over a sum would be satisfied by one funded account while the other is empty, and
 the empty one is a rung of the same ladder. Every alert SHALL name which vendor it is about.
 
+**A paid rung whose floor is not configured SHALL be reported as unwatched rather than read as
+satisfied.** An absent or zero floor is how a floor stops existing without anybody deciding
+that it should, and a floor that never fires is indistinguishable from a vendor that never
+runs out — the same silence, from opposite causes. The failure this guards is the ordinary
+one: a third paid vendor is added, its adapter works, and nobody notices that its balance is
+watched by nothing until the day it empties.
+
 🔴 **A refund is tied to non-delivery and to nothing else, which makes it unobservable on
 demand.** The vendor is explicit both ways: *"If a message is not delivered within the
 specified `ttl`, the request fee will be refunded automatically"* and *"If a message is
@@ -496,7 +503,17 @@ arrives late and rarely rather than as a step in the ordinary sequence.
 **A refund SHALL lower the recorded spend, not be left as an asterisk.** Telegram reports
 `is_refunded` on the request it refunded, and a verification whose fee came back cost nothing;
 a ledger that records the charge and ignores the refund overstates the bill in the one
-direction that makes the route look worse than it is, and it does so silently.
+direction that makes the route look worse than it is, and it does so silently — every reader
+would have to remember to subtract, and the first one who forgets reports a number that never
+existed. What the vendor said SHALL stay recorded in words beside it, because the vendor's own
+account of the fee is evidence and our arithmetic is not.
+
+**A refund once recorded SHALL NOT be undone by a later write.** The spend of a refunded
+request is settled, and nothing in the ordinary sequence has cause to put a charge back on it:
+the fee is recorded between the ability check and the send, and the refund arrives with a
+callback long afterwards. The rule belongs at the write rather than in a comment, because a
+resurrected charge is a bill with no explanation attached — and the refund is exactly the
+event rare enough that nobody would think to look for one.
 
 The gateway SHALL also record, separately from both, what it spent **without getting anything
 for it**: an ability check that did not answer within the bound may have been confirmed and
@@ -504,7 +521,7 @@ charged at the vendor without our ever learning the `request_id`. Such a fee can
 and cannot be refunded. It is the only class of spend this design cannot attribute to a
 verification, and if it is not counted it appears as a balance that drifts for no reason.
 
-[partly backed · uCaller half unbacked — vendor reference `getInfo` (`cost`, `balance`) read 08.09.2026, no live sample. Telegram half backed by `captures/probe-1.7-check-able.json` and `captures/probe-1.7-send.json`, 20.09.2026, which are what establish that `remaining_balance` is the account's balance only in the answer to `checkSendAbility`; guarded by `tests/test_tg_gateway_adapter.py`. The refund half is backed by nothing at all: `is_refunded` has been absent from ten captures running and no message has been left to expire unread (task 1.8)]
+[partly backed · the floor is `app/verification/balance.py`, held per vendor from `tg_gateway_balance_floor` and `flash_call_balance_floor`, read by the carrier from a **confirming** ability check and from nowhere else; guarded by `tests/test_balance_floor.py`, which drives the carrier through a check reporting 2.5 and a send reporting 9999 and asserts the floor fires on the check's number. The refund lowering the spend is `record_rung_delivery` in `app/db/queries.py`, guarded by `tests/test_refund_lowers_spend.py`. **uCaller half unbacked** — vendor reference `getInfo` (`cost`, `balance`) read 08.09.2026, no live sample, no adapter, and its floor ships at zero because any number would be a guess dressed as a setting. **The refund half remains backed by no observation at all**: `is_refunded` has been absent from ten captures running, no message has been left to expire unread (task 1.8), and the path cannot be reached by a probe — a confirming check states the subscriber is reachable, so only a subscriber confirmed reachable and then not reached gets there. The tests drive the recording directly and claim nothing about having seen one]
 
 #### Scenario: The balance runs low
 - **WHEN** one vendor's reported balance falls below the configured floor while the other's is healthy
