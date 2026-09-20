@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 from app.db import queries
 from app.modem.delivery_dispatch import deliver, find_route
 from app.settings_store import store
+from app.verification import tg_gateway
+from app.verification.routes import TG_GATEWAY
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +83,7 @@ async def announce_verification_outcomes() -> int:
     for row in await queries.unnotified_terminal_verifications():
         if not await queries.mark_verification_notified(row["id"]):
             continue        # another pass won it
+        await _withdraw_outstanding_message(row)
         await push_verification(row["id"], row["app_id"], row["status"],
                                 method=row["confirmed_by"], reason=row["reason"])
         announced += 1
@@ -89,3 +92,38 @@ async def announce_verification_outcomes() -> int:
     if gone:
         logger.info("Pruned %d finished verification(s)", gone)
     return announced
+
+
+async def _withdraw_outstanding_message(row) -> None:
+    """Ask the Gateway to withdraw the message of a verification that has ended.
+
+    Here rather than at each ending for the reason the announcement is here: this is the
+    one pass that sees every way a verification can end, and a writer added later cannot
+    be a writer that forgot. Confirmation, expiry and a spent attempt counter all arrive
+    through it.
+
+    A courtesy rather than a guarantee, and deliberately so. Measured twice on
+    18.09.2026, the vendor answered `true` for a message the subscriber had already read
+    and for one revoked within a second of delivery, and in both trials the message
+    stayed visibly in the chat. What stops a finished verification being usable is its
+    terminal state; what this removes is a live-looking code sitting in somebody's chat
+    after the login it belonged to is over.
+
+    Never raises and never delays the announcement: a vendor's mood must not be able to
+    leave an application untold how its verification ended.
+    """
+    if row["route"] != TG_GATEWAY:
+        return
+    token = store.tg_gateway_token
+    if not token:
+        return
+    for rung in await queries.verification_rungs(row["id"]):
+        if rung["route"] != TG_GATEWAY or not rung["vendor_ref"]:
+            # A rung that declined or never answered holds no request to withdraw, and
+            # asking the vendor to withdraw nothing can only produce a confusing error.
+            continue
+        try:
+            await tg_gateway.request_revocation(rung["vendor_ref"], token=token)
+        except Exception:
+            logger.exception("verification %s: the revocation of %s raised",
+                             row["id"], rung["vendor_ref"])

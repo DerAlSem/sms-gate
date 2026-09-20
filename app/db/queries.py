@@ -1151,7 +1151,7 @@ async def unnotified_terminal_verifications() -> list[aiosqlite.Row]:
     """
     db = await get_db()
     async with db.execute(
-        "SELECT id, app_id, status, confirmed_by, reason FROM verifications "
+        "SELECT id, app_id, status, confirmed_by, reason, route FROM verifications "
         " WHERE status != 'pending' AND notified = 0 ORDER BY id"
     ) as cursor:
         return list(await cursor.fetchall())
