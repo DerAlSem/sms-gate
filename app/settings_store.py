@@ -165,6 +165,30 @@ SETTINGS_SPEC: list[Spec] = [
     # subscriber ten hours. A rolling window is the stricter reading of any calendar day.
     Spec("verification_day_window_hours", "posint", 24, "Verification", False,
          "The window the daily ceiling counts in, rolling backwards from now (h)"),
+    # The spend ceiling: how many paid rungs this gateway may attempt in total, across
+    # every number, every application and both paid routes together. A different
+    # instrument from the per-number limits above, which are the vendors' and are per
+    # number — a loop over five hundred numbers violates none of them while spending four
+    # hundred roubles.
+    #
+    # 🔴 The shipped numbers are measured rather than chosen, on this gateway's own live
+    # traffic: 2391 messages between 17.04.2026 and 20.09.2026, of which 601 went to
+    # МегаФон — the operator whose traffic the paid ladder carries. Read on 20.09.2026
+    # with both spellings matched by hand, because `upper()` is ASCII-only here and would
+    # have counted 397 of the 601. The busiest МегаФон hour in five months held 20
+    # messages and the busiest day 47; a verification may consume **two** paid rungs by
+    # advancing from Telegram to the call, so the worst honest load ever seen is about 40
+    # attempts an hour and 94 a day.
+    #
+    # So: a ceiling that does not refuse the busiest real hour this gateway has ever had,
+    # even doubled, and still stops a runaway loop within minutes rather than at the
+    # four-hundred-rouble bill the requirement is written against.
+    Spec("verification_paid_per_hour", "posint", 100, "Verification", False,
+         "Paid rungs this gateway may attempt per rolling hour, across all numbers, "
+         "applications and both paid routes together"),
+    Spec("verification_paid_per_day", "posint", 300, "Verification", False,
+         "Paid rungs this gateway may attempt per rolling day, across all numbers, "
+         "applications and both paid routes together"),
     # The routing rule, as data. Its shipped content and every norm about reading it live
     # in `app/verification/rule.py`; what belongs here is that it is a setting at all —
     # `.env` would need a restart to change, and a restart drops sending sessions, which

@@ -430,6 +430,10 @@ async def _render_apps(request: Request, new_id=None, new_token=None):
             "id": a["id"],
             "description": a["description"] or "",
             "is_active": a["is_active"],
+            # Shown beside `is_active` rather than folded into it: one answers whether
+            # this application may talk to the gateway at all, the other whether it may
+            # spend money doing so, and they are refused by different people.
+            "may_spend": a["may_spend"],
             "token_masked": (a["token"][:6] + "…") if a["token"] else "",
             "msg_count": await queries.app_message_count(a["id"]),
             "protected": a["id"] == "admin",
@@ -473,6 +477,23 @@ async def admin_apps_toggle(
     _: str = Depends(admin_auth),
 ) -> RedirectResponse:
     await queries.set_app_active(id, active == "1")
+    return RedirectResponse(url="/admin/apps", status_code=303)
+
+
+@router.post("/apps/entitlement")
+async def admin_apps_entitlement(
+    id: str = Form(...),
+    may_spend: str = Form(...),
+    _: str = Depends(admin_auth),
+) -> RedirectResponse:
+    """Grant or revoke this application's right to spend on a paid verification.
+
+    Here rather than in the routing rule: the rule answers what reaches a subscriber and
+    is keyed on the operator, this answers who is allowed to pay for it. It takes effect
+    on the next verification — the gate reads the row per call, so no restart is needed,
+    which is the same guarantee the rule itself has.
+    """
+    await queries.set_app_may_spend(id, may_spend == "1")
     return RedirectResponse(url="/admin/apps", status_code=303)
 
 

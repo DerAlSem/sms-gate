@@ -62,6 +62,15 @@ ALL_ROUTES = frozenset({
     CALL_IN, SMS_IN, SMS_OUT, FLASH_CALL, TG_GATEWAY, TG_USER, MAX_USER, APP_BOT,
 })
 
+# The rungs this gateway pays a vendor for, named once so that the per-number limits, the
+# spend ceiling and the balance floor cannot disagree about which they are. A second list
+# written when a third paid vendor lands is how one of the three quietly stops counting a
+# rung — and the symptom of that is only ever the bill.
+#
+# `sms_in` is not here: the subscriber pays for it at their own tariff, and what these
+# three bound is this gateway's spending.
+PAID_ROUTES = frozenset({FLASH_CALL, TG_GATEWAY})
+
 # What the person is told to do, per rung. Addresses, never identities: "call this number"
 # is the address, and which SIM answers it is the identity.
 _INSTRUCTIONS = {

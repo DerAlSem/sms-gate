@@ -412,6 +412,22 @@ async def run_migrations() -> None:
     # worse than the `expired` it replaces — nobody trusted `expired`.
     await _add_column_if_missing(db, "messages", "delivery_inferred", "INTEGER NOT NULL DEFAULT 0")
 
+    # Whether this application may have a verification carried by a **paid** route. An
+    # ALTER rather than a column in the CREATE above, and the distinction is the whole
+    # guarantee: `DEFAULT 0` on a new column applies to every row that already exists, so
+    # the estates that already have the defect — four applications, three of which send
+    # no codes at all — come out of the migration switched off rather than entitled.
+    #
+    # Additive and therefore reversible by deploying the old code: nothing before this
+    # change reads the column, and SQLite carries an unread column at no cost. The column
+    # is never dropped on the way back, because dropping it would silently revoke an
+    # operator's decision the next time the new code is deployed.
+    #
+    # Separate from `is_active`, which answers whether the application may talk to this
+    # gateway at all. This one answers who is allowed to spend, and the two are refused
+    # by different people for different reasons.
+    await _add_column_if_missing(db, "apps", "may_spend", "INTEGER NOT NULL DEFAULT 0")
+
     # Runs after the base script, which is what makes the index handling above necessary,
     # and outside `executescript`, which is what makes it atomic.
     await _rebuild_message_parts(db)

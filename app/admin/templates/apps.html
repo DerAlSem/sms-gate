@@ -22,7 +22,7 @@
 </form>
 
 <table>
-  <tr><th>ID</th><th>{% trans %}Description{% endtrans %}</th><th>{% trans %}Token{% endtrans %}</th><th>{% trans %}Messages{% endtrans %}</th><th>{% trans %}Active{% endtrans %}</th><th></th></tr>
+  <tr><th>ID</th><th>{% trans %}Description{% endtrans %}</th><th>{% trans %}Token{% endtrans %}</th><th>{% trans %}Messages{% endtrans %}</th><th>{% trans %}Active{% endtrans %}</th><th>{% trans %}May spend{% endtrans %}</th><th></th></tr>
   {% for r in rows %}
   <tr>
     <td><code>{{ r.id }}</code></td>
@@ -30,12 +30,19 @@
     <td><code>{{ r.token_masked }}</code></td>
     <td>{{ r.msg_count }}</td>
     <td>{% if r.is_active %}{% trans %}yes{% endtrans %}{% else %}<span class="muted">{% trans %}no{% endtrans %}</span>{% endif %}</td>
+    <td>{% if r.may_spend %}{% trans %}yes{% endtrans %}{% else %}<span class="muted">{% trans %}no{% endtrans %}</span>{% endif %}</td>
     <td>
       {% if not r.protected %}
       <form method="post" action="/admin/apps/toggle" style="display:inline;">
         <input type="hidden" name="id" value="{{ r.id }}">
         <input type="hidden" name="active" value="{{ 0 if r.is_active else 1 }}">
         <button type="submit">{% if r.is_active %}{% trans %}Deactivate{% endtrans %}{% else %}{% trans %}Activate{% endtrans %}{% endif %}</button>
+      </form>
+      <form method="post" action="/admin/apps/entitlement" style="display:inline;"
+            {% if not r.may_spend %}onsubmit="return confirm({{ _('Allow %(app_id)s to spend money on paid verifications? Calls and Telegram are billed to our own prepaid accounts.', app_id=r.id) | tojson }});"{% endif %}>
+        <input type="hidden" name="id" value="{{ r.id }}">
+        <input type="hidden" name="may_spend" value="{{ 0 if r.may_spend else 1 }}">
+        <button type="submit">{% if r.may_spend %}{% trans %}Revoke spending{% endtrans %}{% else %}{% trans %}Allow spending{% endtrans %}{% endif %}</button>
       </form>
       {% if r.msg_count == 0 %}
       <form method="post" action="/admin/apps/delete" style="display:inline;"

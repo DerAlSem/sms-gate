@@ -3,6 +3,13 @@ from typing import Any
 import aiosqlite
 from app import periods
 from app.db.connection import get_db
+from app.verification.routes import PAID_ROUTES
+
+# The paid rungs, read from the one place that names them rather than spelled again here.
+# Sorted so the SQL below is stable between runs, and expanded into placeholders so that
+# adding a third paid vendor is a change to the vocabulary and not to these statements.
+_PAID_ROUTE_VALUES = tuple(sorted(PAID_ROUTES))
+_PAID_PLACEHOLDERS = ", ".join("?" * len(_PAID_ROUTE_VALUES))
 
 # Statuses that owe nothing further. `expired` is deliberately absent: a report can
 # still arrive for it and correct it to `delivered` while the part it names is inside
@@ -982,12 +989,42 @@ async def paid_attempts_for_number(phone: str, *, within_seconds: int) -> list[i
         "SELECT CAST(strftime('%s', 'now') - strftime('%s', r.started_at) AS INTEGER) "
         "  FROM verification_rungs r "
         "  JOIN verifications v ON v.id = r.verification_id "
-        " WHERE v.phone = ? AND r.route IN ('flash_call', 'tg_gateway') "
+        f" WHERE v.phone = ? AND r.route IN ({_PAID_PLACEHOLDERS}) "
         "   AND r.started_at > datetime('now', ? || ' seconds') "
         " ORDER BY r.started_at DESC",
-        (phone, f"{-int(within_seconds):+d}"),
+        (phone, *_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}"),
     ) as cursor:
         return [max(0, int(row[0])) for row in await cursor.fetchall()]
+
+
+async def paid_attempts_since(within_seconds: int) -> int:
+    """How many paid rungs this gateway has attempted in the last `within_seconds`.
+
+    Across every number and every application, and across **both** paid routes together.
+    That is the whole difference between this count and `paid_attempts_for_number`: the
+    vendors' limits are per number, and a loop over five hundred numbers violates none of
+    them while spending four hundred roubles. What is bounded here is the bill, and the
+    bill is one.
+
+    Every attempt counts, including the ones that turned out to cost nothing. A ceiling
+    that counted only confirmed charges would be blind to exactly the attempts most
+    likely to have cost money without saying so — an ability check that never answered
+    may have been confirmed and billed at the vendor without our ever learning its
+    `request_id`.
+
+    The window rolls, for the reason the per-number one does: this database stores naive
+    UTC and the vendors are Russian, and a calendar day read in the wrong zone resets
+    three hours early.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM verification_rungs "
+        f" WHERE route IN ({_PAID_PLACEHOLDERS}) "
+        "   AND started_at > datetime('now', ? || ' seconds')",
+        (*_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}"),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return int(row[0]) if row else 0
 
 
 async def verification_seconds_left(verification_id: int) -> int:
@@ -1683,9 +1720,43 @@ async def stale_part_groups(max_age_seconds: int) -> list[aiosqlite.Row]:
 async def list_apps() -> list[aiosqlite.Row]:
     db = await get_db()
     async with db.execute(
-        "SELECT id, token, description, is_active, created_at FROM apps ORDER BY created_at DESC, id"
+        "SELECT id, token, description, is_active, may_spend, created_at FROM apps ORDER BY created_at DESC, id"
     ) as cursor:
         return list(await cursor.fetchall())
+
+
+async def get_app(app_id: str) -> aiosqlite.Row | None:
+    """One application by its id, or None when there is no such application.
+
+    Read per call rather than cached, because both switches on the row have to take
+    effect without a restart — a restart drops sending sessions, which is the deploy the
+    configurable rule exists to avoid, merely spelled differently.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, is_active, may_spend FROM apps WHERE id = ?", (app_id,)
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def app_may_spend(app_id: str) -> bool:
+    """Whether this application holds the entitlement to spend on a paid route.
+
+    False for an application that does not exist, which is the same answer as one
+    switched off: a lookup that had no opinion about an unknown id would let a deleted
+    application go on buying verifications.
+    """
+    row = await get_app(app_id)
+    return bool(row is not None and row["may_spend"])
+
+
+async def set_app_may_spend(app_id: str, allowed: bool) -> None:
+    """Grant or revoke the entitlement. The operator's decision, and revocable."""
+    db = await get_db()
+    await db.execute(
+        "UPDATE apps SET may_spend = ? WHERE id = ?", (1 if allowed else 0, app_id)
+    )
+    await db.commit()
 
 
 async def create_app(app_id: str, token: str, description: str = "") -> None:
