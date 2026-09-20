@@ -211,3 +211,42 @@ def test_ims_registration_is_the_other_way_a_call_could_have_landed():
     assert decode_cireg("\r\n+CIREG: 1,1\r\n\r\nOK\r\n") == {
         "ims": 1, "state": "registered"}
     assert decode_cireg("ERROR") == {}
+
+
+# ------------------------------------------------------------------ voice route
+
+from app.modem.diag import decode_qcfg_ims
+
+
+def test_ims_both_captured_samples():
+    """The two shapes the live module has actually produced."""
+    assert decode_qcfg_ims('+QCFG: "ims",0,0') == {
+        "ims_conf": 0, "config": "carrier profile decides",
+        "volte_cap": 0, "volte": "VoLTE disabled"}
+    assert decode_qcfg_ims('\r\n+QCFG: "ims",1,1\r\n\r\nOK\r\n') == {
+        "ims_conf": 1, "config": "enabled compulsorily",
+        "volte_cap": 1, "volte": "VoLTE enabled"}
+
+
+def test_ims_configuration_has_three_states_and_zero_is_not_off():
+    """`0` defers to the carrier profile. Calling it "disabled" states the opposite of
+    the truth: a module reading `0,1` has a working voice route supplied by its MBN."""
+    assert decode_qcfg_ims('+QCFG: "ims",2,0')["config"] == "disabled compulsorily"
+    healthy = decode_qcfg_ims('+QCFG: "ims",0,1')
+    assert healthy["config"] == "carrier profile decides"
+    assert healthy["volte"] == "VoLTE enabled"
+    assert "disab" not in healthy["config"]
+
+
+def test_ims_unlisted_value_is_unrecognised_not_one_of_the_three():
+    out = decode_qcfg_ims('+QCFG: "ims",7,4')
+    assert out["ims_conf"] == 7 and out["config"] == "unrecognised"
+    assert out["volte_cap"] == 4 and out["volte"] == "unrecognised"
+
+
+def test_ims_unreadable_returns_nothing():
+    """Zero is a meaningful value here, so a failed read must not render as one."""
+    assert decode_qcfg_ims("ERROR") == {}
+    assert decode_qcfg_ims("") == {}
+    assert decode_qcfg_ims('+QCFG: "ims",1') == {}
+    assert decode_qcfg_ims('+QCFG: "servicedomain",2') == {}

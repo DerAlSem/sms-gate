@@ -117,6 +117,53 @@ def describe_at_error(response: str) -> str:
     return response.strip()
 
 
+# ------------------------------------------------------------ reading outcomes
+#
+# What happened to a read-only diagnostic query, decided from what the modem answered
+# and nowhere else. A fixed list of commands believed absent would hide the case that
+# matters most — a command that used to answer and has begun to refuse — and would keep
+# a command that started answering invisible until somebody edited the list.
+VALUE = "value"        # the modem answered, and the answer decoded
+REFUSAL = "refusal"    # the modem would not carry out the command
+SILENCE = "silence"    # nothing came back, or nothing that ever terminated
+FAILURE = "failure"    # the modem reported a fault of its own
+
+# A refusal is what the modem DID, not why. `ERROR` means it would not carry out the
+# command; it does not by itself mean the firmware lacks it. These are the coded forms
+# of the same answer — "not allowed" and "not supported" on either side.
+_REFUSAL_CME = {3, 4}
+_REFUSAL_CMS = {302, 303}
+_REFUSAL_TEXT = {"operation not allowed", "operation not supported"}
+
+
+def classify_at_outcome(response: str) -> str:
+    """Which of the three unsuccessful outcomes `response` is.
+
+    ⚠️ Not by sniffing the substring `ERROR`. `+CME ERROR: 13` on `AT+CPIN?` is a failed
+    SIM — the fault of the 2026-09-06 outage, when every alert of a two-hour outage read
+    "check antenna/operator" while the modem was refusing its own card. An error the
+    modem raises about its own state is a fault and stays one; rendering it as "nothing
+    was measured" would hide the single reading that names the cause.
+    """
+    m = _AT_ERROR_NUM.search(response)
+    if m:
+        kind, code = m.group(1), int(m.group(2))
+        table = _REFUSAL_CMS if kind == 'CMS' else _REFUSAL_CME
+        return REFUSAL if code in table else FAILURE
+    m = _AT_ERROR_TXT.search(response)
+    if m:
+        # A verbose firmware says in words what the numeric form says in codes, and the
+        # line is drawn at the same place: a refusal is only the two meanings the vendor
+        # gives it, and everything else the modem says about itself is a fault. Reading
+        # it the other way round would turn a spoken "SIM failure" into "not measured".
+        return REFUSAL if m.group(2).strip().lower() in _REFUSAL_TEXT else FAILURE
+    if 'ERROR' in response:
+        # A bare `ERROR`, which is what this build answers to `AT+CIREG?`: the modem
+        # would not carry out the command and named no state of its own.
+        return REFUSAL
+    return SILENCE
+
+
 # GSM 03.40 §9.2.3.15 TP-Status. Ranges give the class; the table names common codes.
 _TP_STATUS = {
     0x00: "received by recipient",

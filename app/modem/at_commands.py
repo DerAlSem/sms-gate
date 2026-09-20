@@ -95,11 +95,20 @@ class ModemFailure(Exception):
     accepted the message even though we never saw the confirmation, and sending it
     again would put a second copy on someone's handset. It lives on the base class
     because the fact is about the message, not about which way the exchange broke.
+
+    `response` is what the modem actually said, kept beside the message rather than
+    instead of it. The message has been through `describe_at_error` and is the right
+    thing to log; it is also lossy, and by the time it reaches anything that could tell
+    a refusal from a failed SIM the modem's own words are gone. Empty when there were
+    none — a silence has nothing to carry.
     """
 
-    def __init__(self, message: str, *, pdu_submitted: bool = False) -> None:
+    def __init__(
+        self, message: str, *, pdu_submitted: bool = False, response: str = ""
+    ) -> None:
         super().__init__(message)
         self.pdu_submitted = pdu_submitted
+        self.response = response
 
 
 class ATCommandError(ModemFailure):
@@ -434,7 +443,9 @@ class ATSerial:
 
     async def _failed(self, buf: bytes, expected: bytes) -> ModemFailure:
         """Build the error for an unsuccessful read and leave the port usable."""
-        error = ATCommandError(_clean_error(buf, expected))
+        error = ATCommandError(
+            _clean_error(buf, expected), response=buf.decode(errors='replace')
+        )
         await self._drain()
         if not self._usable:
             # The drain found the port gone. The caller is owed the link failure, not
@@ -507,7 +518,9 @@ class ATSerial:
         await self._send(f"{cmd}\r".encode())
         response = await self._read_until(b'OK', timeout)
         if 'ERROR' in response:
-            raise ATCommandError(f"{cmd}: {describe_at_error(response)}")
+            raise ATCommandError(
+                f"{cmd}: {describe_at_error(response)}", response=response
+            )
         return response
 
     async def command(self, cmd: str, timeout: float = 5.0) -> str:

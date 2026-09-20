@@ -117,6 +117,51 @@ def decode_cireg(resp: str) -> dict:
     return {"ims": reg, "state": "registered" if reg else "not registered"}
 
 
+# `+QCFG: "ims",<IMS_conf>,<VoLTE_cap>` — LTE-A(Q) Series IMS Application Note V1.0
+# §2.3.1, whose §1.1 lists the EP06 Series. Both fields are the vendor's, and both are
+# named here in the vendor's own words rather than in ours.
+#
+# 🔴 The first field has THREE states and `0` is not "off": it is the factory position,
+# which hands the decision to the carrier profile stored on the module. A module reading
+# `0,1` has a working voice route supplied by its MBN, so decoding `0` as "disabled"
+# states the opposite of the truth and sends an operator looking for a person who
+# disabled it. The explicit disable is `2`.
+_IMS_CONF = {
+    0: "carrier profile decides",
+    1: "enabled compulsorily",
+    2: "disabled compulsorily",
+}
+# The vendor's parameter table calls this one "the capability of VoLTE" and its prose one
+# page earlier calls it the IMS registration status. Neither is "the network refused this
+# subscriber", so neither is said here: the field is reported as what the module said it
+# is, and the conclusion about the voice route — which is gated on registration — is drawn
+# by the watcher, not by this decoder.
+_VOLTE_CAP = {0: "VoLTE disabled", 1: "VoLTE enabled"}
+
+
+def decode_qcfg_ims(resp: str) -> dict:
+    """`AT+QCFG="ims"` — what the module was told to do about IMS, and what it can do.
+
+    Two facts kept apart, each with a named state beside its digit, because the page
+    renders decoded fields directly and `ims_conf=1 volte_cap=0` asks a reader to
+    remember a vendor's digit order during an incident.
+
+    A value the vendor does not list decodes as unrecognised rather than as one of the
+    known states — guessing which one it resembles is how a firmware change becomes a
+    silent misreading. An unparseable response returns `{}`, by the convention the
+    decoders above follow: zero is meaningful here, so a failed read must not render
+    as one.
+    """
+    m = re.search(r'\+QCFG:\s*"ims"\s*,\s*(\d+)\s*,\s*(\d+)', resp)
+    if not m:
+        return {}
+    conf, cap = int(m.group(1)), int(m.group(2))
+    return {
+        "ims_conf": conf, "config": _IMS_CONF.get(conf, "unrecognised"),
+        "volte_cap": cap, "volte": _VOLTE_CAP.get(cap, "unrecognised"),
+    }
+
+
 def decode_csca(resp: str) -> dict:
     m = re.search(r'\+CSCA:\s*"([^"]*)"', resp)
     return {"smsc": m.group(1)} if m else {}
@@ -148,11 +193,36 @@ def decode_qcsq(resp: str) -> dict:
     return out
 
 
-# The readings an alert carries. Four, not nine: `_bounded(record.getMessage(), 500)`
+def _render_signal(parsed: dict) -> str | None:
+    dbm = parsed.get("dbm")
+    return f"{dbm}dBm" if dbm is not None else None
+
+
+def _render_operator(parsed: dict) -> str | None:
+    name = parsed.get("operator")
+    return f"{name}/{parsed.get('rat', '?')}" if name else None
+
+
+# The readings an alert carries. Four, not fourteen: `_bounded(record.getMessage(), 500)`
 # truncates what Telegram delivers, and a summary that needs truncating loses the reading
 # it was added for. These four are the ones that answer the question the operator actually
 # has — is this the radio, the network, or the card.
-_ALERT_READINGS = ("sim", "cs_reg", "signal", "operator")
+#
+# 🔴 One declaration, serving both the asking and the printing. Two lists drift, and the
+# drift is silent in the worst direction: `summarise_for_alert` renders a reading it did
+# not get as `?`, which is indistinguishable from a modem that did not answer — so a
+# gateway that quietly stopped asking looks exactly like a modem that stopped answering.
+# The sweep is filtered by the keys below and the line is printed from the same rows, so
+# the two cannot come apart without this tuple being edited.
+_ALERT_READINGS = (
+    ("SIM",      "sim",      lambda p: p.get("state")),
+    ("reg",      "cs_reg",   lambda p: p.get("status")),
+    ("signal",   "signal",   _render_signal),
+    ("operator", "operator", _render_operator),
+)
+
+# What the alert path asks the modem for. Derived, never maintained by hand.
+ALERT_KEYS = tuple(key for _, key, _ in _ALERT_READINGS)
 
 
 def summarise_for_alert(diag: list[dict]) -> str:
@@ -170,19 +240,8 @@ def summarise_for_alert(diag: list[dict]) -> str:
     if alive is not None and alive.get("error"):
         return f"observations unavailable: {alive['error']}".rstrip(": ")
 
-    def parsed(key: str) -> dict:
+    parts = []
+    for label, key, render in _ALERT_READINGS:
         item = by_key.get(key) or {}
-        return item.get("parsed") or {}
-
-    sim = parsed("sim").get("state") or "?"
-    reg = parsed("cs_reg").get("status") or "?"
-
-    signal = parsed("signal")
-    dbm = signal.get("dbm")
-    signal_txt = f"{dbm}dBm" if dbm is not None else "?"
-
-    op = parsed("operator")
-    name = op.get("operator")
-    op_txt = f"{name}/{op.get('rat', '?')}" if name else "?"
-
-    return f"SIM={sim} reg={reg} signal={signal_txt} operator={op_txt}"
+        parts.append(f"{label}={render(item.get('parsed') or {}) or '?'}")
+    return " ".join(parts)

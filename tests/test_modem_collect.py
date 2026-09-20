@@ -67,3 +67,62 @@ def test_collect_reports_what_the_gateway_believes():
     out = asyncio.run(m.collect_diagnostics())
     assert out[0]["key"] == "gateway"
     assert out[0]["parsed"]["recovering"] is True
+
+
+# ------------------------------------------- the sweep carries an outcome, not a string
+
+from app.modem.parser import VALUE, REFUSAL, SILENCE, FAILURE
+
+
+class ReplyingSender(FakeSender):
+    """A sender whose failures carry what the modem actually said, as the real one does."""
+
+    def __init__(self, responses, refuse=None):
+        super().__init__(responses)
+        self.refuse = refuse or {}
+
+    async def command(self, cmd, timeout=5.0):
+        self.calls.append(cmd)
+        if cmd in self.refuse:
+            said = self.refuse[cmd]
+            raise ATCommandError(f"{cmd}: {said}", response=said)
+        return self.responses.get(cmd, "OK")
+
+
+def _sweep(**kw):
+    sender = ReplyingSender({"AT": "OK", **kw.pop("responses", {})}, **kw)
+    return {i["key"]: i for i in asyncio.run(_mgr(sender).collect_diagnostics())}
+
+
+def test_a_refusal_is_carried_as_a_refusal_with_what_the_modem_said():
+    """`AT+CIREG?` on this build. The row must not claim the firmware lacks the command
+    — only that the modem would not carry it out — and must show its words."""
+    by_key = _sweep(refuse={"AT+CIREG?": "\r\nERROR\r\n"})
+    assert by_key["ims_reg"]["outcome"] == REFUSAL
+    assert "ERROR" in by_key["ims_reg"]["raw"]
+
+
+def test_the_sim_fault_stays_a_fault():
+    """The positive control. Without it, an implementation that renders everything as
+    "not measured" passes: this is the reading that named the 2026-09-06 outage."""
+    by_key = _sweep(refuse={"AT+CPIN?": "+CME ERROR: 13"})
+    assert by_key["sim"]["outcome"] == FAILURE
+
+
+def test_a_command_that_never_answered_is_a_silence():
+    by_key = _sweep(refuse={"AT+CLIP?": ""})
+    assert by_key["clip"]["outcome"] == SILENCE
+
+
+def test_an_answered_row_is_a_value():
+    by_key = _sweep(responses={"AT+CPIN?": "+CPIN: READY"})
+    assert by_key["sim"]["outcome"] == VALUE
+    assert by_key["sim"]["parsed"] == {"state": "READY"}
+
+
+def test_the_voice_route_is_read_by_the_sweep():
+    """Task 2.2: a register read the firmware answers out of its own memory — the
+    vendor's maximum response time is 300 ms, so it is on the local budget."""
+    by_key = _sweep(responses={'AT+QCFG="ims"': '+QCFG: "ims",1,1'})
+    assert by_key["ims"]["parsed"]["config"] == "enabled compulsorily"
+    assert by_key["ims"]["parsed"]["volte"] == "VoLTE enabled"

@@ -15,14 +15,18 @@ from app.modem.dispatch import dispatch_inbound
 from app.modem.errors import is_retryable
 from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANSPORT, WAIT
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
-from app.modem.parser import parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status
+from app.modem.parser import (
+    parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
+    classify_at_outcome, VALUE, FAILURE,
+)
 from app.modem.pdu import decode_deliver, inbound_pdu_key
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
 from app.modem.diag import (
     decode_cpin, decode_reg, decode_csq, decode_cops,
     decode_csca, decode_qnwinfo, decode_qcsq, decode_clip, decode_clip_test,
-    decode_servicedomain, decode_cireg, summarise_for_alert,
+    decode_servicedomain, decode_cireg, decode_qcfg_ims, summarise_for_alert,
+    ALERT_KEYS,
 )
 from app.db import queries
 from app.alerting import notify
@@ -153,6 +157,16 @@ _DIAG_QUERIES = [
     # route; `CEER` may name the last failure in the network's own words.
     ("svc_domain", 'AT+QCFG="servicedomain"', decode_servicedomain, _DIAG_LOCAL),
     ("ims_reg",    "AT+CIREG?",  decode_cireg,     _DIAG_LOCAL),
+    # The voice route, read the way this firmware will actually answer. `AT+CIREG?` is
+    # refused by this build and `AT+QCFG="ims"` is not, which is the whole reason this
+    # row exists — and the two are kept side by side deliberately: the refused one is
+    # legible as a refusal now, and a firmware that gains the command starts being
+    # reported from its answer with no edit here.
+    #
+    # Local budget, and the vendor says so rather than us guessing: maximum response
+    # time 300 ms (LTE-A(Q) IMS Application Note V1.0 §2.3.1). It is answered out of the
+    # module's own memory, and the settings it reports are stored there too.
+    ("ims",        'AT+QCFG="ims"', decode_qcfg_ims, _DIAG_LOCAL),
     ("last_error", "AT+CEER",    lambda r: {},     _DIAG_LOCAL),
 ]
 
@@ -1169,7 +1183,9 @@ class ModemManager:
         Collected before the remedy, because the remedy is what changes the answer.
         """
         try:
-            return summarise_for_alert(await self.collect_diagnostics())
+            return summarise_for_alert(
+                await self.collect_diagnostics(only=ALERT_KEYS)
+            )
         except Exception as e:                      # noqa: BLE001 - see docstring
             return f"observations unavailable: {type(e).__name__}: {e}"
 
@@ -1255,10 +1271,17 @@ class ModemManager:
         snapshot["modem_detected"] = self.link_in_service
         return snapshot
 
-    async def collect_diagnostics(self) -> list[dict]:
+    async def collect_diagnostics(self, only: tuple[str, ...] | None = None) -> list[dict]:
         """Read-only modem health snapshot via the existing serial lock. An AT
         liveness pre-check short-circuits a wedged modem; one failing query never
-        breaks the sweep. Never raises."""
+        breaks the sweep. Never raises.
+
+        `only` narrows the sweep to the named keys. It exists for the alert path, which
+        holds the command port while the modem is already misbehaving and prints four of
+        these readings: there, every command asked for and not printed is time added to
+        the alert, to the recovery behind it and to any send queued behind the lock. The
+        page is a surface an operator chose to open and gets the whole sweep.
+        """
         # First, so the operator sees it before the readings: during a recovery the radio
         # is deliberately off, and an unannotated snapshot reads as a dead modem.
         state = [{"key": "gateway", "cmd": "—", "parsed": self.health_snapshot()}]
@@ -1271,15 +1294,29 @@ class ModemManager:
 
         out: list[dict] = list(state)
         for key, cmd, decoder, timeout in _DIAG_QUERIES:
+            if only is not None and key not in only:
+                continue
             item = {"key": key, "cmd": cmd}
             try:
                 raw = await self._sender.command(cmd, timeout=timeout)
                 item["raw"] = raw.strip()
                 item["parsed"] = decoder(raw)
+                item["outcome"] = VALUE
             except ModemFailure as e:
                 item["error"] = str(e)
+                # Decided here, where the modem's response is still in hand. One level
+                # up there is only the normalised string, and a refusal and a failed SIM
+                # are indistinguishable in it — which is how `AT+CIREG?` answering
+                # `ERROR` became a standing verdict that this module had no voice path.
+                said = getattr(e, "response", "") or ""
+                if said.strip():
+                    item["raw"] = said.strip()
+                item["outcome"] = classify_at_outcome(said)
             except Exception as e:
+                # Ours, not the modem's: nothing was refused and nothing timed out. It
+                # stays a failure so the page shows it in the style a fault deserves.
                 item["error"] = f"{type(e).__name__}: {e}"
+                item["outcome"] = FAILURE
             out.append(item)
         return out
 
