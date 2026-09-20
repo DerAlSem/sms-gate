@@ -81,7 +81,29 @@ rather than on code.
 - [ ] 4.11 Test: two verifications open at the same time for one number do not share a code
 - [ ] 4.12 Test: a second request for the same number inside the vendor's per-number window is refused by us with a wait reason, and no vendor call is placed
 - [ ] 4.13 Test: a repeat inside the free window uses `initRepeat` and keeps the same code; a retried vendor call carrying the same idempotency key does not place a second call
-- [ ] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
+- [x] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
+      `tests/test_vendor_failure_spares_the_modem.py`, five mutations in
+      `bite-modem.sh`. 🔴 **The handoff's premise was wrong and measuring it is what
+      caught it.** It read "the behaviour already holds, only a guard is missing".
+      It does not hold in the shape that sentence implies: driven directly,
+      `ladder.walk` **does** carry a verification over an `sms_out` rung after the
+      vendor refused us — measured before a line of the test was written. What
+      actually holds is narrower and is what the requirement names: **automatic
+      failover is absent.** The rungs walked are exactly `rule.route_for`'s answer,
+      the gateway appends nothing, and the rule in force names no modem rung behind
+      the paid ladder. A modem rung behind a paid one is configuration with an
+      operator's name on it, and the positive control asserts the gateway carries it
+      — without that control, every other assertion here would pass on a modem
+      carrier nothing could ever have reached.
+      🔴 **The first stand was hollow in the way this change keeps rediscovering:**
+      the second paid rung carried, so the ladder stopped there and a mutation
+      appending `sms_out` to the walk left all four tests green. The stand now lets
+      nothing carry — which is also the real shape of the day the norm is for: a
+      rotated token refuses `tg_gateway` and `flash_call` has no adapter yet (1.1).
+      The out-of-credit half rides the same walk: running out has no captured error
+      string in eleven samples, so it arrives as an `ok: false` the gateway cannot
+      place — `unclassified`, loud, advancing as past a decline, and never onto the
+      modem.
 - [ ] 4.15 Test: a verification outcome pushed to the application is distinguishable from a message status push, so a verification id cannot be read as a message id
 - [x] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, flash_call]` — as data, not as a branch, and with no `app_id` in the rule
       Built 20.09.2026 as the typed setting `operator_routes` in
