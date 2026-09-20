@@ -303,7 +303,7 @@ is that the Gateway's callback body, its headers and its signature scheme are al
 vendor's reference. A rejected callback SHALL be counted, because a run of them is either an
 attack or a rotated secret, and both need to be visible.
 
-[unbacked · vendor reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026]
+[unbacked · vendor reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. Unbacked still — no callback has ever arrived, because no request has yet been made that had one to report]
 
 #### Scenario: A callback that does not verify
 - **WHEN** a callback arrives whose signature does not verify

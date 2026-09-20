@@ -316,6 +316,27 @@ charged** and counted separately from both outcomes. A confirmation we never saw
 cannot be spent and cannot be refunded, and without a count an unexplained fall in the vendor's
 reported balance has no name to look for.
 
+🔴 **The vendor names no error for "this subscriber is not in Telegram", and the decline
+this whole ladder is built on therefore has no known spelling.** Its reference documents
+exactly one error string — `ACCESS_TOKEN_INVALID` — and says only that "an appropriate error
+will be returned" otherwise. Read on 20.09.2026, and it is a gap in our knowledge rather than
+in the vendor: no refusal has ever been captured, because the account was never funded and
+`checkSendAbility` was never called.
+
+Until a refusal is captured (task 1.7), an `ok: false` the gateway cannot place SHALL be
+treated as **unclassified**: the ladder SHALL advance past it as it would past a decline,
+**and** the operator SHALL be alerted. Both, because the two ways of guessing fail in
+opposite directions and each is invisible. Read as a decline, a rotated token would advance
+every verification to the dearer rung and tell nobody — the bill would be the only symptom.
+Read as a failure, an ordinary unreachable subscriber would raise an alert per verification
+and the noise would bury the real one. Advancing and alerting is wrong in neither direction;
+it is merely loud, and it stops being loud the moment a decline is captured and named.
+
+An error string the gateway *can* place — today only `ACCESS_TOKEN_INVALID` — SHALL be
+recorded as a refusal of **us** rather than of the subscriber, and SHALL NOT be counted as a
+decline against the rung: a rung that appears to decline every subscriber is a rung that will
+be taken out of the rule for the wrong reason.
+
 **Whether a message the Gateway accepted and then failed to deliver within its `ttl` escalates
 to the `flash_call` rung is not decided by this change.** Until the owner decides it, such a
 verification SHALL fail with that reason and SHALL NOT be escalated. The safe default is the
@@ -323,11 +344,19 @@ one that cannot spend money on a decision nobody has taken; the argument for the
 the fee is refunded anyway, and it is a real argument, which is why this is an open question
 and not an omission.
 
-[unbacked · vendor reference: Telegram Gateway API, `checkSendAbility`, `sendVerificationMessage`, read 18.09.2026 — no live sample captured]
+[unbacked · vendor reference: Telegram Gateway API, `checkSendAbility`, `sendVerificationMessage`, read 18.09.2026 and re-read 20.09.2026 — no live sample captured. The re-read establishes one thing the earlier reading did not: the error vocabulary is undocumented apart from `ACCESS_TOKEN_INVALID`, so the decline this requirement turns on cannot be recognised by name yet]
 
 #### Scenario: The subscriber is not reachable in Telegram
 - **WHEN** `checkSendAbility` reports the subscriber cannot be reached
 - **THEN** nothing is charged for it, the ladder advances to `flash_call`, and the decline is recorded against the `tg_gateway` rung
+
+#### Scenario: The vendor refuses with an error string the gateway cannot place
+- **WHEN** `checkSendAbility` answers `ok: false` with an error the gateway does not recognise
+- **THEN** the ladder advances to `flash_call` as it would past a decline, and the operator is alerted
+
+#### Scenario: The vendor refuses us rather than the subscriber
+- **WHEN** `checkSendAbility` answers `ok: false` with `ACCESS_TOKEN_INVALID`
+- **THEN** it is recorded as a refusal of the gateway, is not counted as a decline against the rung, and the operator is alerted
 
 #### Scenario: The subscriber is reachable in Telegram
 - **WHEN** `checkSendAbility` confirms the subscriber
