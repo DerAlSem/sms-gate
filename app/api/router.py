@@ -1,5 +1,6 @@
 import logging
 import secrets
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -15,6 +16,7 @@ from app.lookup.operator import record_operator
 from app.modem.manager import ModemManager
 from app.settings_store import store
 from app.verification.probes import build_probes
+from app.verification.tg_callback import handle_callback
 from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
 
 router = APIRouter()
@@ -210,6 +212,37 @@ async def select_verification_route(
         code = selected["code"]
     return RouteSelectResponse(
         id=verification_id, route=body.route, status="pending", code=code)
+
+
+@router.post("/verifications/tg-callback")
+async def tg_gateway_callback(request: Request):
+    """Where the Telegram Gateway reports what became of a message it took.
+
+    The one door on this router with no `Depends(get_app_id)`, and deliberately: the
+    vendor holds no application token. Its signature is what stands in place of one, and
+    it is checked before anything is read or changed.
+
+    ⚠️ The literal `tg-callback` does **not** today compete with
+    `/verifications/{verification_id}` — that one is a GET, and every parameterised
+    sibling takes three path segments where this takes two. It would compete the moment
+    a two-segment `POST /verifications/{something}` is added, and FastAPI resolves such
+    a competition by declaration order, silently answering the vendor with a 422 it can
+    do nothing about. Whoever adds that route owns this sentence.
+
+    A refused callback answers 403 and says no more than that: which half of the check
+    failed is our business, not the caller's.
+    """
+    outcome = await handle_callback(
+        await request.body(),
+        timestamp=request.headers.get("X-Request-Timestamp", ""),
+        signature=request.headers.get("X-Request-Signature", ""),
+        token=store.tg_gateway_token,
+        tolerance=store.tg_gateway_callback_tolerance_seconds,
+        now=time.time(),
+    )
+    if not outcome.accepted:
+        raise HTTPException(status_code=403, detail="callback refused")
+    return {"ok": True}
 
 
 @router.post("/verifications/{verification_id}/check",

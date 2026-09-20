@@ -116,6 +116,12 @@ SETTINGS_SPEC: list[Spec] = [
     # than a rung that fails at the vendor after the gates have been spent.
     Spec("tg_gateway_token", "str", "", "Verification", True,
          "Telegram Gateway API access token (blank = the tg_gateway rung is never offered)"),
+    # How far a signed callback's own timestamp may be from ours before it is refused as
+    # a replay. `posint` because zero would refuse every callback the vendor ever sends
+    # and present as a vendor that stopped reporting deliveries.
+    Spec("tg_gateway_callback_tolerance_seconds", "posint", 300, "Verification", False,
+         "Refuse a signed Gateway callback whose timestamp is further than this from "
+         "now (s)"),
     # The row holds a subscriber's number beside a code. Retention is why it does not hold
     # it for ever; `posint` because zero would delete verifications as fast as they are
     # made and present as a gateway that answers 404 to everyone.

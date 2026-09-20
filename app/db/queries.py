@@ -967,6 +967,59 @@ async def record_verification_rung(
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def verification_rungs(verification_id: int) -> list[aiosqlite.Row]:
+    """Every rung attempted for this verification, oldest first.
+
+    A ladder has more than one, and the question a support call asks — "what did this
+    person's login cost" — is answered by the list rather than by a last value.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM verification_rungs WHERE verification_id = ? "
+        " ORDER BY started_at, id",
+        (verification_id,),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def record_rung_delivery(
+    vendor_ref: str, *, route: str, outcome: str, reason: str | None = None,
+    refunded: bool = False,
+) -> int | None:
+    """Record a vendor's delivery outcome against the rung holding `vendor_ref`.
+
+    Returns the verification the rung belongs to, or None when no rung claims that
+    reference — which is not an error and not a rejection: a correctly signed callback
+    naming a request we have no record of is the vendor's, and arguing with it is not
+    this layer's job.
+
+    Matched on the pair, not on the reference alone. A vendor reference is unique at its
+    own vendor and this gateway has more than one; the day a second vendor issues the
+    same digits, an unqualified match would move the wrong rung.
+
+    `refunded` is written only when it is True. The column cannot say "the vendor did not
+    mention it", so the affirmative is the only thing it is allowed to assert, and what
+    the vendor actually said belongs in `reason`.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, verification_id FROM verification_rungs "
+        " WHERE vendor_ref = ? AND route = ? ORDER BY started_at DESC, id DESC LIMIT 1",
+        (vendor_ref, route),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    await db.execute(
+        "UPDATE verification_rungs SET outcome = ?, reason = ?, "
+        "       refunded = CASE WHEN ? THEN 1 ELSE refunded END "
+        " WHERE id = ?",
+        (outcome, reason, 1 if refunded else 0, row["id"]),
+    )
+    await db.commit()
+    return row["verification_id"]
+
+
 async def confirm_by_inbound_call(phone: str, *, method: str) -> int | None:
     """Confirm the open `call_in` verification for this caller, at most once.
 
