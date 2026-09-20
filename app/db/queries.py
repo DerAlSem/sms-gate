@@ -967,6 +967,53 @@ async def record_verification_rung(
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def verification_seconds_left(verification_id: int) -> int:
+    """How much of this verification's life is left, in whole seconds, by the database's
+    clock rather than ours.
+
+    The same clock that wrote the deadline, for the same reason every conditional update
+    here is a single statement: a lifetime computed against a second clock is a lifetime
+    that disagrees with the one the application was promised. Zero for a verification that
+    is gone or already past its deadline — a rung asked to carry that is being asked to
+    buy nothing.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT CAST(strftime('%s', expires_at) - strftime('%s', 'now') AS INTEGER) "
+        "  FROM verifications WHERE id = ?",
+        (verification_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row is None or row[0] is None:
+        return 0
+    return max(0, int(row[0]))
+
+
+async def set_rung_outcome(
+    rung_id: int, *, outcome: str, reason: str | None = None,
+    vendor_ref: str | None = None, cost: float | None = None,
+) -> None:
+    """Finish the row the ladder wrote before it contacted this rung.
+
+    The row is written first and updated here so that the order on disk is the order of
+    the money: a crash between a vendor's confirmation and our record would otherwise
+    leave a fee attributable to nothing. For the same reason `vendor_ref` and `cost` are
+    written only when this call has them — a carrier that already recorded a charge and
+    then failed must not have that charge erased by the outcome that follows it.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE verification_rungs "
+        "   SET outcome = ?, "
+        "       reason = COALESCE(?, reason), "
+        "       vendor_ref = COALESCE(?, vendor_ref), "
+        "       cost = COALESCE(?, cost) "
+        " WHERE id = ?",
+        (outcome, reason, vendor_ref, cost, rung_id),
+    )
+    await db.commit()
+
+
 async def verification_rungs(verification_id: int) -> list[aiosqlite.Row]:
     """Every rung attempted for this verification, oldest first.
 
