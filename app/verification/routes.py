@@ -48,6 +48,20 @@ SMS_OUT = "sms_out"
 FLASH_CALL = "flash_call"
 TG_GATEWAY = "tg_gateway"
 
+# The three messenger ways out named by the same decision of 18.09.2026 and carried by no
+# adapter yet. They are listed here rather than invented later because the vocabulary is
+# required to be one: a second list, written when the first messenger lands, is how two
+# words for one choice get back in. A route named in the rule with nothing to carry it is
+# not attempted, is alerted about, and the ladder advances past it.
+TG_USER = "tg_user"
+MAX_USER = "max_user"
+APP_BOT = "app_bot"
+
+# Every way out this gateway knows. The rule validates against exactly this set.
+ALL_ROUTES = frozenset({
+    CALL_IN, SMS_IN, SMS_OUT, FLASH_CALL, TG_GATEWAY, TG_USER, MAX_USER, APP_BOT,
+})
+
 # What the person is told to do, per rung. Addresses, never identities: "call this number"
 # is the address, and which SIM answers it is the identity.
 _INSTRUCTIONS = {

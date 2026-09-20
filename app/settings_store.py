@@ -15,12 +15,23 @@ logger = logging.getLogger(__name__)
 class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
-                       # | "region" | "delays"
+                       # | "oproutes" | "region" | "delays"
     default: object
     section: str
     is_secret: bool
     description: str
     route_key: str = ""   # "routes" only: the field identifying a route
+
+
+def _shipped_rule() -> str:
+    """The rule's shipped content, fetched late.
+
+    `app.verification.rule` reads this store, so importing it at module scope would close
+    a cycle. The default is wanted here all the same: a spec whose default lived anywhere
+    else would let `seed_from_env` write a rule nobody wrote.
+    """
+    from app.verification import rule
+    return rule.SHIPPED
 
 
 SETTINGS_SPEC: list[Spec] = [
@@ -55,6 +66,11 @@ SETTINGS_SPEC: list[Spec] = [
          "Notify on every inbound SMS received"),
     Spec("notify_dispatch_errors", "bool", True, "Alerting", False,
          "Notify when an inbound webhook fails — otherwise the drop is silent"),
+    # On by default, unlike `notify_send_errors`. What it reports is not a send failing
+    # but a way out being refused or skipped — and the skip is the one that shows up
+    # only as a bill on the rung below it.
+    Spec("notify_routing_errors", "bool", True, "Alerting", False,
+         "Notify when a route is refused, unreadable or cannot be attempted"),
     Spec("telegram_replies_enabled", "bool", False, "Alerting", False,
          "Allow replying to a notification in Telegram to send an SMS back (takes effect after restart)"),
     Spec("instance_name", "str", "", "Alerting", False,
@@ -127,6 +143,18 @@ SETTINGS_SPEC: list[Spec] = [
     # made and present as a gateway that answers 404 to everyone.
     Spec("verification_retention_days", "posint", 30, "Verification", False,
          "Delete finished verifications after N days"),
+    # The routing rule, as data. Its shipped content and every norm about reading it live
+    # in `app/verification/rule.py`; what belongs here is that it is a setting at all —
+    # `.env` would need a restart to change, and a restart drops sending sessions, which
+    # is the deploy the rule exists to avoid, merely spelled differently. Not carried by
+    # `delivery_dispatch`, which requires a webhook URL on every entry and would reject
+    # this rule outright.
+    Spec("operator_routes", "oproutes", _shipped_rule(), "Routing", False,
+         'Which way out each operator\'s traffic takes: JSON list, e.g. '
+         '[{"operator":"МегаФон","routes":["tg_gateway","flash_call"]},'
+         '{"operator":"*","routes":["sms_out"]},{"operator":"?","routes":["sms_out"]}] '
+         "— \"*\" answers for an operator with no entry, \"?\" for one that could not "
+         "be resolved, and \"refuse\" is a way of declining rather than a way out"),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93
@@ -235,6 +263,10 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
                     f"http:// or https:// — got {url!r}"
                 )
         return
+    if type_ == "oproutes":
+        from app.verification import rule
+        rule.validate(raw)
+        return
     if type_ == "delays":
         for part in raw.split(","):
             text = part.strip()
@@ -270,8 +302,13 @@ def _clean_route(item: dict) -> dict:
 
 
 def normalize_raw(type_: str, raw: str) -> str:
-    """Canonical stored form of `raw`. Only "routes" is rewritten: route fields are
-    stripped, so a pasted " https://…" cannot reach httpx."""
+    """Canonical stored form of `raw`. Two types are rewritten: "routes" has its route
+    fields stripped, so a pasted " https://…" cannot reach httpx, and "oproutes" has its
+    operator names and route names stripped, so a pasted name is stored as it will be
+    matched rather than matched around for ever."""
+    if type_ == "oproutes":
+        from app.verification import rule
+        return rule.normalize(raw)
     if type_ != "routes" or raw.strip() == "":
         return raw
     try:
