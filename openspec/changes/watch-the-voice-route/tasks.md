@@ -60,7 +60,16 @@
       of debounce in `design.md`, both assume this window does not exist; the 2026-09-18
       measurement cannot separate "off network, reads zero" from "on network, route not yet
       up". **If it lags, the gate widens to "registered and settled" or debounce comes
-      back** — and `design.md` is rewritten rather than left standing
+      back** — and `design.md` is rewritten rather than left standing.
+      ✅ **The probe is written and lives in the repository:** `deploy/ims-lag-probe.py`.
+      It reproduces the watchdog's own soft recovery in full — `CFUN=4` → `CFUN=1` →
+      `COPS=0`, then re-subscribes `CNMI` — and samples `AT+CEREG?` and `AT+QCFG="ims"`
+      together at the production poll cadence of 2 s, stopping early once the route has
+      been up for three consecutive samples so the outage stays short. ⚠️ It reads only
+      the **second** field for "route up": the first has three states and reading it as a
+      boolean is the bug this change exists to avoid. Put in the repository deliberately —
+      the owner's `/tmp/ims_set.py` lives in no repository, and this proposal complains
+      about exactly that
 - [x] 1.5 **Correct the false premise in the neighbour.** Done —
       `openspec/changes/verify-by-inbound-code/proposal.md`, the paragraph on remedies. The
       sentence is withdrawn rather than deleted, with the 2026-09-18 measurement recorded and
