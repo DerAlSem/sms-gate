@@ -38,7 +38,7 @@ they are holding rings.
 [unbacked · the public API today is `/sms/send` and `/sms/{id}` only]
 
 #### Scenario: A number on an operator routed to the call
-- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, call]` and the Gateway declines the subscriber
+- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, flash_call]` and the Gateway declines the subscriber
 - **THEN** the response carries the verification id and names the call method, and the call is placed
 
 #### Scenario: The rung that accepted is the method reported
@@ -367,7 +367,18 @@ vendor, and a rung whose block conditions are unpublished is the one to be more 
 not less. If a live sample later shows the Gateway publishing or enforcing its own, the limits
 become the stricter of the two, exactly as they already do for a calendar day.
 
-[unbacked · vendor reference, uCaller read 08.09.2026, Telegram Gateway read 18.09.2026]
+The window SHALL be counted **rolling backwards from now** rather than as a calendar day, and
+the count SHALL be taken over the rung attempts of both paid routes rather than over
+verifications: what the vendor counts is an authorisation placed, and one verification places
+more than one — that is what a ladder is.
+
+[backed for the enforcement · `app/verification/limits.py`, guarded by
+`tests/test_per_number_limits.py`, with a positive control and seven mutations in
+`bite-limits.sh` — counting only the call rung, dropping the gap, dropping either ceiling,
+a calendar day instead of a rolling window, hard-coded vendor numbers, and every number
+counted as one — each turning a guard red. The **numbers** remain the vendors' reference
+rather than a measurement: uCaller read 08.09.2026, Telegram Gateway read 18.09.2026, and no
+live sample shows either vendor enforcing anything]
 
 #### Scenario: A second attempt too soon
 - **WHEN** a verification is requested for a number eight seconds after the previous one

@@ -37,7 +37,7 @@ subscriber's phone. It is therefore a way to deliver a *verification code*, and 
   behind it — so that a subscriber the Gateway cannot reach costs nothing before the call is
   placed. Owner's decision of 18.09.2026.
 - **Route selection is a configured rule keyed on the recipient's operator**, not a branch.
-  Today it carries one entry — МегаФон to `[tg_gateway, call]` — set without deploying code,
+  Today it carries one entry — МегаФон to `[tg_gateway, flash_call]` — set without deploying code,
   and the *order* of that list is part of what is configured.
 - **Spending on a paid route is an entitlement of the application, off by default.** Three of
   the four applications never send codes; today any active token could open a paid

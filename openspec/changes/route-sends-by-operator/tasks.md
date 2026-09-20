@@ -67,8 +67,11 @@ rather than on code.
 
 - [ ] 4.1 Test: a verification for an operator the rule routes to `flash_call` is not picked up by the modem sender, and one routed to `sms_out` is
 - [ ] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
-- [ ] 4.3 Test: the rule matches `МЕГАФОН` and `МегаФон` identically, and matches a name with surrounding whitespace. **This test fails on any implementation built on SQLite `upper()`/`LIKE` or on `==`**
+- [x] 4.3 Test: the rule matches `МЕГАФОН` and `МегаФон` identically, and matches a name with surrounding whitespace. **This test fails on any implementation built on SQLite `upper()`/`LIKE` or on `==`**
 - [ ] 4.4 Test: a number with no row in `number_operators` takes the default route without waiting for a lookup, and the missing operator is recorded
+      Half done 20.09.2026: the rule answers the unresolved case through its `?`
+      entry (`tests/test_routing_rule.py`). What remains is the door's half — not
+      waiting on the lookup, and recording the missing operator.
 - [ ] 4.5 Test: the operator lookup being unreachable fails nothing and delays nothing
 - [ ] 4.6 Test: arbitrary text addressed to an operator routed to `flash_call` is `failed` at once with a reason naming the operator, notifies the app, alerts the operator, issues no AT command and consumes no retry
 - [ ] 4.7 Test: an application-supplied code is rejected by `POST /verifications`
@@ -80,7 +83,12 @@ rather than on code.
 - [ ] 4.13 Test: a repeat inside the free window uses `initRepeat` and keeps the same code; a retried vendor call carrying the same idempotency key does not place a second call
 - [ ] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
 - [ ] 4.15 Test: a verification outcome pushed to the application is distinguishable from a message status push, so a verification id cannot be read as a message id
-- [ ] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, call]` — as data, not as a branch, and with no `app_id` in the rule
+- [x] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, flash_call]` — as data, not as a branch, and with no `app_id` in the rule
+      Built 20.09.2026 as the typed setting `operator_routes` in
+      `app/verification/rule.py`. Two entries name no operator — `*` for an
+      operator with no entry and `?` for one that could not be resolved — and
+      `refuse` is a way of declining rather than a way out. Matching is NFKC +
+      strip + `casefold`, in Python and never in SQL. Eight mutations bite.
 - [ ] 4.17 Implement the verification endpoints, the code store and the uCaller adapter against the samples captured in 1.3
 - [x] 4.17a Implement the Telegram Gateway adapter against the samples captured in 1.6 — `checkSendAbility`, `sendVerificationMessage` carrying our own `code` and a `ttl` taken from the verification's remaining lifetime, `revokeVerificationMessage`, and the signed callback. `checkVerificationStatus` is deliberately not used: the attempt counter stays here
       Built 20.09.2026 in `app/verification/tg_gateway.py` (the three vendor calls, the
@@ -99,7 +107,7 @@ rather than on code.
 - [ ] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
 - [ ] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
 - [ ] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
-- [ ] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
+- [x] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
 - [ ] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
 - [ ] 4.26 Test: the spend ceiling refuses a paid verification with its own reason, places no vendor call, and is not reported to the application as a vendor failure
 - [ ] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
@@ -110,22 +118,36 @@ rather than on code.
 
 ### The ladder
 
-- [ ] 4.32 Test: the order of the rungs comes from the rule, not from the code — rewriting an entry from `[tg_gateway, call]` to `[call, tg_gateway]` while the service is running reverses which rung is tried first, with no restart
-- [ ] 4.33 Test: a `checkSendAbility` that declines costs nothing, advances to `flash_call`, and records the decline against the `tg_gateway` rung
-- [ ] 4.34 Test: a `checkSendAbility` that confirms is followed by **exactly one** `sendVerificationMessage` carrying that `request_id`, no call is placed, and the confirmed check is never abandoned
-- [ ] 4.35 Test: the same `request_id` is never sent twice — the second send is not attempted, because the vendor answers it with an error rather than a second message
-- [ ] 4.36 Test: a `checkSendAbility` that does not answer within the bound advances to `flash_call` **and** is counted as possibly-charged spend attributable to no verification. **This test fails on any implementation that treats a timeout as a decline**, which is the natural way to write it and the way that hides money
+- [x] 4.32 Test: the order of the rungs comes from the rule, not from the code — rewriting an entry from `[tg_gateway, flash_call]` to `[flash_call, tg_gateway]` while the service is running reverses which rung is tried first, with no restart
+      The driver takes the order as data and never decides it; the test
+      rewrites the entry mid-run and watches the order follow.
+- [x] 4.33 Test: a `checkSendAbility` that declines costs nothing, advances to `flash_call`, and records the decline against the `tg_gateway` rung
+- [x] 4.34 Test: a `checkSendAbility` that confirms is followed by **exactly one** `sendVerificationMessage` carrying that `request_id`, no call is placed, and the confirmed check is never abandoned
+      With 4.35: the confirmed check is recorded with its `request_id` and cost
+      **before** the send, and the send is made exactly once.
+- [x] 4.35 Test: the same `request_id` is never sent twice — the second send is not attempted, because the vendor answers it with an error rather than a second message
+- [x] 4.36 Test: a `checkSendAbility` that does not answer within the bound advances to `flash_call` **and** is counted as possibly-charged spend attributable to no verification. **This test fails on any implementation that treats a timeout as a decline**, which is the natural way to write it and the way that hides money
 - [ ] 4.37 Test: the spend ceiling and the application's entitlement are evaluated **before** any rung is contacted — a refusal by either makes no ability check at all. Assert on the vendor client not being called, not on the outcome
+      The driver's half is built and guarded: `gates` is a required parameter of
+      `ladder.walk`, every gate runs before the first rung is contacted, and the test
+      asserts on the carrier not being called. The two gates this task names do not
+      exist yet (4.26, 4.45), so the task stays open until they do and are passed in.
 - [ ] 4.38 Test: one acceptance bound covers the whole ladder, not each rung — a slow first rung does not double the time the application waits, and the response still names a method rather than pending
-- [ ] 4.39 Test: a message the Gateway accepted and then did not deliver within its `ttl` fails the verification with that reason, places **no** call, and records the refund. This is the open question 2.6 pinned as the default until the owner decides otherwise
-- [ ] 4.40 Test: the `ttl` handed to the vendor is the verification's remaining lifetime, not a constant of the adapter's
+      The ladder's half is built and guarded (`tests/test_ladder_walk.py`). The
+      response naming a method rather than pending is the door's half and is not built.
+- [x] 4.39 Test: a message the Gateway accepted and then did not deliver within its `ttl` fails the verification with that reason, places **no** call, and records the refund. This is the open question 2.6 pinned as the default until the owner decides otherwise
+      Already held by `app/verification/tg_callback.py`; what was missing was a
+      guard that no call follows, and it exists now that a ladder could place one.
+- [x] 4.40 Test: the `ttl` handed to the vendor is the verification's remaining lifetime, not a constant of the adapter's
 
 ### The Gateway's own outcomes
 
 - [ ] 4.41 Test: `delivered` and `read` leave the verification open and unconfirmed; only a correct code at `/check` confirms it
-- [ ] 4.42 Test: a verification carried by `tg_gateway` that becomes confirmed, expired or out of attempts revokes its outstanding message at the vendor
+- [x] 4.42 Test: a verification carried by `tg_gateway` that becomes confirmed, expired or out of attempts revokes its outstanding message at the vendor
+      Hung on `announce_verification_outcomes` — the one pass that sees all three
+      endings, so a writer added later cannot be a writer that forgot.
 - [ ] 4.43 Test: a callback whose signature does not verify changes no state and is counted; so is a correctly signed one whose timestamp is outside the tolerance; a correctly signed and timely one updates the recorded delivery outcome
-- [ ] 4.44 Test: the attempt counter is this gateway's — a wrong code on a `tg_gateway` verification consumes one of our five and calls no vendor endpoint to decide it
+- [x] 4.44 Test: the attempt counter is this gateway's — a wrong code on a `tg_gateway` verification consumes one of our five and calls no vendor endpoint to decide it
 
 ### Entitlement, template, credentials
 
@@ -135,6 +157,10 @@ rather than on code.
 - [ ] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
 - [ ] 4.49 Test: a vendor credential written to `.env` for a key that already has a row in `settings` is not used, and the value in `settings` stays in force
 - [ ] 4.50 Test: a rung whose credential is absent is not attempted, alerts on stock settings, and the ladder advances past it — the one place where a configuration gap costs money rather than traffic, and therefore the one that must be loud
+      Built for the case of a route nothing is configured to carry: not attempted,
+      alerted on stock settings (`notify_routing_errors` defaults on), ladder advances.
+      The credential-shaped half — a rung whose token is blank — belongs with the
+      wiring that decides which carriers exist, and that is the door's.
 - [ ] 4.51 Test: the settings page reports each vendor credential as configured or not and renders neither value
 
 ### Money across two vendors
@@ -142,7 +168,9 @@ rather than on code.
 - [ ] 4.52 Test: the spend ceiling counts both rungs together — verifications that advance from the first rung to the second reach it even though neither rung reaches it alone
 - [ ] 4.53 Test: the balance floor is held against each vendor separately, and the alert names which vendor it is about
 - [ ] 4.54 Test: a request the vendor reports as refunded lowers the recorded spend for that verification to nothing, rather than keeping the charge with a note beside it
-- [ ] 4.55 Test: the per-number limits are applied to the ladder as a whole, not to the `flash_call` rung alone — a second request inside the window is refused before the Gateway is asked, because the Gateway publishes no limits and silence is not their absence
+- [x] 4.55 Test: the per-number limits are applied to the ladder as a whole, not to the `flash_call` rung alone — a second request inside the window is refused before the Gateway is asked, because the Gateway publishes no limits and silence is not their absence
+      The window is rolling rather than a calendar day, and the count is taken
+      over the rung attempts of both paid routes.
 
 ## 5. Verify against the real thing
 

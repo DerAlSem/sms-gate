@@ -72,7 +72,7 @@ paid way out is attempted first is a money decision, it changes as vendors' pric
 reachability change, and it is precisely the decision that must not need a deploy.
 
 No operator name SHALL appear in a branch in the sending path. The rule's initial content —
-МегаФон to `[tg_gateway, call]`, everything else to `[modem]` — is data, and the change that
+МегаФон to `[tg_gateway, flash_call]`, everything else to `[sms_out]` — is data, and the change that
 introduces it is not permitted to hard-code it, because the event this capability exists for
 is the next withdrawal rather than this one. Nor SHALL the ladder's order be hard-coded: an
 implementation that tries Telegram first because the code says so, rather than because the
@@ -106,14 +106,39 @@ The default route SHALL be an entry of the same rule, changeable by the same mea
 compiled into the sending path is the hard-coding this requirement forbids, merely spelled
 differently.
 
-[unbacked]
+Two entries name no operator and are spelled with characters an operator name cannot contain,
+so that neither can ever be shadowed by a real network. `*` answers for an operator the rule
+does not mention. `?` answers for an operator that could not be resolved at all, and it is
+separate from `*` on purpose: the numbers most likely to lack an operator row are the ones
+never messaged before, and a first-time recipient is exactly who a confirmation code is usually
+for, so the unknown case is one the owner configures rather than one arrived at by accident.
+
+A third reserved word, `refuse`, is not a way out but the absence of one, and it is expressible
+for the reason the rule is configuration at all: refusing is sometimes the correct answer and
+must not need a deploy either. It SHALL stand alone in an entry — a ladder that continues past
+a refusal is not a refusal.
+
+A rule that is readable but cannot answer for this operator — no entry, no `*`, no `?` — SHALL
+refuse rather than fall back to a route of the implementation's choosing. A default arrived at
+by accident is the silent failover this capability refuses by name elsewhere, and it would be
+arrived at exactly when the rule is half-configured.
+
+Two entries whose operator names normalise to the same thing SHALL be refused at save time.
+Which of the two wins would otherwise be decided by the order of the list, invisibly, and the
+data already holds one operator under two spellings.
+
+[backed · `app/verification/rule.py`, guarded by `tests/test_routing_rule.py`; eight mutations
+in `bite-rule.sh` — exact-string matching, a hard-coded ladder order, an accepted unknown
+route, a broken rule read as empty, an unanswerable rule guessing the modem, an accepted
+`app_id`, two spellings of one operator, and a `refuse` continuing into a ladder — each turn a
+guard red]
 
 #### Scenario: An operator with a configured route
-- **WHEN** the rule routes МегаФон to `[tg_gateway, call]` and a verification is requested for a МегаФон number
+- **WHEN** the rule routes МегаФон to `[tg_gateway, flash_call]` and a verification is requested for a МегаФон number
 - **THEN** the verification is routed `tg_gateway` first, and `flash_call` only if that rung declines it
 
 #### Scenario: The ladder's order is data, not code
-- **WHEN** the entry for an operator is rewritten as `[call, tg_gateway]` while the service is running
+- **WHEN** the entry for an operator is rewritten as `[flash_call, tg_gateway]` while the service is running
 - **THEN** subsequent verifications for that operator try `flash_call` first, with no restart and no code change
 
 #### Scenario: An operator with no entry in the rule
@@ -127,6 +152,14 @@ differently.
 #### Scenario: The rule changes without a deploy
 - **WHEN** a second operator is added to the rule while the service is running
 - **THEN** subsequent items for that operator take the new route, with no restart and no code change
+
+#### Scenario: An operator that could not be resolved at all
+- **WHEN** a verification is requested for a number whose operator the lookup could not resolve
+- **THEN** it takes the rule's `?` entry rather than its `*` entry, and either may be set to `refuse`
+
+#### Scenario: A rule that cannot answer for this operator
+- **WHEN** the rule holds neither an entry for the operator nor a `*` entry
+- **THEN** the item is refused rather than routed to a way out the implementation chose
 
 ### Requirement: A route's credentials live in `settings`, marked secret, and never in the environment
 
@@ -282,6 +315,30 @@ written, SHALL attempt each rung of a verification's ladder at most once, and SH
 the next rung only when the current one **declines to carry** the verification — not when it
 carries it and then fails.
 
+That makes three classes of outcome rather than two, and the third is the expensive one: a rung
+that **carried and then failed** SHALL stop the ladder and fail the verification with that rung
+named. Advancing there would buy the same code at the second vendor while the first vendor's
+fee cannot be refunded until its `ttl` runs out — paying twice for one login, which is the
+single most expensive mistake this ladder can make.
+
+A rung that cannot carry **this particular item** SHALL be recorded as such and SHALL NOT be
+counted as a decline. The case that exists today is a verification with less life left than the
+vendor's `ttl` floor of thirty seconds: inflating the `ttl` to reach the floor would hand the
+vendor a message outliving the verification it belongs to, while the automatic refund on
+non-delivery is tied to that same `ttl`. A decline is a statement about the **subscriber**, and
+a rung that appears to decline everyone is a rung that will be taken out of the rule for the
+wrong reason.
+
+Each rung's attempt SHALL be recorded **before** its vendor is contacted, and completed
+afterwards. The ordering is the money's: a process that dies between a vendor's confirmation
+and our record leaves a fee that belongs to nothing, and the only symptom of that is a balance
+that drifts.
+
+A route named by the rule that nothing is configured to carry SHALL NOT be attempted, SHALL
+raise an operator alert, and the ladder SHALL advance past it. This is the one configuration
+gap that costs money rather than traffic — every verification still completes, by the dearer
+rung — and it is therefore the one that must be loud on stock settings.
+
 On `tg_gateway`, declining is `checkSendAbility` reporting that the subscriber cannot be
 reached, or not answering within the acceptance bound. On `flash_call`, there is no declining rung
 below it; a ladder SHALL end in a route that either carries or fails.
@@ -351,7 +408,12 @@ one that cannot spend money on a decision nobody has taken; the argument for the
 the fee is refunded anyway, and it is a real argument, which is why this is an open question
 and not an omission.
 
-[backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running]
+[backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running. The driver itself —
+`app/verification/ladder.py` and `app/verification/tg_carrier.py` — is guarded by
+`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`; seventeen mutations in
+`bite-ladder.sh` and `bite-carrier.sh` each turn a guard red, among them gates that do not run
+first, silence recorded as a decline, a bound handed to each rung again, a hard-coded order,
+a fee recorded only after the send, and a failed send advancing the ladder]
 
 #### Scenario: The subscriber is not reachable in Telegram
 - **WHEN** `checkSendAbility` answers `ok: false` with `PHONE_NUMBER_NOT_AVAILABLE`
@@ -376,6 +438,18 @@ and not an omission.
 #### Scenario: A gate that would refuse is reached after the money
 - **WHEN** a verification would be refused by the spend ceiling or by the application's entitlement
 - **THEN** it is refused before any rung is contacted, and no ability check is made
+
+#### Scenario: A rung that carried and then failed
+- **WHEN** a confirmed ability check is followed by a send the vendor refuses
+- **THEN** the ladder stops rather than advancing, the verification fails naming that rung, and the fee already incurred stays recorded
+
+#### Scenario: A rung that cannot carry this verification
+- **WHEN** a verification has less life left than the vendor's `ttl` floor
+- **THEN** the rung is not bought at all, and the outcome recorded is not a decline
+
+#### Scenario: A route nothing is configured to carry
+- **WHEN** the rule names a route for which no carrier is configured
+- **THEN** it is not attempted, the operator is alerted on stock settings, and the ladder advances to the next rung
 
 #### Scenario: The Gateway took the message and did not deliver it
 - **WHEN** a message the Gateway accepted is not delivered within its `ttl`
