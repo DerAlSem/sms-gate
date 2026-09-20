@@ -33,11 +33,12 @@ from __future__ import annotations
 import logging
 
 from app.db import queries
-from app.verification import ladder, tg_gateway
+from app.verification import balance, ladder, tg_gateway
+from app.verification.routes import TG_GATEWAY
 
 logger = logging.getLogger(__name__)
 
-VENDOR = "Telegram Gateway"
+VENDOR = balance.VENDOR[TG_GATEWAY]
 
 # How an ability check's kind maps onto what the ladder does next. `ABLE` is absent on
 # purpose: it is the only one that goes on to spend, and it is handled in code rather than
@@ -89,6 +90,13 @@ def carrier(
 
         # Confirmed: one fee is now incurred, and exactly one send is owed for it.
         cost = ability.status.request_cost if ability.status else None
+
+        # The one answer in which `remaining_balance` is the account's balance. Read here
+        # and nowhere else: the send that follows reports a number that is not the
+        # balance, and this check is the only reading the gateway ever gets for free —
+        # free because it has already been paid for by the verification in hand.
+        balance.observe(TG_GATEWAY,
+                        ability.status.remaining_balance if ability.status else None)
         await queries.set_rung_outcome(
             rung_id, outcome=ladder.ATTEMPTING, vendor_ref=ability.request_id, cost=cost,
             reason="the ability check confirmed and was charged")

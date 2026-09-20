@@ -189,6 +189,27 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("verification_paid_per_day", "posint", 300, "Verification", False,
          "Paid rungs this gateway may attempt per rolling day, across all numbers, "
          "applications and both paid routes together"),
+    # The balance floors: one per prepaid vendor, never a floor over the sum. A single
+    # floor over the total would be satisfied by one funded account while the other is
+    # empty, and the empty one is a rung of the same ladder.
+    #
+    # 🔴 Telegram's balance cannot be polled: `remaining_balance` is the account's
+    # balance only in the answer to a **confirming** ability check, which is the billed
+    # call (measured 20.09.2026 — the same request answered 99.99 on the check and 0 on
+    # the send that followed). So the floor is held against the reading that arrives with
+    # ordinary traffic, and the shipped value is stated in the vendor's own units rather
+    # than in a currency this gateway has never been told: one confirmation cost 0.01 in
+    # those units, so a floor of 10 is about a thousand verifications of warning.
+    Spec("tg_gateway_balance_floor", "float", 10.0, "Verification", False,
+         "Alert when the Telegram Gateway balance last reported falls below this "
+         "(in the vendor's own units; read from confirming ability checks, never polled)"),
+    # Zero, and deliberately: this rung has no account yet (task 1.1) and no observed
+    # cost, so any number here would be a guess dressed as a setting. Zero is not read as
+    # "the balance is fine" — a balance arriving for a rung with no floor is logged as a
+    # vendor nobody is watching, which is what it is until the account exists.
+    Spec("flash_call_balance_floor", "float", 0.0, "Verification", False,
+         "Alert when the uCaller balance falls below this (0 = not configured; the "
+         "account does not exist yet, and a reading with no floor is reported as such)"),
     # The routing rule, as data. Its shipped content and every norm about reading it live
     # in `app/verification/rule.py`; what belongs here is that it is a setting at all —
     # `.env` would need a restart to change, and a restart drops sending sessions, which
