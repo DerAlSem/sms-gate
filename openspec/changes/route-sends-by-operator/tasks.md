@@ -34,7 +34,7 @@ funded balance.
 
 ## 3. Agree the contract with the parking developer
 
-- [ ] 3.1 Settle the contract's shape here, then hand it over — **there is nothing to reconcile
+- [x] 3.1 Settle the contract's shape here, then hand it over — **there is nothing to reconcile
       with.** 🔴 The owner said on 18.09.2026, twice, that the contract was never given to the
       parking developer: *«контракт отдадим, когда поймем, что и как по итогу»*. The earlier text
       of this task read the opposite from an artifact believed sent on 07.09.2026 and built four
@@ -45,9 +45,50 @@ funded balance.
       minutes rather than ten (2.1); the verification id in a field distinct from `id`; and the
       method vocabulary, settled by the owner on 18.09.2026 as one flat field — `sms_out`,
       `sms_in`, `call_in`, `flash_call`, `tg_gateway`, `tg_user`, `max_user`, `app_bot`.
+      Settled 21.09.2026 by reconciling the four against the code rather than by
+      choosing them again, because all four were already built: `/verifications` is
+      plural on every one of the four doors (`app/api/router.py`);
+      `verification_ttl_seconds` ships at **300 s**; the push carries
+      `verification_id` and **no `id` at all** (4.15a); and `routes.ALL_ROUTES` holds
+      the eight names flat, with `rule` validating against exactly that set. So the
+      task closed as a sverka, as the handoff predicted.
+      🔴 **What the sverka found is a fifth substance nobody had named, and it is
+      recorded as 3.4:** the number a subscriber must dial or text reaches the
+      application only inside an English `instruction` string. The four settled items
+      were all about vocabulary and shape; this one is about whether the application
+      can put a Russian screen in front of a person at all, and it is not ours to
+      settle alone.
 - [ ] 3.2a Then write the integration contract with real examples and hand it over, once the shape is settled and not before — the owner's condition of 18.09.2026. Until `sp_app` adopts it, no МегаФон subscriber sees any improvement
-- [ ] 3.2 Quote no invented number in the contract. **The draft carries TWO placeholders, not one** — `+79001234567` in the JSON example and `+7 900 123-45-67` in the screen copy — and both must go before it is handed over. (An earlier note here said one of them had gone out in the frozen `verify-by-inbound-code` contract; nothing went out — see 3.1.) The fix is not "use the real one": **for the call method there is no gateway number at all** (the vendor calls, from a number nobody knows in advance), and for the SMS method the gateway does not hold its own MSISDN anywhere in its settings. The contract SHALL name digits only if the gateway holds them as configuration, and otherwise say the sender is the gateway's SIM
+      🟡 **Half done, and the half that remains is not ours.** The document is written:
+      `docs/verification-api.md`, 21.09.2026 — the four doors with real request and
+      response bodies, the push, the four vocabularies (routes, statuses, check
+      outcomes, confirmation methods), and the semantics a consumer would otherwise
+      discover by shipping. **Handing it over is the owner's act**, his condition of
+      18.09.2026, and this task stays open until he has done it.
+      English, like `docs/delivery-webhook.md` — the closest analogue and the other
+      document in `docs/` that calls itself an integration contract. `ru`-only
+      `verification-rungs.md` is addressed to whoever runs the gateway; this one is
+      addressed to a developer outside it. **Decided by me; the owner may overturn it**,
+      and the Russian half is mechanical to add if he wants one.
+      Held to the code by `tests/test_verification_contract_doc.py` — 17 guards, bitten
+      by 25 mutations with no survivors, half of them played against the *code* rather
+      than the document, because a contract that only guards its own prose rots in the
+      one direction that matters. The guards already earned themselves: the first draft
+      of the poll's field table was missing `created_at` and `confirmed_at`.
+- [x] 3.2 Quote no invented number in the contract. **The draft carries TWO placeholders, not one** — `+79001234567` in the JSON example and `+7 900 123-45-67` in the screen copy — and both must go before it is handed over. (An earlier note here said one of them had gone out in the frozen `verify-by-inbound-code` contract; nothing went out — see 3.1.) The fix is not "use the real one": **for the call method there is no gateway number at all** (the vendor calls, from a number nobody knows in advance), and for the SMS method the gateway does not hold its own MSISDN anywhere in its settings. The contract SHALL name digits only if the gateway holds them as configuration, and otherwise say the sender is the gateway's SIM
+      Closed 21.09.2026 the only way that survives the next draft: the contract prints
+      **no telephone number anywhere**, and the rule is enforced on the *shape* of a
+      number rather than on the two strings the old draft happened to carry — the next
+      placeholder will be different digits, and a guard listing yesterday's passes on
+      tomorrow's. `test_the_document_prints_no_telephone_number` fails on any run of
+      five or more digits; its paired positive control fails if the document stops
+      explaining that `gateway_msisdn` ships blank, because a document that had merely
+      gone quiet about numbers would satisfy the first guard perfectly.
+      Where digits are genuinely needed the contract points at the `instruction` string,
+      which the gateway interpolates from `gateway_msisdn` — the one place the estate
+      holds them as configuration, exactly as this task requires.
 - [ ] 3.3 Confirm with the developer whether `sp_app` can receive a webhook, or will poll. Both are supported; the answer decides which one is documented as the recommended path
+- [ ] 3.4 🔴 **The number the subscriber must dial or text reaches the application only inside an English sentence.** `RouteOffer` is `{route, instruction}`, and `instruction` is built in `routes._instruction` by interpolating `gateway_msisdn` into an English template — "Call {number} from the number being verified…". The gateway does not translate it: `docs/i18n.md` covers the admin UI and nothing else, and there is no gettext anywhere in `app/verification/`. So an application whose person reads Russian has two options and both are bad — show them English, or re-word it and have nowhere to read the digits from but a regular expression over our prose. **The remedy is a field, not a translation:** the estate holds the number as configuration and can hand it over as data, leaving the wording to the application that owns the screen. Additive, so no consumer breaks. **Owner's call**, because the contract's substance was settled by him on 18.09.2026 and this is a fifth item added to it; named here rather than built so the decision is his. Until it is decided, the contract says so in as many words — `docs/verification-api.md`, "The instruction is English"
 
 ## 4. Implement, tests first
 
@@ -650,6 +691,7 @@ rather than on code.
 - [x] 4.55 Test: the per-number limits are applied to the ladder as a whole, not to the `flash_call` rung alone — a second request inside the window is refused before the Gateway is asked, because the Gateway publishes no limits and silence is not their absence
       The window is rolling rather than a calendar day, and the count is taken
       over the rung attempts of both paid routes.
+- [ ] 4.56 🔴 **The `tg_gateway` rung can be selected and nothing places it — a route offered that then quietly fails, which is the one thing this capability's own norm forbids by name.** Found 21.09.2026 while writing the contract, by asking what a consumer would actually get for each route the door offers. `_tg_gateway_probe` holds on a non-blank token alone, so the rung is offered on any estate whose operator has entered `tg_gateway_token`; `POST /verifications/{id}/route` accepts it, records the rung as `selected`, and then handles only `call_in` (shorten the window) and `sms_in` (hand back the code). **`ladder.walk` — and through it `tg_carrier`, which is the half that actually sends — has no caller anywhere in `app/`**, only in tests. The person is told to expect a Telegram message, no message is sent, and five minutes later the verification expires with a null reason. ⚠️ **Latent rather than live:** the verification doors are not on `master`, and the token ships blank, so nothing today reaches it — but it is reachable by a settings edit and not by a deployment, which makes it a defect rather than an unbuilt feature. The proper fix is the door that walks the ladder (4.38 and 4.17, both blocked); the cheap one is to stop offering a rung nothing can place, which is what the registry already does for every other unbuilt route and would cost one line. **Which of the two is the owner's call**, because the cheap one makes the Gateway token look inert to an operator who has just entered it. Named in `docs/verification-api.md` meanwhile, because a contract silent about it reads as a promise
 
 ## 5. Verify against the real thing
 
