@@ -17,7 +17,7 @@ from app.db import queries
 from app.db.connection import close_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
-from app.verification.routes import CALL_IN, SMS_IN, SMS_OUT, Proof
+from app.verification.routes import CALL_IN, SMS_IN, SMS_OUT, TG_GATEWAY, Proof
 
 PHONE = "+79261234888"
 AUTH = {"Authorization": "Bearer token-app1"}
@@ -266,6 +266,91 @@ def test_the_poll_names_the_method_that_confirmed(client):
     assert body["status"] == "confirmed"
     assert body["method"] == CALL_IN
     assert "code" not in body
+
+
+# --- 4.47 — the template refusal, and it belongs to the rung rather than the application
+
+def _only_the_modem(app):
+    """The one estate in which this refusal can fire: the modem, and nothing else.
+
+    `call_in` is dropped by a voice route that cannot prove itself, `tg_gateway` by the
+    absent token this fixture already ships with, and `sms_in` by `sms_out` being cheaper
+    than it. What is left is the rung that needs wording of ours.
+    """
+    app.state.ims_proof = _fails()
+
+
+def test_an_application_with_no_template_is_refused_at_accept(app, client):
+    """The requirement's own words: SHALL NOT accept a request it already knows it
+    cannot fulfil in order to fail it afterwards.
+
+    The reason names the template. Refused as `no_route_available` it would send an
+    operator looking at the modem, the rule and the ladder for a setting that is one
+    line of configuration — and refused *after* acceptance it would spend a code, a row
+    and the person's patience to say the same thing.
+    """
+    _only_the_modem(app)
+
+    async def clear():
+        await store.set_many({"verification_templates": "[]"})
+
+    asyncio.run(clear())
+    r = _create(client)
+    assert r.status_code == 422, r.text
+    assert "template" in r.text.lower(), r.text
+
+    async def opened():
+        return await queries.verifications_for_phone(PHONE)
+
+    assert asyncio.run(opened()) == [], \
+        "a verification was opened for a code that could never have been composed"
+
+
+def test_the_same_estate_with_a_template_opens_one(app, client):
+    """The positive control on the refusal: the only thing that differs is the setting."""
+    _only_the_modem(app)
+
+    async def configure():
+        await store.set_many({"verification_templates":
+                              '[{"app_id":"app1","template":"code {code}"}]'})
+
+    asyncio.run(configure())
+    r = _create(client)
+    assert r.status_code == 200, r.text
+    assert [o["route"] for o in r.json()["routes"]] == [SMS_OUT]
+
+
+def test_no_template_does_not_refuse_a_verification_a_paid_rung_can_carry(app, client):
+    """The requirement's second scenario, and the reason the refusal follows the **rung**.
+
+    Neither paid rung carries text of ours — `sendVerificationMessage` takes a `code` and
+    no message body at all — so an application with no template is still served by them.
+    A refusal keyed on the application, or on the rule naming `sms_out` for this
+    operator, would refuse a request this gateway can in fact fulfil: the consumer may
+    pick the Telegram rung, and a rung the rule does not name is still carried alone.
+    """
+    _only_the_modem(app)
+
+    async def configure():
+        await store.set_many({"verification_templates": "[]",
+                              "tg_gateway_token": "a-token"})
+
+    asyncio.run(configure())
+    r = _create(client)
+    assert r.status_code == 200, r.text
+    assert TG_GATEWAY in [o["route"] for o in r.json()["routes"]]
+
+
+def test_no_template_does_not_refuse_one_the_subscriber_carries(app, client):
+    """The same argument for the rungs on which the **person** reaches us: they carry a
+    code by construction and there is no wording of ours anywhere in them."""
+    async def clear():
+        await store.set_many({"verification_templates": "[]"})
+
+    asyncio.run(clear())
+    r = _create(client)
+    assert r.status_code == 200, r.text
+    assert CALL_IN in [o["route"] for o in r.json()["routes"]]
 
 
 # --- the one exception, and it follows the rung rather than the application -------------

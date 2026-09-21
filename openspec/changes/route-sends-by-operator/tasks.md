@@ -732,7 +732,7 @@ rather than on code.
       its pre-change shape, populates it, then migrates, and asserts the row that
       predates the column comes out switched off. A default that reached only new rows
       would leave the guarantee empty on exactly the installations that have the defect.
-- [ ] 4.47 Test: an application with no template is refused **at accept** for a `sms_out`-routed verification, and is **not** refused for a paid-rung one, because neither paid rung carries text of ours
+- [x] 4.47 Test: an application with no template is refused **at accept** for a `sms_out`-routed verification, and is **not** refused for a paid-rung one, because neither paid rung carries text of ours
       🔴 **Re-measured 21.09.2026, and the blocker is not the one the handoff of that
       morning named.** That one said the task is unreachable because `sms_out` has no
       probe, so a verification routed to it does not exist. The scenario's words are
@@ -747,10 +747,18 @@ rather than on code.
       request it already knows it cannot fulfil" cuts both ways).
       It becomes answerable the moment `sms_out` can be **chosen** (4.17c): then "every
       rung this verification can reach needs our words" is a question with an answer.
-      The shape the refusal should take is already settled by the vocabulary — refuse iff
-      no rung reachable for this operator `carries` a verification code *without* text of
-      ours — and `app/verification/routes.py` is where that property belongs, beside
-      `_CARRIES`, rather than as a branch at the door.
+      🟢 **Built 21.09.2026, once 4.17c made the rung choosable.** The property lives in
+      `app/verification/routes.py` beside `_CARRIES` — `needs_our_words` and the
+      conjunction `carries_a_code_without_our_words` — and the door asks it of **the
+      offers that are left**, never of the rule. The requirement's own words were
+      narrowed in the spec to match, deliberately and with the reason recorded there:
+      keyed on the rule it would refuse requests the gateway can fulfil.
+      Three positive controls, because the refusal follows the rung rather than the
+      application: the same estate with a template, the same estate with the paid rung
+      available, and the inbound rungs. Seven mutations bite. One survived first — the
+      `carries` half of the conjunction, unreachable through the door because every rung
+      the registry can offer today carries a code — and it is held directly on the
+      vocabulary, against the three messenger rungs that carry nothing.
 - [x] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
       Built 20.09.2026 as `app/verification/template.py` behind the typed setting
       `verification_templates` — a **setting**, not a schema: the requirement says

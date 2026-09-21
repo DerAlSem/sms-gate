@@ -510,3 +510,32 @@ def test_the_reason_distinguishes_a_route_that_cannot_from_one_that_is_not_the_m
         assert "no way out" in (await _state(refused_by_rule))["error"]
 
     _run(body)
+
+
+# --- the vocabulary's other question, asked by the accept door (task 4.47) --------------
+
+def test_a_rung_that_carries_nothing_is_not_an_answer_to_the_template_question():
+    """`carries_a_code_without_our_words` is a conjunction, and this is its other half.
+
+    The accept door asks "is there a rung left that can carry this code for an
+    application with no wording of its own". A route that carries **nothing** must not
+    answer yes merely because it needs no words of ours — and the three messenger rungs
+    are exactly that shape today: named in the vocabulary, carried by no adapter, absent
+    from `_CARRIES` deliberately, because what a messenger account may put in front of a
+    person is a wire contract nobody here has read.
+
+    🔴 Measured: dropping the `carries` half of the conjunction left the whole suite
+    green. It is unreachable through the door — every rung the registry can offer today
+    carries a code — and it becomes reachable the day one of these three is offered,
+    which is the day a verification would be accepted for a rung that cannot carry it.
+    """
+    from app.verification import routes
+
+    for rung in (routes.TG_USER, routes.MAX_USER, routes.APP_BOT, "a route nobody knows"):
+        assert routes.carries_a_code_without_our_words(rung) is False, \
+            f"{rung} carries nothing, and answered the accept door as though it could"
+
+    assert routes.carries_a_code_without_our_words(routes.TG_GATEWAY) is True, \
+        "the positive control: a paid rung carries a code with no text of ours"
+    assert routes.carries_a_code_without_our_words(routes.SMS_OUT) is False, \
+        "the modem carries a code only inside wording this gateway composes"

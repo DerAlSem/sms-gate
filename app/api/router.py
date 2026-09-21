@@ -16,7 +16,7 @@ from app.db import queries
 from app.lookup.operator import record_operator
 from app.modem.manager import ModemManager
 from app.settings_store import store
-from app.verification import placement
+from app.verification import placement, routes as routes_vocab, template
 from app.verification.probes import build_probes
 from app.verification.tg_callback import PATH as TG_CALLBACK_PATH, handle_callback
 from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
@@ -144,6 +144,29 @@ async def create_verification(
             status_code=422,
             detail={"error": "no_route_available",
                     "message": "no route can prove it can carry this number now"},
+        )
+    if not any(routes_vocab.carries_a_code_without_our_words(o.route) for o in offers) \
+            and not template.for_app(app_id):
+        # 4.47. Every rung left to this verification carries a code only inside wording
+        # this gateway composes, and this application has configured none — so the code
+        # could never be written down, whichever rung the consumer picks. Refused here
+        # rather than at the rung, because the requirement forbids accepting a request
+        # the gateway already knows it cannot fulfil in order to fail it afterwards: an
+        # acceptance would spend a code, a row and the person's patience to say this.
+        #
+        # 🔴 **Keyed on the rungs that are left, never on the routing rule.** The rule
+        # naming `sms_out` for this operator does not mean this verification needs our
+        # words: a rung the rule does not name is still carried alone (the owner's
+        # decision of 21.09.2026), so a consumer offered the Telegram rung may pick it
+        # and be carried with no text of ours anywhere. Keyed on the rule, this would
+        # refuse requests the gateway can in fact fulfil — the same requirement's other
+        # half, read backwards.
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "no_template",
+                    "message": "every route left for this number carries a code only "
+                               "inside a message this gateway composes, and this "
+                               "application has no verification template configured"},
         )
     code = _new_code(await queries.open_codes_for(body.phone))
     verification_id = await queries.create_verification(

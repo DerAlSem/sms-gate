@@ -101,6 +101,40 @@ _CARRIES: dict[str, frozenset[str]] = {
 }
 
 
+# The rungs that carry a code only inside wording of **ours**. One today, and it is here
+# beside `_CARRIES` for the same reason that map is: it is a property of the route rather
+# than a branch inside whoever happens to be asking, and the two questions it answers —
+# may this application be offered this rung, and may this verification be accepted at all
+# — must not be able to disagree.
+#
+# The two paid rungs are absent because there is nowhere in them to put words:
+# `sendVerificationMessage` takes a `code` and a `code_length` and no message body, and a
+# flash call's whole payload is the last four digits of the calling number. `call_in` and
+# `sms_in` are absent because the subscriber is the one who sends.
+_NEEDS_OUR_WORDS = frozenset({SMS_OUT})
+
+
+def needs_our_words(route: str) -> bool:
+    """Whether carrying a code by this route requires text this gateway composes.
+
+    An unknown route answers **no**, and that is the safe direction here rather than the
+    failing one: this answer is only ever read together with `carries`, which answers no
+    for an unknown route, so a route nothing knows can neither carry a code nor be the
+    reason a verification is refused for want of a template.
+    """
+    return route in _NEEDS_OUR_WORDS
+
+
+def carries_a_code_without_our_words(route: str) -> bool:
+    """The question the accept door actually asks, in one place so it cannot drift.
+
+    "Can this rung carry a code for an application that has configured no wording?" —
+    and it is the conjunction, because either half alone is wrong: a route that needs
+    our words is not an answer, and neither is one that cannot carry a code at all.
+    """
+    return carries(route, VERIFICATION_CODE) and not needs_our_words(route)
+
+
 def carries(route: str, item: str) -> bool:
     """Whether this route is capable of carrying this kind of item at all.
 

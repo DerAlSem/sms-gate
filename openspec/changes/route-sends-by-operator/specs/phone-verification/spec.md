@@ -1004,6 +1004,20 @@ The template governs the `sms_out` route only. `tg_gateway` has no message body 
 application without a template SHALL still be served by those rungs. The refusal follows the
 rung, not the application.
 
+**The refusal at accept SHALL be keyed on the rungs this verification has left, and SHALL
+NOT be keyed on the routing rule.** A verification is refused at accept when no rung still
+available to it can carry a code without wording of ours, and the application has none —
+because then the code could never be written down, whichever rung the consumer picks.
+
+⚠️ **This narrows what this requirement said until 21.09.2026**, which was that a
+verification is refused when its operator is *routed* `sms_out`. Read that way it refuses
+requests the gateway can in fact fulfil, and the reason is the owner's decision of the same
+day that a rung the rule does not name is still carried alone: a consumer offered the
+Telegram rung may pick it for a number the rule sends to the modem, and be carried with no
+text of ours anywhere. Refusing that at accept is the same requirement's other half — "SHALL
+NOT accept a request it already knows it cannot fulfil" — read backwards into a request it
+can.
+
 [partly backed · the save-time half is `app/verification/template.py`, reached as the typed
 setting `verification_templates` through `validate_raw`/`normalize_raw` in
 `app/settings_store.py` and rendered as a textarea on the settings page; guarded by
@@ -1012,16 +1026,23 @@ with no placeholder, with two, with an unknown one, a blank one, one application
 unreadable setting read as absent, a formatter interpreting the template, and each of the two
 wirings into the settings layer removed — each turning a guard red. The shipped default is
 **empty**, so an estate that configures nothing refuses every `sms_out`-carried code rather than
-sending wording nobody chose. Still unbacked: the refusal **at accept** (task 4.47), which is
-the door's half and needs the door]
+sending wording nobody chose.
+🟢 **The refusal at accept is backed from 21.09.2026** (task 4.47): `app/verification/routes.py`
+(`needs_our_words` and `carries_a_code_without_our_words`, beside `_CARRIES` because it is a
+property of the route) and the door in `app/api/router.py`, which asks it of the offers that
+are left rather than of the rule. Guarded by `tests/test_verification_api.py` with three
+positive controls — the same estate with a template, the same estate with a paid rung
+available, and the inbound rungs — and by seven mutations, among them the conjunction losing
+its `carries` half, which is unreachable through the door and held directly in
+`tests/test_send_path_refuses_an_uncarryable_route.py`]
 
 #### Scenario: An application with no template asks for an SMS-carried verification
-- **WHEN** a verification is requested by an application with no template, for a number whose operator is routed `sms_out`
-- **THEN** it is refused at accept with a reason naming the missing template, and no message is composed
+- **WHEN** a verification is requested by an application with no template, and every rung still available for that number carries a code only inside wording of ours
+- **THEN** it is refused at accept with a reason naming the missing template, no verification is opened and no message is composed
 
-#### Scenario: The same application on a paid rung
-- **WHEN** the same application requests a verification for a number whose operator is routed to a paid ladder
-- **THEN** the absence of a template does not refuse it, because neither paid rung carries text of ours
+#### Scenario: The same application while a rung that needs no wording is still available
+- **WHEN** the same application requests a verification and a paid rung, or a rung on which the subscriber reaches the gateway, is still available for that number
+- **THEN** the absence of a template does not refuse it, because neither the paid rungs nor the inbound ones carry text of ours — even where the routing rule sends that operator to the modem
 
 #### Scenario: A template that would drop the code
 - **WHEN** a template with no code placeholder is saved
