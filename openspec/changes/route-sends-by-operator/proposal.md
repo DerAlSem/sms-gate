@@ -258,6 +258,92 @@ turns the cheap rung off silently and shows up only as a bill. Hence: the balanc
 against each vendor separately, every alert names which vendor it is about, the spend ceiling
 counts the two rungs together rather than each alone, and an abandoned ability check is counted.
 
+## MAX advertises the Gateway shape and sells no product behind it, 21.09.2026
+
+Task 2.9, read from the vendor's own pages on 21.09.2026. The owner was right about what
+`business.max.ru` says, and the wording is **metadata, not a product page** — it lives in the
+page head and nowhere in the page:
+
+> `<meta name="description">` — *"Единая платформа для уведомлений по номеру телефона, кодов
+> подтверждения, рассылок и автоматизации процессов через мини-приложения и чат-боты"*
+>
+> `<meta name="keywords">` — *"…уведомления по номеру, … подтверждение кода, альтернатива SMS,
+> … 2FA в мессенджере…"*
+
+The visible page sells four things and none of them is that: чат-боты, мини-приложения, каналы,
+Цифровой ID. `dev.max.ru/docs/maxbusiness/selectionservices` names the same four as the whole of
+what a verified profile may connect. There is no fifth door, no price list, no `sendCode`.
+
+**Wall one — nothing in the API can address a phone number.** The reference at
+`dev.max.ru/docs-api` addresses `chatId` and `user_id`; the string `phone` does not occur in it
+at all (checked with `chatId` and `user_id` as positive controls, so the empty result is a fact
+about the page rather than about the grep). Every mention of a телефон in that reference travels
+**inbound**: the `request_contact` button, by which a person hands their own number to a bot they
+have already opened. So the record of 12.09.2026 — *"в MAX номером адресовать нельзя"* — needs no
+correction after all. It needed a citation, and now has one.
+
+**Wall two — the contract forbids it outright, and this is the harder wall.** *Требования к
+содержанию и функциональности Приложений Разработчиков*, `dev.max.ru/docs/legal/requirements`,
+«Редакция от 16.12.25», clause 1.5 among the things a Developer is forbidden to publish:
+
+> *"используют API либо иную техническую интеграцию с Программным обеспечением Компании для
+> формирования, передачи или отправки **Авторизационных сообщений**, Транзакционных сообщений и
+> Сервисных сообщений, а также для рассылки рекламных и маркетинговых или иных массовых сообщений
+> пользователям, **за исключением случаев, прямо предусмотренных Договором с Компанией вне
+> зависимости от наличия технической возможности**."*
+
+And the term is defined to be exactly our traffic — *Правила размещения*,
+`dev.max.ru/docs/legal/rules`, «Редакция от 11.06.26»:
+
+> *"**Авторизационные сообщения** — сообщения, содержащие либо инициирующие передачу одноразовых
+> кодов (в т.ч. QR-коды), токенов, ссылок, или иных данных, которые действительны для одного
+> сеанса, операции или транзакции, и предназначены для аутентификации, идентификации или
+> верификации при взаимодействии со сторонними информационными ресурсами."*
+
+🔴 **The clause anticipates the workaround and closes it by name.** *"Вне зависимости от наличия
+технической возможности"* means a route that happens to work is still forbidden — so no amount of
+ingenuity with bots, channels or mini-apps turns this into a permitted rung. The single exception
+is a *Договор с Компанией*: a negotiated contract, not a self-serve product. That is an owner
+move (`partner_support@max.ru`, or the «Поддержка MAX для бизнеса» chat), and until such a
+contract exists nothing on this rung may be built or asserted.
+
+**The ИП gate, answered from the vendor and not second-hand.** The reported restriction — "since
+August 2025 only Russian legal entities may create and publish bots, ИП and самозанятые excluded"
+— is **not what the vendor's current pages say**, in either direction the task warned about:
+
+> `dev.max.ru/docs/maxbusiness/connection` — *"Подключение к платформе MAX для партнёров и её
+> сервисам — чат-ботам, мини-приложениям, каналам — доступно для юрлиц, ИП и самозанятых, которые
+> являются резидентами РФ. Подключение к сервису Цифрового ID доступно только для юрлиц и ИП
+> (резидентов РФ)"*, and *"Физические лица и нерезиденты пока не смогут пройти верификацию"*.
+>
+> The *Правила* define the Developer who publishes — footnote ¹ — as *"Юридическое лицо,
+> индивидуальный предприниматель, … а также лица, применяющие специальный налоговый режим «Налог
+> на профессиональный доход» (Самозанятые)"*.
+
+So an ИП may publish bots, mini-apps, channels and Digital ID; a самозанятый everything but
+Digital ID. Registering is not narrower than publishing here — the same three categories carry
+both. The restriction as reported does not hold, and it is recorded as refuted rather than
+carried forward.
+
+⚠️ **Both quoted documents change silently by their own terms** — the *Требования* say so in
+6.1: changes take effect on publication, with no notice. The edition dates above are what pins
+this verdict; a re-read is cheap and is what should happen before anyone acts on it.
+
+**Two facts found here that belong to `reach-people-in-messengers`, not to this change.** They
+are recorded and deliberately not acted on from this branch:
+
+- MAX *does* have a verification primitive, and it is the **inbound** shape our sibling change is
+  named after: the `request_contact` button returns `attachments[].type: "contact"` with a payload
+  `{vcf_info, max_info, hash}`, where `hash == HMAC-SHA256(access_token, vcf_info)` and `vcf_info`
+  is a VCARD carrying `TEL;TYPE=cell:79990000000` — the number **without** a `+`, as uCaller also
+  returns it. Matching the hash proves the person controls the number bound to their MAX account.
+  It still requires the person to have opened the bot, so it is not a route we can initiate;
+- the user-side terms, `legal.max.ru/ps`, forbid *"использовать без специального на то разрешения
+  Компании автоматизированные скрипты (программы, боты, краулеры) … для взаимодействия с Сервисом
+  и его функциональностью"*. That change's proposal records that **no** cited term permits an
+  automated user account to carry traffic; there is now a cited term that **forbids** it absent
+  permission. It belongs in front of the same lawyer as the rest of that question.
+
 ## Capabilities
 
 ### New Capabilities
