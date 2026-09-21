@@ -35,6 +35,62 @@ from app.verification.routes import TG_GATEWAY
 
 logger = logging.getLogger(__name__)
 
+# --- where the vendor is told to find this door ------------------------------------------
+#
+# The Gateway takes its callback address **per request** and holds none of its own: measured
+# 21.09.2026 against the vendor's reference and against the cabinet, both by layers, and
+# recorded in `tests/test_where_the_vendor_reports.py`. So the address travels on every send,
+# and it is assembled here rather than at the sender, because the half of it that can drift
+# is the path — and the path belongs to the door.
+#
+# `PATH` is what `app/api/router.py` registers. One name, read by the router's decorator and
+# by the builder below, so that renaming the door cannot leave the vendor posting into a 404
+# it will retry ten times and then forget about.
+PATH = "/verifications/tg-callback"
+
+# The vendor's own bound on `callback_url`, off its parameter table: "An HTTPS URL … 0-256
+# bytes". Measured against the address that will actually travel, not against the base.
+MAX_URL_BYTES = 256
+
+
+def normalize_base(raw: str) -> str:
+    """The stored form of a configured base: no surrounding whitespace, no trailing slash.
+
+    A pasted address carries both, and a doubled slash in the middle of a URL is a different
+    path at some servers. Stripped once, on the way in, rather than at every read.
+    """
+    return raw.strip().rstrip("/")
+
+
+def validate_base(raw: str) -> None:
+    """Raise ValueError if the vendor would refuse the address this base builds.
+
+    Blank is legitimate and means no address is sent at all: the rung still carries, and
+    what is lost is every delivery report — see `placement.carriers_for`, which says so
+    once, out loud.
+    """
+    base = normalize_base(raw)
+    if not base:
+        return
+    if not base.startswith("https://"):
+        # The vendor requires HTTPS. Without this the refusal arrives from the vendor, on
+        # the first send, hours after the setting was saved — the same reasoning that put
+        # the scheme check on `webhook_url` in the settings store.
+        raise ValueError(
+            f"the vendor accepts an HTTPS callback address only — got {raw!r}")
+    url = base + PATH
+    if len(url.encode()) > MAX_URL_BYTES:
+        raise ValueError(
+            f"the callback address would be {len(url.encode())} bytes, over the vendor's "
+            f"{MAX_URL_BYTES}")
+
+
+def url_for(base: str) -> str:
+    """The address to hand the vendor, or blank when none is configured."""
+    normalized = normalize_base(base)
+    return normalized + PATH if normalized else ""
+
+
 # Why a counter rather than a log line: a log line is read when somebody already suspects
 # something. In-process, like the registry's `abandoned_probes`, and for the same reason —
 # it answers "is this happening now", which is the question that gets asked.

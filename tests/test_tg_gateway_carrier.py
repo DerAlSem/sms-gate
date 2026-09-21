@@ -314,4 +314,5 @@ def test_the_declined_subscriber_reaches_the_call_rung(monkeypatch):
 
 def tg_gateway_carrier_for(verification_id):
     from app.verification.tg_carrier import carrier
-    return carrier(verification_id, app_id="app1", token=TOKEN)
+    return carrier(verification_id, app_id="app1", token=TOKEN,
+                   callback_url="https://gate.example.org/verifications/tg-callback")

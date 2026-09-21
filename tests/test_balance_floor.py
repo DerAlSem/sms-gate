@@ -205,7 +205,8 @@ def test_the_carrier_reads_the_balance_from_the_confirming_check_only(alerts, mo
                                                 ttl_seconds=300)
         rung_id = await queries.record_verification_rung(vid, route=TG_GATEWAY,
                                                          outcome=ladder.ATTEMPTING)
-        carry = tg_carrier.carrier(vid, app_id="app1", token="tok")
+        carry = tg_carrier.carrier(vid, app_id="app1", token="tok",
+                                   callback_url="")
         attempt = await carry("+79851600019", seconds_left=5.0, rung_id=rung_id)
         assert attempt.outcome == ladder.CARRIED
 
@@ -241,7 +242,8 @@ def test_a_declining_check_reports_no_balance_at_all(alerts, monkeypatch):
                                                 ttl_seconds=300)
         rung_id = await queries.record_verification_rung(vid, route=TG_GATEWAY,
                                                          outcome=ladder.ATTEMPTING)
-        carry = tg_carrier.carrier(vid, app_id="app1", token="tok")
+        carry = tg_carrier.carrier(vid, app_id="app1", token="tok",
+                                   callback_url="")
         attempt = await carry("+79851600019", seconds_left=5.0, rung_id=rung_id)
 
         assert attempt.outcome == ladder.DECLINED

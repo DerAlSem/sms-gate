@@ -42,7 +42,7 @@ import logging
 
 from app.db import queries
 from app.settings_store import store
-from app.verification import gates, ladder, rule, tg_carrier
+from app.verification import gates, ladder, rule, tg_callback, tg_carrier
 from app.verification.routes import TG_GATEWAY
 
 logger = logging.getLogger(__name__)
@@ -82,8 +82,21 @@ def carriers_for(verification_id: int, *, app_id: str) -> dict[str, ladder.Carri
     carriers: dict[str, ladder.Carrier] = {}
     token = store.tg_gateway_token
     if token:
+        callback_url = tg_callback.url_for(store.tg_gateway_callback_base)
+        if not callback_url:
+            # Not a refusal: the rung carries, the person gets their code, and a
+            # verification with no report still ends on its own deadline. What is lost is
+            # everything the vendor would have told us afterwards — `expired` failing the
+            # verification with that reason, and the refund being recorded rather than
+            # assumed — so it is said here, once per assembly, rather than on every send
+            # or not at all.
+            logger.warning(
+                "tg_gateway_callback_base is blank, so the Telegram Gateway is not told "
+                "where to report: this verification's message will be sent and nothing "
+                "about its delivery, expiry or refund will ever come back")
         carriers[TG_GATEWAY] = tg_carrier.carrier(
-            verification_id, app_id=app_id, token=token)
+            verification_id, app_id=app_id, token=token, callback_url=callback_url,
+            sender_username=store.tg_gateway_sender_username)
     return carriers
 
 

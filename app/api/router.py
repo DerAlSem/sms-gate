@@ -18,7 +18,7 @@ from app.modem.manager import ModemManager
 from app.settings_store import store
 from app.verification import placement
 from app.verification.probes import build_probes
-from app.verification.tg_callback import handle_callback
+from app.verification.tg_callback import PATH as TG_CALLBACK_PATH, handle_callback
 from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
 
 router = APIRouter()
@@ -298,7 +298,7 @@ async def _walk_the_ladder(
     )
 
 
-@router.post("/verifications/tg-callback")
+@router.post(TG_CALLBACK_PATH)
 async def tg_gateway_callback(request: Request):
     """Where the Telegram Gateway reports what became of a message it took.
 

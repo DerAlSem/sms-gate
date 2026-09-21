@@ -24,6 +24,7 @@ def test_spec_has_all_soft_keys():
         "verification_ladder_bound",
         "verification_call_in_ttl_seconds", "gateway_msisdn",
         "tg_gateway_token", "tg_gateway_callback_tolerance_seconds",
+        "tg_gateway_callback_base", "tg_gateway_sender_username",
         "operator_routes", "verification_templates", "operator_route_review_days",
         "operator_lookup_bound",
         "verification_min_gap_seconds", "verification_per_minute",

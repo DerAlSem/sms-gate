@@ -371,6 +371,52 @@ attack or a rotated secret, and both need to be visible.
 - **WHEN** a correctly signed and timely callback reports a delivery outcome
 - **THEN** the verification's recorded delivery outcome is updated from it
 
+### Requirement: A callback nobody is told about never arrives
+
+The Gateway takes its reporting address as a `callback_url` **on each request** and holds none
+of its own. The gateway SHALL therefore send that address with every message it buys on
+`tg_gateway`, and the address it sends SHALL be one this gateway serves — assembled from the
+configured public address and the callback door's own path, rather than written a second time
+beside it.
+
+Where no public address is configured the gateway SHALL send no address at all rather than a
+partial one, SHALL still buy and send the message, and SHALL say once, where the rung is
+assembled, that nothing about the message's delivery, expiry or refund will come back. That is
+a degraded estate rather than a broken one: the person still receives a code, and the
+verification still ends on its own deadline — what is lost is the vendor's half of the ledger,
+which is where the delivery-expiry ending and the refund record both live.
+
+🔴 **Measured, and it is why this requirement exists.** Until 21.09.2026 nothing in `app/`
+supplied the address: the signed-callback door, the revocation sweep and the delivery-expiry
+ending were all built, guarded and green, and none of them could fire in production — a
+mechanism whose whole input arrives from outside is invisible to every test that does not ask
+what was handed to the vendor. The parameter carrying it had a blank default, and every caller
+there had ever been took it.
+
+[backed · the address is assembled by `tg_callback.url_for` over `tg_callback.PATH`, which is
+the same name `app/api/router.py` registers the door under, and is supplied at
+`placement.carriers_for`; `tg_carrier.carrier` takes `callback_url` with **no default**, so a
+caller that does not decide it fails on the signature rather than silently. Guarded by
+`tests/test_where_the_vendor_reports.py`, which reads back what reaches the adapter rather
+than what the carrier returns, and checks the path against the live route table rather than
+against the source. Reference: Telegram Gateway API, read by layers 21.09.2026 — `callback_url`
+is "An HTTPS URL where you want to receive delivery reports related to the sent message, 0-256
+bytes", and the *Report delivery* prose phrases every mention around the request ("if you
+provided one"). The account side was read the same day and the same way: zero occurrences of
+`callback` or `webhook` in the raw HTML of `gateway.telegram.org` or in `/js/gateway.js`, whose
+API-settings form enumerates what it submits — `{account_id, ip_list}` — with `ip_list` five
+times over as the positive control. · conf: high on our half; **the vendor's half remains
+unobserved — no callback has ever arrived**, and it cannot be observed without a paid message
+to a real person]
+
+#### Scenario: The vendor is told where to report
+- **WHEN** a message is bought on `tg_gateway` and a public address is configured
+- **THEN** the vendor is given the address of the callback door this gateway serves
+
+#### Scenario: No public address is configured
+- **WHEN** a message is bought on `tg_gateway` and no public address is configured
+- **THEN** no address is sent, the message is bought and sent regardless, and the gateway says that nothing will report back
+
 ### Requirement: The vendor's per-number limits are enforced here, before the vendor enforces them
 
 uCaller allows four authorisations per number per minute with at least fifteen seconds between

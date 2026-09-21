@@ -399,7 +399,7 @@ selection while looking like correct behaviour.
 - 🔴 **a gate's refusal left the verification open with a route claimed and nothing placed** —
   4.56 again, one door further in.
 
-### And one that is still open: the vendor is not told where to report
+### And one that was still open: the vendor is not told where to report — closed 21.09.2026
 
 `tg_carrier` accepts a `callback_url` and nothing in `app/` supplies one, because no setting
 holds this gateway's own public address. The signed-callback door, its verification and the
@@ -408,6 +408,51 @@ none of them can fire in production. What is measured is our side only: whether 
 also accepts an account-side callback address is **not established**, and no capture speaks to
 it, so the work starts with the vendor's own reference rather than with a setting. Entered as
 task 4.57.
+
+🟢 **Answered, and the answer was the awkward one.** The vendor's reference and the cabinet
+were both read **by layers**, which is the discipline this change learnt the same day over
+MAX's `<meta>` advertising:
+
+- `core.telegram.org/gateway/api`, raw HTML. `callback_url` occurs four times in the whole
+  page: once as a row of `sendVerificationMessage`'s parameter table — *"An HTTPS URL where
+  you want to receive delivery reports related to the sent message, 0-256 bytes"* — and three
+  times in the *Report delivery* prose, every one of them phrased around the request: *"When
+  you include a `callback_url` parameter in your request"*, *"All reports submitted to your
+  `callback_url`, **if you provided one***". The `<meta>` layer holds six tags and speaks to
+  none of it;
+- `gateway.telegram.org`, the account side, both of the layers that can be read without an
+  account: zero occurrences of `callback` or `webhook` in the page's raw HTML, and zero in
+  `/js/gateway.js` — the bundle that carries the cabinet's own behaviour, not the marketing
+  page's. Its API-settings handler enumerates what it submits, `{account_id, ip_list}`, so
+  the enumeration is exhaustive by construction rather than by reading. Positive control on
+  the same file and the same grep: `ip_list` five times, alongside `revokeToken`,
+  `getLogHistory` and `saveApiSettings`, which is the cabinet's whole vocabulary.
+
+⚠️ **The negative names its layers.** What was not read is the cabinet behind the login — no
+account is held from here — so the claim is "neither the reference nor the two public layers
+of the cabinet holds a callback address", not "the vendor has no such setting anywhere".
+Every reading the reference does offer points the same way.
+
+So the address is ours to send on every message, and it now is: `tg_gateway_callback_base`
+holds this gateway's public address, `tg_callback.url_for` assembles it over the door's own
+`PATH`, and `placement.carriers_for` supplies it. Blank ships and stays legitimate — the rung
+carries — and what blank costs is said out loud where the carrier is assembled.
+
+🔴 **A trap the same reading turned up, and it is not about callbacks.** The one thing the
+Gateway cabinet's API settings *do* hold is `ip_list`: an allow-list of addresses the token
+may be used from. Nothing fills it today, and nothing here proposes to — but the day somebody
+does, the address to put in it is this host's **egress** address, which is already known not
+to be the one it looks like. An allow-list filled with the address someone assumes is ours
+would refuse every verification, and the vendor's refusal would read as a credential problem.
+
+**`sender_username` rode along and moved 1.11 rather than closing it.** The reference is
+specific: *"Username of the Telegram channel from which the code will be sent. The specified
+channel, if any, must be verified and owned by the same account who owns the Gateway API
+token."* It is therefore not a display name of our choosing — the only lever on what the
+subscriber sees costs a **verified channel** under the account that holds the token, which is
+the owner's to obtain. The setting exists and reaches the vendor; the channel does not exist,
+and what the vendor answers to one that fails its condition is unmeasured, because every
+probe of it is a paid message to a real person.
 
 ## Capabilities
 

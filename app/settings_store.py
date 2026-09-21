@@ -16,6 +16,7 @@ class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
                        # | "oproutes" | "templates" | "region" | "delays"
+                       # | "callbackbase"
     default: object
     section: str
     is_secret: bool
@@ -162,6 +163,27 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("tg_gateway_callback_tolerance_seconds", "posint", 300, "Verification", False,
          "Refuse a signed Gateway callback whose timestamp is further than this from "
          "now (s)"),
+    # This gateway's own public address, as the vendor must reach it. The Gateway takes
+    # its callback address **per request** and holds none of its own — measured against
+    # the vendor's reference and against the cabinet on 21.09.2026 — so without this
+    # setting no delivery report can ever arrive: a message the vendor accepts and then
+    # fails to deliver reports itself to nobody, and its refund is never recorded.
+    #
+    # Blank ships, because a blank base is the honest state of an estate with no public
+    # address, and the rung carries perfectly well without one. The cost of blank is said
+    # out loud where the carrier is assembled rather than hidden here.
+    Spec("tg_gateway_callback_base", "callbackbase", "", "Verification", False,
+         "This gateway's own public HTTPS address, as the Telegram Gateway must reach it "
+         "(e.g. https://sms.example.org) — the callback path is appended. "
+         "Blank = no delivery reports, and no refund is ever recorded"),
+    # The one lever on what the subscriber sees: the vendor's own wording arrives from
+    # "Verification Codes" and carries nothing of ours. Per the vendor's reference this is
+    # the username of a Telegram **channel**, which must be verified and owned by the same
+    # account that owns the token above — so a value here costs a verified channel, and a
+    # wrong one is refused by the vendor for every send. Blank ships for that reason.
+    Spec("tg_gateway_sender_username", "str", "", "Verification", False,
+         "Username of a verified Telegram channel, owned by the same account as the "
+         "token, to send verification codes from (blank = the vendor's own sender)"),
     # The row holds a subscriber's number beside a code. Retention is why it does not hold
     # it for ever; `posint` because zero would delete verifications as fast as they are
     # made and present as a gateway that answers 404 to everyone.
@@ -395,6 +417,10 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
         from app.verification import template
         template.validate(raw)
         return
+    if type_ == "callbackbase":
+        from app.verification import tg_callback
+        tg_callback.validate_base(raw)
+        return
     if type_ == "delays":
         for part in raw.split(","):
             text = part.strip()
@@ -440,6 +466,9 @@ def normalize_raw(type_: str, raw: str) -> str:
     if type_ == "templates":
         from app.verification import template
         return template.normalize(raw)
+    if type_ == "callbackbase":
+        from app.verification import tg_callback
+        return tg_callback.normalize_base(raw)
     if type_ != "routes" or raw.strip() == "":
         return raw
     try:

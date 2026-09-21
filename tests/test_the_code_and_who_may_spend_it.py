@@ -506,7 +506,7 @@ def test_the_code_a_rung_carried_reaches_the_vendor_and_no_log_line(monkeypatch,
     async def body():
         vid = await _open(code="9137")
         walk = await _walk(vid, {TG_GATEWAY: tg_carrier.carrier(
-            vid, app_id="app1", token=TOKEN)})
+            vid, app_id="app1", token=TOKEN, callback_url="")})
         return vid, walk
 
     vid, walk = _run(body)
@@ -536,7 +536,7 @@ def test_an_alerting_rung_failure_names_the_vendor_and_not_the_code(monkeypatch,
     async def body():
         vid = await _open(code="9137")
         await _walk(vid, {TG_GATEWAY: tg_carrier.carrier(
-            vid, app_id="app1", token=TOKEN)})
+            vid, app_id="app1", token=TOKEN, callback_url="")})
         db = await get_db()
         async with db.execute(
             "SELECT code FROM verifications WHERE id = ?", (vid,)
@@ -643,7 +643,7 @@ def test_a_vendors_words_do_not_carry_the_code_out_to_the_application():
         tgg.check_send_ability, tgg.send_verification_message = check, send
         try:
             await _walk(vid, {TG_GATEWAY: tg_carrier.carrier(
-                vid, app_id="app1", token=TOKEN)})
+                vid, app_id="app1", token=TOKEN, callback_url="")})
         finally:
             tgg.check_send_ability, tgg.send_verification_message = original
 

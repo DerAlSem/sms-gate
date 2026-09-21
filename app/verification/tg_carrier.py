@@ -57,7 +57,7 @@ _LOUD = frozenset({tg_gateway.REFUSED, tg_gateway.UNCLASSIFIED})
 
 
 def carrier(
-    verification_id: int, *, app_id: str, token: str, callback_url: str = "",
+    verification_id: int, *, app_id: str, token: str, callback_url: str,
     sender_username: str = "",
 ):
     """A carrier the ladder can call for this verification.
@@ -66,6 +66,16 @@ def carrier(
     that a verification which ended while the vendor was being asked cannot have its code
     sent afterwards — the store nulls the code the moment a verification stops being
     confirmable.
+
+    **`callback_url` has no default, and that is the point.** It had one until 21.09.2026,
+    and every caller there has ever been forgot it: the vendor takes its reporting address
+    per request, so a blank one silently switches off the signed-callback door, the
+    `expired` ending and the refund record — none of which any test could notice, because
+    all three live on the other side of a vendor that was never told where to post. A
+    parameter every caller must decide is a parameter with no right to a default; blank is
+    a legitimate answer, but it has to be given. `sender_username` keeps its default for
+    the opposite reason: without it the vendor sends under its own name, which is visible
+    and breaks nothing.
     """
     async def carry(phone: str, *, seconds_left: float, rung_id: int) -> ladder.Attempt:
         ttl = await queries.verification_seconds_left(verification_id)

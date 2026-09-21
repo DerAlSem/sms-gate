@@ -87,7 +87,8 @@ def _vendor_answering(monkeypatch, error, verification_id):
 
     monkeypatch.setattr(tg_gateway, "check_send_ability", check)
     monkeypatch.setattr(tg_gateway, "send_verification_message", send)
-    return tg_carrier.carrier(verification_id, app_id="app1", token="tok")
+    return tg_carrier.carrier(verification_id, app_id="app1", token="tok",
+                              callback_url="")
 
 
 def _rule_with_the_modem_behind_the_paid_rung():

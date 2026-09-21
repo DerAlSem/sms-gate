@@ -32,6 +32,11 @@ _NAMED_SETTINGS: dict[str, object] = {
     "verification_retention_days": 30,
     "operator_route_review_days": 30,
     "tg_gateway_token": None,
+    # Both ship blank, and the document says so in prose. Registered with their
+    # shipped value rather than with None so that giving either a non-blank default
+    # fails here — a default the operator is told does not exist.
+    "tg_gateway_callback_base": "",
+    "tg_gateway_sender_username": "",
 }
 
 
