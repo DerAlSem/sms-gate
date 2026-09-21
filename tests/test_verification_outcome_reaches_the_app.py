@@ -21,7 +21,7 @@ import pytest
 
 import app.verification.dispatch as dispatch_mod
 from app.db import queries
-from app.db.connection import close_db, init_db
+from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification.dispatch import announce_verification_outcomes
@@ -205,6 +205,7 @@ QUERIES_PY = Path(__file__).resolve().parents[1] / "app" / "db" / "queries.py"
 
 _SET_STATUS = re.compile(r"\bSTATUS\s*=\s*(?:'([^']*)'|(\?))", re.IGNORECASE)
 _SET_NOTIFIED = re.compile(r"\bNOTIFIED\s*=\s*1\b", re.IGNORECASE)
+_SET_CODE_NULL = re.compile(r"\bCODE\s*=\s*NULL\b", re.IGNORECASE)
 
 
 def _sql_strings(node):
@@ -299,7 +300,45 @@ def test_no_writer_of_a_terminal_state_marks_it_announced():
     )
 
 
-def test_the_two_guards_above_can_actually_fail():
+def test_every_enumerated_terminal_writer_takes_the_code_with_it():
+    """Task 4.30, asked of the census rather than of the file.
+
+    That the three endings alive today null the code is guarded behaviourally, over a
+    path where the code genuinely travelled to the vendor — and that guard says nothing
+    about the *fourth* ending, which is the one that will be written by somebody who is
+    thinking about the vendor rather than about the secret. Destruction stands on every
+    terminal writer, a census of writers read by eye is never complete, and this census
+    already exists and is already taken off the syntax tree.
+
+    The rule is per statement rather than per function on purpose: `check_verification`
+    ends a verification two ways, in two updates, and a function-level answer would let
+    the second inherit the first's `code = NULL`.
+
+    A writer that binds its status at call time is held to the same rule: it *can* write a
+    terminal state, and the whole point of the census is that what it can do is what
+    counts.
+    """
+    tree = ast.parse(QUERIES_PY.read_text())
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name not in KNOWN_VERIFICATION_TERMINAL_WRITERS:
+            continue
+        for sql in _sql_strings(node):
+            clause = _set_clause(sql)
+            if clause is None or not _SET_STATUS.search(clause):
+                continue
+            if not _SET_CODE_NULL.search(clause):
+                offenders.append(f"{node.name}: {' '.join(clause.split())[:90]}")
+    assert offenders == [], (
+        "these end a verification and leave its code readable — the row goes on holding a "
+        "live secret beside a subscriber's number after the window in which that secret "
+        f"means anything has closed: {sorted(offenders)}"
+    )
+
+
+def test_the_three_guards_above_can_actually_fail():
     """Their own bite, inline, because a guard over source structure is exactly the kind
     that passes against a file it is no longer reading correctly.
 
@@ -321,6 +360,21 @@ def test_the_two_guards_above_can_actually_fail():
     condition_only = ("UPDATE verifications SET route = ? "
                       " WHERE id = ? AND app_id = ? AND status = 'pending'")
     assert not _SET_STATUS.search(_set_clause(condition_only))
+
+    # The code-destruction rule, put the same way round: the shape it must call an
+    # offender, and the shape it must not. A `code = ?` in the WHERE half is a condition
+    # on the secret rather than its destruction, and reading it as the latter would let
+    # the confirming update pass while leaving the code in place.
+    leaves_the_code = "UPDATE verifications SET status = 'failed', reason = ? WHERE id = ?"
+    assert not _SET_CODE_NULL.search(_set_clause(leaves_the_code)), (
+        "the code-destruction rule no longer sees a terminal write that leaves the code")
+    destroys_it = ("UPDATE verifications SET reason = ?, code = NULL, status = 'failed' "
+                   " WHERE id = ? AND code = ?")
+    assert _SET_CODE_NULL.search(_set_clause(destroys_it))
+    assert not _SET_CODE_NULL.search(
+        _set_clause("UPDATE verifications SET status = 'confirmed' "
+                    " WHERE id = ? AND code = NULL")), (
+        "a `code = NULL` in the WHERE half is being read as destruction")
 
 
 # --- 7.2 — the detector, not just the writer ---------------------------------------------
@@ -438,3 +492,73 @@ def test_a_verification_push_carries_nothing_a_message_receiver_reads_as_a_messa
         f"the verification's number travels in {carrying} — it may travel in "
         f"'verification_id' and nowhere else"
     )
+
+
+# --- 4.30 — the retention runs while the gateway is simply running ----------------------
+
+def test_the_recurring_sweep_prunes_finished_verifications(pushed, monkeypatch):
+    """🔴 Measured on 21.09.2026: `prune_verifications` could be deleted from
+    `announce_verification_outcomes` outright and the whole suite stayed green.
+
+    The query was guarded and its placement was not, which is the shape that makes a
+    retention rule a comment: the rows a person would have to run the deletion by hand to
+    remove look exactly like rows a rule removes. The ledger's retention is pinned the
+    same way and for the same reason — a correct-looking placement that never fires on a
+    gateway that stays up is the failure this asserts against.
+
+    Driven through `ModemManager.verification_step`, which is exactly what the sixty-second
+    verification loop calls, rather than through the announcer the loop happens to reach:
+    what is claimed here is that a gateway nobody touches forgets these rows.
+    """
+    import app.modem.manager as manager_mod
+    from app.modem.manager import ModemManager
+
+    monkeypatch.setattr(manager_mod, "spawn_delivery_dispatch", lambda *a, **kw: None)
+
+    async def body():
+        aged = await _open(ttl=300, code="1234")
+        await queries.fail_verification(aged, reason="no_route")
+        live = await _open(ttl=300, code="5678")
+        db = await get_db()
+        await db.execute(
+            "UPDATE verifications SET created_at = datetime('now', '-40 days')"
+            " WHERE id = ?", (aged,))
+        await db.commit()
+
+        await ModemManager("/dev/null", "/dev/null").verification_step()
+
+        async with db.execute("SELECT id FROM verifications ORDER BY id") as cur:
+            return live, [row[0] for row in await cur.fetchall()]
+
+    live, remaining = _run(body)
+    assert remaining == [live], (
+        "the sixty-second verification loop does not prune: a finished verification past "
+        "the configured retention outlived a pass of the tick that is supposed to remove it"
+    )
+
+
+def test_the_recurring_sweep_keeps_what_is_inside_the_retention(pushed, monkeypatch):
+    """The control the guard above is empty without — a tick that deleted every finished
+    verification would satisfy it, and would take a login that ended a minute ago.
+
+    The kept row is finished rather than open on purpose: "still pending" is already
+    guarded at the query, and a tick that pruned by age alone would pass that guard while
+    failing this one.
+    """
+    import app.modem.manager as manager_mod
+    from app.modem.manager import ModemManager
+
+    monkeypatch.setattr(manager_mod, "spawn_delivery_dispatch", lambda *a, **kw: None)
+
+    async def body():
+        recent = await _open(ttl=300, code="1234")
+        await queries.fail_verification(recent, reason="no_route")
+
+        await ModemManager("/dev/null", "/dev/null").verification_step()
+
+        db = await get_db()
+        async with db.execute("SELECT id FROM verifications") as cur:
+            return recent, [row[0] for row in await cur.fetchall()]
+
+    recent, remaining = _run(body)
+    assert remaining == [recent]

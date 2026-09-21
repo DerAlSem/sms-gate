@@ -637,7 +637,23 @@ screen that helpfully prints what was originally charged restores the asterisk i
 reaching the page, the block never populated, and the row losing the anchor the guard finds it
 by. `verifications_for_phone` lists its columns rather than starring them, and that is the
 guarantee rather than a style: the code must reach no screen. The storage itself is
-`verify-by-inbound-contact`'s and the retention sweep with it.
+`verify-by-inbound-contact`'s.
+
+**The retention half is backed** by `queries.prune_verifications`, called last in
+`announce_verification_outcomes` and therefore from the sixty-second verification tick,
+under `verification_retention_days` (30). Guarded by `tests/test_verification_store.py`
+and `tests/test_verification_outcome_reaches_the_app.py`, over the tick rather than over
+the announcer, and by ten mutations.
+
+🔴 **Two holes, both invisible to a green suite, measured 21.09.2026.** The prune could be
+deleted from the announcer outright and nothing reddened: the query was guarded and its
+*placement* was not, which is how a retention rule becomes a comment on a gateway that
+stays up. And the prune removed the verification while leaving its rungs — `verification_
+rungs` carries no foreign key and no retention of its own, so the surviving half was the
+vendor's reference for a message placed to a subscriber, kept for the life of the database
+and reachable by nothing, since every reader of that table goes through a live
+`verification_id`. The rungs now go with the verification, in `prune_verifications` and
+nowhere else, together with the orphans a database written by the old code already holds.
 
 **The ownership half is backed** — `queries.get_verification` and every conditional update in
 `check_verification` are scoped by `app_id`, so a stranger's call is answered as a missing

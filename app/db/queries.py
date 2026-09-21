@@ -1478,8 +1478,35 @@ async def prune_verifications(max_age_days: int) -> int:
 
     Finished, not merely old: an open verification past the window is a person still
     waiting, and deleting it answers their barrier with a 404.
+
+    🔴 **The rungs go with the verification, in this function and nowhere else.** Measured
+    on 21.09.2026: deleting the verification alone left its rungs standing and every guard
+    green. A rung is half of the record — the vendor's identifier for a message placed to
+    a subscriber's phone, and a `reason` filled from the vendor's own words — and
+    `verification_rungs` carries no retention of its own, so the half that survived was
+    the half a retention rule exists to remove. There is no foreign key to cascade through
+    (the table is written by id, never joined on delete), so the deletion is spelled out
+    here, at the one moment the row it belongs to stops existing.
+
+    The second delete is the same rule applied to rows that already lost their half before
+    this function learned to take them: nothing reads a rung except through a live
+    `verification_id`, so an orphan is unreachable by every screen and every counter, and
+    would otherwise sit in the table for as long as the database lives.
     """
     db = await get_db()
+    await db.execute(
+        "DELETE FROM verification_rungs "
+        " WHERE verification_id IN ("
+        "       SELECT id FROM verifications "
+        "        WHERE status != 'pending' "
+        "          AND created_at < datetime('now', ? || ' days'))",
+        (f"-{int(max_age_days)}",),
+    )
+    await db.execute(
+        "DELETE FROM verification_rungs "
+        " WHERE NOT EXISTS (SELECT 1 FROM verifications v "
+        "                    WHERE v.id = verification_rungs.verification_id)"
+    )
     cursor = await db.execute(
         "DELETE FROM verifications "
         " WHERE status != 'pending' "

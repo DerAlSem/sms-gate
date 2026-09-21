@@ -424,7 +424,25 @@ rather than on code.
       which is the ordinary way to reach it, and an attempt spent there taxes a person for
       the gateway's own race. Paired with the control that a wrong code still costs
       exactly one, or an implementation that never counts would satisfy it.
-- [ ] 4.30 Implement verification retention and the destruction of a terminal verification's code
+- [x] 4.30 Implement verification retention and the destruction of a terminal verification's code
+      The destruction half was built and genuinely held: all five terminal writers null the
+      code, and dropping it from any one of them reddens. What was missing was the question
+      asked of the *next* writer — so the rule now stands on 4.28's census, per statement
+      rather than per function, and `check_verification`'s two endings are counted
+      separately. Measured: a new terminal writer, added and dutifully registered in the
+      census after it failed, left the whole suite green.
+      🔴 **The retention half had two holes and both were invisible.** `prune_verifications`
+      could be deleted from `announce_verification_outcomes` outright with the suite green —
+      the query was guarded and its placement was not, which is exactly how a retention rule
+      becomes a comment. And the prune removed the verification while **leaving its rungs
+      standing**: `verification_rungs` has no foreign key and no retention of its own, so
+      what survived was the vendor's reference for a message placed to a subscriber, kept
+      for the life of the database and reachable by no screen, since every reader of the
+      table goes through a live `verification_id`.
+      Ten mutations bite. One survived at first and was the fixture rather than the
+      predicate: an open verification *past* the window had no rung in the control, so
+      dropping `status != 'pending'` from the rung deletion — the mirror of the guard one
+      table up — changed nothing observable. The range is now bitten on both sides.
 - [x] 4.31 Make a single verification visible in the admin console beside the messages for the same number — every rung attempted, each rung's vendor outcome, whether it was confirmed, recorded cost and whether it was refunded. The counters answer "how much", and a support call is always about one person
       Built 20.09.2026 in the expanded row of `/admin/messages`, under the
       conversation — the owner's choice of placement on 20.09.2026, and the
@@ -533,7 +551,28 @@ rather than on code.
       (the guard now asserts the **reason**, which is the only thing that branch
       produces), and save-time normalising is shadowed by `parse` stripping on read
       (the guard now asserts the **stored** form, which is what the page re-reads).
-- [ ] 4.49 Test: a vendor credential written to `.env` for a key that already has a row in `settings` is not used, and the value in `settings` stays in force
+- [x] 4.49 Test: a vendor credential written to `.env` for a key that already has a row in `settings` is not used, and the value in `settings` stays in force
+      Precedence held and is now asserted at the `Authorization` header that leaves for the
+      vendor rather than at `store.tg_gateway_token`: what the requirement forbids is the
+      environment's value reaching the vendor, and an attribute agreeing with the row while
+      something downstream re-read the environment would satisfy the weaker claim. Paired
+      with the control that a key with no row *is* seeded from the environment, without
+      which a seeder that ignored it entirely would pass.
+      The blank row is its own guard, because blank is the state every estate ships in: the
+      first start writes it, so from the second start `.env` has already lost even on a
+      gateway nobody configured — the estates least likely to notice a decision made for
+      them.
+      🔴 **There are two environment surfaces and the obvious census sees only one.**
+      "Never in the environment" is a claim about every line in `app/`, so the readers are
+      enumerated off the syntax tree — and that census reports a clean bill while
+      `app/config.py` reads `.env` on every start through `BaseSettings(env_file=".env")`,
+      with no `os.environ` anywhere for a census to find. A credential declared there is the
+      defect in its purest form: read from `.env` at every start, absent from the settings
+      page, unchangeable without a restart. Both surfaces are now asserted, the second as a
+      whitelist of one — `admin_password` is the console's own door and is in `.env` on
+      purpose, so that a bad settings write cannot lock an operator out of the page they
+      would fix it from.
+      Seven mutations bite.
 - [ ] 4.50 Test: a rung whose credential is absent is not attempted, alerts on stock settings, and the ladder advances past it — the one place where a configuration gap costs money rather than traffic, and therefore the one that must be loud
       Built for the case of a route nothing is configured to carry: not attempted,
       alerted on stock settings (`notify_routing_errors` defaults on), ladder advances.

@@ -273,3 +273,112 @@ def test_retention_does_not_take_a_verification_somebody_is_standing_at():
         return gone, await queries.get_verification(vid, "app1") is not None
 
     assert _run(body) == (0, True)
+
+
+async def _rung_ids() -> list[int]:
+    db = await get_db()
+    async with db.execute("SELECT id FROM verification_rungs ORDER BY id") as cur:
+        return [row[0] for row in await cur.fetchall()]
+
+
+def test_retention_takes_the_rungs_of_the_verification_it_removes():
+    """🔴 Measured on 21.09.2026: the prune deleted the verification and left its rungs
+    standing, and every existing guard stayed green.
+
+    A rung is half of the record, not a neighbour of it. It carries the vendor's
+    identifier for a message placed to a subscriber's phone and a `reason` filled from the
+    vendor's own words, and `verification_rungs` has no retention of its own — so what the
+    prune actually did was keep that half for ever while deleting the half that makes it
+    readable. Nothing reaches an orphan: every reader of the table goes through a live
+    `verification_id`. Data that no screen can show and no sweep can remove is the exact
+    shape a retention rule exists to forbid.
+    """
+    async def body():
+        vid = await _open()
+        await queries.record_verification_rung(
+            vid, route="tg_gateway", vendor_ref="vendor-ref-42", cost=0.01,
+            outcome="delivered", reason="delivered to the subscriber",
+        )
+        await queries.fail_verification(vid, reason="no_route")
+        db = await get_db()
+        await db.execute(
+            "UPDATE verifications SET created_at = datetime('now', '-40 days')")
+        await db.commit()
+
+        gone = await queries.prune_verifications(max_age_days=30)
+        return gone, await _rung_ids()
+
+    assert _run(body) == (1, [])
+
+
+def test_retention_takes_a_rung_whose_verification_is_already_gone():
+    """A database written by the code that had this defect holds rungs whose verification
+    the prune removed without them, and the rule that now takes them together does not
+    reach backwards.
+
+    Every reader of `verification_rungs` goes through a live `verification_id` — the
+    console's block, the ladder's per-number count, the refund path — so an orphan is
+    invisible to every screen and removable by nothing. Kept for the life of the database
+    is the one outcome a retention rule may not produce.
+    """
+    async def body():
+        vid = await _open()
+        await queries.record_verification_rung(vid, route="tg_gateway",
+                                               vendor_ref="orphaned-ref")
+        db = await get_db()
+        # Exactly what the old prune left behind: the verification gone, the rung standing.
+        await db.execute("DELETE FROM verifications WHERE id = ?", (vid,))
+        await db.commit()
+
+        await queries.prune_verifications(max_age_days=30)
+        return await _rung_ids()
+
+    assert _run(body) == []
+
+
+def test_retention_leaves_the_rungs_of_a_verification_it_keeps():
+    """The control the guard above is empty without: a prune that simply emptied the
+    table would satisfy it, and would take the rungs of the verification a person is
+    standing at along with the ones it was asked for.
+
+    All three kept rows are here on purpose, because each is kept for a different reason
+    and an implementation that confused them would lose one silently. The third — open and
+    *past* the window — is the mirror of
+    `test_retention_does_not_take_a_verification_somebody_is_standing_at` one table down:
+    dropping `status != 'pending'` from the rung deletion alone leaves the verification
+    standing and takes its rungs, which is the same half-deleted record this whole task is
+    about, arrived at from the other side. Measured: without this row that mutation
+    survived.
+    """
+    async def body():
+        standing = await _open()
+        await queries.record_verification_rung(standing, route="tg_gateway",
+                                               vendor_ref="live-ref")
+        recent = await _open(code="5678")
+        await queries.record_verification_rung(recent, route="flash_call",
+                                               vendor_ref="recent-ref")
+        await queries.fail_verification(recent, reason="no_route")
+
+        waiting = await _open(code="3456")
+        await queries.record_verification_rung(waiting, route="tg_gateway",
+                                               vendor_ref="waiting-ref")
+
+        aged = await _open(code="9012")
+        await queries.record_verification_rung(aged, route="tg_gateway",
+                                               vendor_ref="aged-ref")
+        await queries.fail_verification(aged, reason="no_route")
+        db = await get_db()
+        await db.execute(
+            "UPDATE verifications SET created_at = datetime('now', '-40 days') "
+            " WHERE id IN (?, ?)", (aged, waiting))
+        await db.commit()
+
+        gone = await queries.prune_verifications(max_age_days=30)
+        db = await get_db()
+        async with db.execute(
+            "SELECT vendor_ref FROM verification_rungs ORDER BY id"
+        ) as cur:
+            refs = [row[0] for row in await cur.fetchall()]
+        return gone, refs
+
+    assert _run(body) == (1, ["live-ref", "recent-ref", "waiting-ref"])
