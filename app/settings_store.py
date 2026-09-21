@@ -113,6 +113,24 @@ SETTINGS_SPEC: list[Spec] = [
     # at one vendor spends the budget the whole answer was promised in.
     Spec("verification_probe_timeout", "float", 5.0, "Verification", False,
          "Bound on the whole set of precondition probes (s)"),
+    # The ladder's acceptance bound, and it covers the ladder **as a whole** rather than
+    # each rung: otherwise two rungs on a slow day take twice the time the application was
+    # promised, and the application is holding a person at a barrier for all of it. Its own
+    # setting rather than a share of `verification_probe_timeout`, because the two bound
+    # different things — that one bounds asking whether a rung *could* carry, this one
+    # bounds actually carrying, and only this one has money behind it.
+    #
+    # 🔴 Ten seconds is a ceiling rather than an expectation, and the two numbers behind it
+    # are measured. The Gateway answers in 178–285 ms over the wired path (task 1.7, read
+    # 20.09.2026), so a ladder of two rungs each doing a check and a send is about a second
+    # — roughly tenfold headroom. What the ceiling is actually for is the other measurement:
+    # on a failed-over uplink `gatewayapi.telegram.org` times out at **fifteen** seconds
+    # (18.09.2026, task 1.12), which is longer than any answer an application should be made
+    # to wait for. Cutting at ten is what makes that case bounded rather than a hang, and it
+    # is the one case where this setting decides anything at all.
+    Spec("verification_ladder_bound", "float", 10.0, "Verification", False,
+         "Bound on the whole ladder once a rung is selected (s) — one bound for every "
+         "rung together, never one each"),
     # How stale a proof may be before a person is sent down a route that no longer works.
     # Without a bound, "current evidence" is undefined: a reading taken once at boot would
     # satisfy the norm for ever, which is precisely the failure it exists to prevent.

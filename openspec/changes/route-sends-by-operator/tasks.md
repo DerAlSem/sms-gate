@@ -553,9 +553,29 @@ rather than on code.
       ⚠️ **Assembled is not reached.** `for_paid_ladder` has no production caller: the
       door that walks the paid ladder belongs to `verify-by-inbound-contact` and does
       not exist yet. The same caveat as 4.17a, and for the same reason.
-- [ ] 4.38 Test: one acceptance bound covers the whole ladder, not each rung — a slow first rung does not double the time the application waits, and the response still names a method rather than pending
-      The ladder's half is built and guarded (`tests/test_ladder_walk.py`). The
-      response naming a method rather than pending is the door's half and is not built.
+- [x] 4.38 Test: one acceptance bound covers the whole ladder, not each rung — a slow first rung does not double the time the application waits, and the response still names a method rather than pending
+      Closed 21.09.2026 with the door (4.56). The bound is the new setting
+      `verification_ladder_bound`, and ten seconds is a ceiling rather than an
+      expectation: the Gateway answers in 178–285 ms over the wired path (1.7) and times
+      out at **fifteen** on the failed-over one (1.12), which is the one case where this
+      number decides anything.
+      🔴 **The load-bearing half was the unguarded one, and it is not in `ladder.walk`.**
+      There is no `wait_for` there and there must not be: cancelling a carrier between a
+      confirmed ability check and the record of its `request_id` would leave a fee nobody
+      can attribute. What `walk` does is hand each rung what is left of the one bound, and
+      every carrier must put that on its own vendor call — so the whole guarantee rested on
+      two lines in `tg_carrier`, and **both vendor methods carry a default** (5 s on the
+      check, 10 s on the send). A carrier that omitted the bound would not fail; it would
+      quietly take fifteen seconds against a bound of one. Measured: no test anywhere read
+      back the `timeout` its fake vendor recorded — checked with a positive control on the
+      same grep, because an empty search is not a finding. Guarded now with a bound
+      narrower than either default, plus the control that a wider bound follows.
+      ⚠️ **And the first version of the verify measurement asked the wrong question** — "the
+      second rung is reached anyway". A rung that consumes the whole bound leaves the next
+      one nothing, and dividing the bound per rung is precisely what this task forbids. The
+      claim that belongs there is that the ladder **stops**, records `unanswered` (possibly
+      charged, never a decline) and leaves the verification in flight; the continuation is
+      a separate case, driven with a delay inside the bound.
 - [x] 4.39 Test: a message the Gateway accepted and then did not deliver within its `ttl` fails the verification with that reason, places **no** call, and records the refund. This is the open question 2.6 pinned as the default until the owner decides otherwise
       Already held by `app/verification/tg_callback.py`; what was missing was a
       guard that no call follows, and it exists now that a ladder could place one.
@@ -646,11 +666,21 @@ rather than on code.
       purpose, so that a bad settings write cannot lock an operator out of the page they
       would fix it from.
       Seven mutations bite.
-- [ ] 4.50 Test: a rung whose credential is absent is not attempted, alerts on stock settings, and the ladder advances past it — the one place where a configuration gap costs money rather than traffic, and therefore the one that must be loud
+- [x] 4.50 Test: a rung whose credential is absent is not attempted, alerts on stock settings, and the ladder advances past it — the one place where a configuration gap costs money rather than traffic, and therefore the one that must be loud
       Built for the case of a route nothing is configured to carry: not attempted,
       alerted on stock settings (`notify_routing_errors` defaults on), ladder advances.
-      The credential-shaped half — a rung whose token is blank — belongs with the
-      wiring that decides which carriers exist, and that is the door's.
+      The credential-shaped half closed 21.09.2026 with the door — 🔴 **but by a different
+      mechanism than the obvious reading of this task, and the obvious reading is not
+      reachable.** A blank token does not produce a carrier that fails at the vendor and it
+      does not produce an absent carrier the ladder walks into either: the registry
+      **re-proves the offer on selection**, the Gateway probe holds on the token, and the
+      door refuses the selection as `route_not_offered` having placed nothing. So the door's
+      half is the re-proof, guarded as such; `carriers_for` leaving a tokenless rung out of
+      the map is guarded directly, because nothing at the door can reach it; and the
+      absent-carrier path itself stays guarded one layer down, where `flash_call` reaches it
+      for real on every declined subscriber. Three mechanisms, three guards, and naming which
+      one closes this task mattered — a guard written against the wrong one would have been
+      green and empty.
 - [x] 4.51 Test: the settings page reports each vendor credential as configured or not and renders neither value
       Already held; the task was the guard. `tests/test_vendor_credentials.py`
       reads the page in **both** locales — the console's default is Russian, and a
@@ -691,7 +721,27 @@ rather than on code.
 - [x] 4.55 Test: the per-number limits are applied to the ladder as a whole, not to the `flash_call` rung alone — a second request inside the window is refused before the Gateway is asked, because the Gateway publishes no limits and silence is not their absence
       The window is rolling rather than a calendar day, and the count is taken
       over the rung attempts of both paid routes.
-- [ ] 4.56 🔴 **The `tg_gateway` rung can be selected and nothing places it — a route offered that then quietly fails, which is the one thing this capability's own norm forbids by name.** Found 21.09.2026 while writing the contract, by asking what a consumer would actually get for each route the door offers. `_tg_gateway_probe` holds on a non-blank token alone, so the rung is offered on any estate whose operator has entered `tg_gateway_token`; `POST /verifications/{id}/route` accepts it, records the rung as `selected`, and then handles only `call_in` (shorten the window) and `sms_in` (hand back the code). **`ladder.walk` — and through it `tg_carrier`, which is the half that actually sends — has no caller anywhere in `app/`**, only in tests. The person is told to expect a Telegram message, no message is sent, and five minutes later the verification expires with a null reason. ⚠️ **Latent rather than live:** the verification doors are not on `master`, and the token ships blank, so nothing today reaches it — but it is reachable by a settings edit and not by a deployment, which makes it a defect rather than an unbuilt feature. The proper fix is the door that walks the ladder (4.38 and 4.17, both blocked); the cheap one is to stop offering a rung nothing can place, which is what the registry already does for every other unbuilt route and would cost one line. **Which of the two is the owner's call**, because the cheap one makes the Gateway token look inert to an operator who has just entered it. Named in `docs/verification-api.md` meanwhile, because a contract silent about it reads as a promise. 🔴 **DECIDED by the owner 21.09.2026: the proper cure, not the cheap one** — build the door that walks the ladder, so a selected `tg_gateway` actually sends. ⚠️ **The parenthetical above says 4.17 blocks it, and that is now in doubt:** `ladder.walk` takes `rungs`, `gates`, `carriers` and `bound` from its caller, and the tests already drive it with `rungs=(TG_GATEWAY,)` and a `carriers` dict holding only the Gateway. A door assembled with the Gateway carrier alone would therefore land without uCaller, with the second rung skipped loudly under 4.50's norm. **Measured from call sites only, not from the door's requirements — re-check that first**, because the whole shape of this work depends on it
+- [x] 4.56 🔴 **The `tg_gateway` rung can be selected and nothing places it — a route offered that then quietly fails, which is the one thing this capability's own norm forbids by name.** Found 21.09.2026 while writing the contract, by asking what a consumer would actually get for each route the door offers. `_tg_gateway_probe` holds on a non-blank token alone, so the rung is offered on any estate whose operator has entered `tg_gateway_token`; `POST /verifications/{id}/route` accepts it, records the rung as `selected`, and then handles only `call_in` (shorten the window) and `sms_in` (hand back the code). **`ladder.walk` — and through it `tg_carrier`, which is the half that actually sends — has no caller anywhere in `app/`**, only in tests. The person is told to expect a Telegram message, no message is sent, and five minutes later the verification expires with a null reason. ⚠️ **Latent rather than live:** the verification doors are not on `master`, and the token ships blank, so nothing today reaches it — but it is reachable by a settings edit and not by a deployment, which makes it a defect rather than an unbuilt feature. The proper fix is the door that walks the ladder (4.38 and 4.17, both blocked); the cheap one is to stop offering a rung nothing can place, which is what the registry already does for every other unbuilt route and would cost one line. **Which of the two is the owner's call**, because the cheap one makes the Gateway token look inert to an operator who has just entered it. Named in `docs/verification-api.md` meanwhile, because a contract silent about it reads as a promise. 🔴 **DECIDED by the owner 21.09.2026: the proper cure, not the cheap one** — build the door that walks the ladder, so a selected `tg_gateway` actually sends. ⚠️ **The parenthetical above says 4.17 blocks it, and that is now in doubt:** `ladder.walk` takes `rungs`, `gates`, `carriers` and `bound` from its caller, and the tests already drive it with `rungs=(TG_GATEWAY,)` and a `carriers` dict holding only the Gateway. A door assembled with the Gateway carrier alone would therefore land without uCaller, with the second rung skipped loudly under 4.50's norm. **Measured from call sites only, not from the door's requirements — re-check that first**, because the whole shape of this work depends on it
+      🟢 **CLOSED 21.09.2026. The doubt is settled: 4.17 does not block.** Re-measured from
+      the door's requirements rather than its call sites — all four arguments `walk` demands
+      were assembled from what `app/` already held (`rule.route_for`,
+      `gates.for_paid_ladder`, `tg_carrier.carrier`, and one new setting) and the walk was
+      driven both ways. Confirming: carried, recorded with the vendor's reference and cost.
+      Declining: `flash_call` skipped loudly and the verification failed naming both rungs.
+      uCaller is only the second rung's **carrier**, and its absence is the already-built,
+      already-guarded `absent` path.
+      The door is `app/verification/placement.py` plus `_walk_the_ladder` in
+      `app/api/router.py`. Two owner decisions shaped it, both taken 21.09.2026 after the
+      measurement raised them: the ladder settles **inside** `/route` and the answer names
+      the rung that carried; and a rung the rule does not name for that operator is carried
+      **alone**, honouring the consumer's pick.
+      🔴 **The measurement found three defects the handoff had not seen, and one of them
+      would have blocked every Gateway selection.** They are 4.56a, 4.56b and 4.56c below.
+
+- [x] 4.56a 🔴 **The door's own `selected` row is money, and it refuses the selection that wrote it.** Found 21.09.2026 by measurement, not by reading: `paid_attempts_since` and `paid_attempts_for_number` count **every** `verification_rungs` row on a paid route whatever its outcome — deliberately, because an ability check that never answered may have been charged without our learning its `request_id`. So the `selected` row `POST /route` wrote for its own bookkeeping already counted as a paid attempt **before this session**, meaning selecting `tg_gateway` spent one unit of the spend ceiling and one of the subscriber's allowance while placing nothing. With the door walking the ladder it would have been worse in two ways: two rows per attempt, halving both ceilings for the one rung that actually spends; and, since that row is a paid attempt aged zero seconds against a `verification_min_gap_seconds` of fifteen, the per-number gate would have refused **every** Gateway selection with `too_soon` — while looking exactly like a gate doing its job. Fixed by writing the row only for the rungs nothing is placed for; the ladder writes its own, before the carrier is called, which is the ordering the money depends on
+- [x] 4.56b **The consumer's claim silently won over the rung that carried.** `ladder.walk` marked the carrying rung with `select_route`, which writes only where `route IS NULL` — correct for a walk nobody claimed first, and wrong for a door that must claim before spending. The claim would have stood and the verification would have named a rung that declined it: the defect this capability forbids by hand, and one already guarded a layer down by `test_the_verification_names_the_rung_that_carried_it_not_the_first_tried`, arriving by the door. Fixed with `queries.set_carrying_route` — the one sanctioned move of a verification from one route to another, refusing to move one that has stopped being open
+- [x] 4.56c **A gate's refusal left the verification pending with a route claimed and nothing placed.** `ladder.walk` returns a gate refusal without failing the verification, and rightly: there was no attempt, and a rung row would file a refusal of ours under what the vendors did. But the caller claimed the route before walking, so the ending is the caller's debt. Placed in `placement.place` rather than in the HTTP handler, so that a second door cannot be a door that forgot — the same reason `gates.for_paid_ladder` exists
+- [ ] 4.57 **Nothing supplies `callback_url`, so the vendor is never told where to report.** Found 21.09.2026 while assembling the carrier. `tg_carrier.carrier` takes `callback_url` and `sender_username`, both defaulting to blank, and **no caller anywhere in `app/` supplies either** — there is no setting holding this gateway's own public address (the census of `Spec(` finds `voxlink_url` and `alert_relay_base` and nothing else). The consequence is the shape of 4.56 in a different place: `POST /verifications/tg-callback` is built, signed-callback verification is built and guarded (4.43), the revocation sweep is built (4.42) — and if the vendor takes its callback address per request, none of it can ever fire in production, so a message that is accepted and then not delivered inside its `ttl` reports itself to nobody and 4.39's mechanism is unreachable. ⚠️ **What is measured is our side only:** whether the Gateway also accepts an account-side callback URL at `gateway.telegram.org` is **not established**, and no capture speaks to it — the external-contract gate forbids asserting the vendor has no such setting from our code's silence. So the work is two-part: read the vendor's own reference or the account page for where a callback address may live, and then either a setting holding our public base URL or a recorded finding that the account holds it. `sender_username` rides along: it is the only lever on what the subscriber actually sees (task 1.11) and has never been tried
 
 ## 5. Verify against the real thing
 

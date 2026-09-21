@@ -425,15 +425,41 @@ def test_the_contract_says_the_push_is_a_minute_behind():
     )
 
 
-def test_the_contract_warns_that_selecting_the_telegram_rung_places_nothing():
-    """`ladder.walk` has no production caller. The Telegram rung is offered whenever a
-    token is held, `POST /verifications/{id}/route` answers 200 for it, and nothing sends
-    anything. A contract silent about that is a contract that reads as a promise.
+def test_the_contract_says_the_telegram_rung_is_placed_and_says_it_because_it_is():
+    """Inverted 21.09.2026, when the door that walks the ladder landed (4.56).
+
+    This guard used to require the contract to **warn** that selecting the Telegram rung
+    placed nothing. The warning was true and is now false, and a contract carrying it would
+    understate what the gateway does — so the guard is turned round rather than deleted: what
+    it has always been about is the document agreeing with the code, and it checks the same
+    join from the other side.
+
+    The join is read off the code, not off a list: the rung is placed exactly when something
+    in `app/` outside the ladder itself calls `ladder.walk`. A door removed later would put
+    the promise back into the document silently, and that is what this catches.
     """
-    import app.verification.tg_carrier  # noqa: F401  — it exists and nothing in app calls it
+    import ast
+    from pathlib import Path
+
+    walkers = []
+    root = Path(__file__).resolve().parent.parent / "app"
+    for path in root.rglob("*.py"):
+        if path.name == "ladder.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "walk"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "ladder"):
+                walkers.append(str(path.relative_to(root)))
+    assert walkers, (
+        "nothing in app/ walks the ladder any more — the Telegram rung can be selected and "
+        "placed by nobody, and the contract below now promises otherwise"
+    )
 
     text = _text()
-    assert "selecting it\nplaces nothing" in text or "selecting it places nothing" in text, (
-        "the contract no longer warns that the `tg_gateway` rung can be selected and "
-        "carries nothing"
+    assert "places nothing" not in text.replace("used to be offered and then place nothing", ""), (
+        "the contract still warns that the rung places nothing, and it does place it"
     )
+    assert "names the rung that carried" in text or "names the rung that actually carried" \
+        in text, "the contract does not say that the rung answered is the rung that carried"

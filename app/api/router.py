@@ -16,6 +16,7 @@ from app.db import queries
 from app.lookup.operator import record_operator
 from app.modem.manager import ModemManager
 from app.settings_store import store
+from app.verification import placement
 from app.verification.probes import build_probes
 from app.verification.tg_callback import handle_callback
 from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
@@ -213,17 +214,22 @@ async def select_verification_route(
             status_code=422,
             detail={"error": outcome, "route": body.route},
         )
-    # Nothing is placed for either rung this change bears: on both of them the subscriber
-    # is the one who acts. Placing rungs hang their vendor call here.
-    #
-    # The one rung where the person must type the code back is the one rung where the
-    # owning application is given it — it has no other way to show them. Read after the
-    # selection so that a verification whose selection lost a race hands over nothing.
     # Per rung attempted, from the moment it is the rung being attempted. A ladder has
     # more than one, and "what did this person's login cost" is unanswerable from a table
     # that keeps only the last.
-    await queries.record_verification_rung(verification_id, route=body.route,
-                                           outcome="selected")
+    #
+    # 🔴 **Only for the rungs nothing is placed for.** A rung the gateway itself places
+    # gets its row from `ladder.walk`, written before the carrier is called, and a second
+    # row here would not be bookkeeping — it would be money. Both ceilings count *every*
+    # row on a paid route whatever its outcome (deliberately: an ability check that never
+    # answered may have been charged without our learning its `request_id`), so two rows
+    # for one attempt halve them for the one rung that actually spends. And it is
+    # self-blocking: that row is a paid attempt aged zero seconds, the minimum gap between
+    # two of them ships at fifteen, and the per-number gate would refuse every Gateway
+    # selection with `too_soon` — while looking exactly like a gate doing its job.
+    if not placement.places_here(body.route):
+        await queries.record_verification_rung(verification_id, route=body.route,
+                                               outcome="selected")
 
     if body.route == CALL_IN:
         # This rung carries its own window, and it is the rung whose residual risk scales
@@ -233,12 +239,63 @@ async def select_verification_route(
         await queries.shorten_verification_window(
             verification_id, ttl_seconds=store.verification_call_in_ttl_seconds)
 
+    if placement.places_here(body.route):
+        return await _walk_the_ladder(verification_id, app_id=app_id, row=row,
+                                      route=body.route)
+
+    # The one rung where the person must type the code back is the one rung where the
+    # owning application is given it — it has no other way to show them. Read after the
+    # selection so that a verification whose selection lost a race hands over nothing.
     code = None
     if body.route == SMS_IN:
         selected = await queries.get_verification(verification_id, app_id)
         code = selected["code"]
     return RouteSelectResponse(
         id=verification_id, route=body.route, status="pending", code=code)
+
+
+async def _walk_the_ladder(
+    verification_id: int, *, app_id: str, row, route: str,
+) -> RouteSelectResponse:
+    """Carry a rung the gateway itself places, and answer with the method it took.
+
+    The answer is read back from the store rather than composed from the walk, so that it
+    cannot claim an outcome the record does not hold — the one failure mode a door like
+    this has is telling the application something the database disagrees with.
+
+    The operator is read rather than resolved: `POST /verifications` already awaited the
+    lookup, and a door that waited again would pay five seconds for a number nobody has
+    ever messaged, in front of a person standing at a barrier. An unresolved operator is
+    handed on as None and the rule's `?` entry answers for it — which is what it is for.
+    """
+    operator_row = await queries.get_number_operator(row["phone"])
+    walk = await placement.place(
+        verification_id, app_id=app_id,
+        operator=operator_row["operator"] if operator_row else None,
+        phone=row["phone"], route=route,
+    )
+    if walk.refused_by and walk.carried_by is None:
+        # Refused before any rung was contacted: nothing was placed, nothing was charged,
+        # and this is emphatically not a vendor failure. Answered as a refusal rather than
+        # as a 200 the consumer would have to poll to find the truth of.
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "refused", "route": route, "reason": walk.refused_by,
+                    "message": "this verification was refused before any rung was "
+                               "contacted; nothing was placed"},
+        )
+    carried = await queries.get_verification(verification_id, app_id)
+    return RouteSelectResponse(
+        id=verification_id,
+        # The rung that carried, never the one chosen — and where nothing carried, the
+        # record still holds the selection, which is the honest answer to "by what".
+        route=carried["route"] or route,
+        status=carried["status"],
+        reason=carried["reason"],
+        # Never on a rung the gateway carries: a code handed back here would let the
+        # application confirm without the person ever being reached.
+        code=None,
+    )
 
 
 @router.post("/verifications/tg-callback")

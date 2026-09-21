@@ -133,9 +133,24 @@ and the gap between offering and selecting is exactly where it decays.
   "id": 9,
   "route": "sms_in",
   "status": "pending",
+  "reason": null,
   "code": "4821"
 }
 ```
+
+🔴 **`route` is the rung that actually carried it, which is not always the one you asked
+for.** Where the gateway carries the verification itself — `tg_gateway` today — it walks the
+ladder configured for that subscriber's operator before answering you, starting at the rung
+you chose. If that rung declines the subscriber and a later one carries it, this field names
+the later one, and it is the one your screen must describe: told to watch Telegram for a
+person Telegram declined, someone waits in the wrong place while the phone in their hand
+rings. The ladder settles **inside this answer** — you are never moved to a different route
+after we have replied.
+
+**`status` and `reason` are the other half of the same sentence.** If the ladder ran and
+nothing carried the verification, this answer says `"status": "failed"` with a `reason`
+naming the rungs and what each of them did, rather than `pending` you would have to poll to
+see through. `reason` is `null` whenever there is nothing to say.
 
 **`code` is non-null on `sms_in` and on nothing else.** That route is the one where the
 person is the sender: they read the code off your screen and text it to us from the number
@@ -156,6 +171,7 @@ anywhere yourself.
 | `{"detail": {"error": "already_selected", "route": "…", "message": …}}` (`422`) | it is already being carried by that route |
 | `{"detail": {"error": "route_not_offered", "route": "…", "message": …}}` (`422`) | that route was not offered, or can no longer prove itself |
 | `{"detail": {"error": "expired", "route": "…"}}` (`422`) | it ran out between your two calls |
+| `{"detail": {"error": "refused", "route": "…", "reason": …, "message": …}}` (`422`) | a rung the gateway pays for was refused **before any vendor was contacted** — the application is not entitled to spend, the gateway's own spend ceiling is reached, or this number has had too many paid attempts too recently. Nothing was placed and nothing was charged; this is not a vendor failure. `reason` names which of them it was |
 
 ## POST /verifications/{id}/check
 
@@ -357,7 +373,7 @@ The vocabulary of routes is fixed and flat. Every name the gateway knows:
 | `sms_in` | the subscriber texts the code to the gateway's number | **yes**, once the operator holds `gateway_msisdn` |
 | `sms_out` | the gateway texts the code to the subscriber | not wired to these doors yet |
 | `flash_call` | a vendor calls; the last digits of the calling number are the code | no vendor account yet |
-| `tg_gateway` | the code arrives in Telegram | 🔴 see below |
+| `tg_gateway` | the code arrives in Telegram | **yes**, once the operator holds a Gateway token |
 | `tg_user`, `max_user`, `app_bot` | messenger accounts | named, and carried by nothing |
 
 `gateway_msisdn` is the gateway's own number, and it ships **blank**. That is deliberate
@@ -366,12 +382,19 @@ are simply not offered until an operator has entered it, and an instruction read
 us, we cannot say where" is not an offer. **We will never quote you digits here that a
 deployment has not been configured to hold.**
 
-🔴 **`tg_gateway` is offered whenever the operator holds a Gateway token, and selecting it
-places nothing.** The placing half of that route is not built. If you select it you will
-get a `200`, the person will be told to expect a Telegram message, and no message will be
-sent; five minutes later the verification expires. Until that is fixed, a deployment that
-means to use these doors should leave the Gateway token unset. This is recorded against the
-gateway as a defect, not as a limitation of this contract.
+🔴 **`tg_gateway` used to be offered and then place nothing.** It was written up here as a
+defect, and it is fixed: selecting it now asks the vendor and sends the code inside your
+`POST /route` call, and the answer names the rung that carried. One limitation of it is
+worth your knowing, because it shows up in `reason` rather than in a special error: the rung
+the routing rule names **after** Telegram is a vendor callback that has no account yet, so
+for a subscriber Telegram declines there is no second rung to carry it and the verification
+comes back `failed` with a reason naming both. That is a refusal with a cause, not a
+silence — which is the whole difference from what this paragraph used to describe.
+
+⚠️ **One thing we do not yet promise on this route: delivery reports.** The vendor is not
+currently told where to report, so a message it accepts and then fails to deliver inside its
+lifetime does not reach us as an event. What you get is the verification's own expiry, on
+time, by poll or push. Recorded against the gateway as task 4.57.
 
 ## What we need from you
 

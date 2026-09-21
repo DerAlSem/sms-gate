@@ -344,6 +344,71 @@ are recorded and deliberately not acted on from this branch:
   automated user account to carry traffic; there is now a cited term that **forbids** it absent
   permission. It belongs in front of the same lawyer as the rest of that question.
 
+## The door that walks the ladder, 21.09.2026
+
+Task 4.56 recorded that the Telegram rung could be selected and that nothing placed it. The
+owner chose the expensive cure — build the door rather than withdraw the rung — and the
+parenthetical claiming two other tasks blocked it turned out to be wrong.
+
+**4.17 does not block, and the re-measurement is the reason to believe it.** The earlier
+reading was taken from `ladder.walk`'s call sites; this one was taken from the door's
+requirements, by assembling all four arguments `walk` demands out of what `app/` already
+held — `rule.route_for` for the order, `gates.for_paid_ladder` for the gates,
+`tg_carrier.carrier` for the one carrier that exists, and one new setting for the bound — and
+driving the walk both ways. A confirming subscriber is carried and recorded with the vendor's
+reference and cost; a declining one leaves the ladder skipping `flash_call` loudly and failing
+with a reason that names both rungs. uCaller is only the second rung's **carrier**, and its
+absence is the `absent` path that was built and guarded long before this.
+
+Two questions were the owner's, because two specs contradicted each other in plain text and
+each called its own answer the owner's. This change says the method reported is the rung that
+actually accepted; `verify-by-inbound-contact` says the gateway never moves a verification to
+another route by itself and that this "survives the ladder". **Settled 21.09.2026: the ladder
+settles inside the selection and the answer names the rung that carried.** The two norms are
+then not in conflict — what the neighbour forbids is a move after the consumer has been
+answered, and there is none: the ladder is over before the reply leaves, which is also the
+only reading under which "the response names a method rather than pending" means anything.
+
+**Second decision, same day: a rung the rule does not name for that operator is carried
+alone.** The Gateway rung is offered on a held token to any number, while the shipped rule
+sends every operator but МегаФон to the modem — so a consumer can pick Telegram for a
+subscriber the rule routes elsewhere, and the pick is honoured. The rule contributes the
+continuation of the ladder and nothing else. One consequence is named rather than taken: an
+entry set to `refuse` names no continuation either, so it does not block a rung a consumer
+selected by hand. That is unreachable today — no shipped entry refuses — and it is the
+owner's to reverse.
+
+### What the measurement found that nobody had asked about
+
+Three defects, and none of them was in the plan. The first would have blocked every Gateway
+selection while looking like correct behaviour.
+
+- 🔴 **the door's own `selected` row is money.** Both spend counters count every recorded rung
+  on a paid route whatever its outcome — deliberately, because an ability check that never
+  answered may have been charged without our learning its `request_id`. So the row the door
+  wrote for bookkeeping already counted as a paid attempt *before this session*: selecting
+  `tg_gateway` spent one unit of the ceiling and one of the subscriber's allowance while
+  placing nothing. With a walking door it would have been a paid attempt aged zero seconds
+  against a minimum gap of fifteen — and the per-number gate would have refused every single
+  selection with `too_soon`, indistinguishable from a gate working properly;
+- 🔴 **the consumer's claim would have won over the rung that carried.** `walk` marked the
+  carrier with `select_route`, which writes only where the route is still null. Correct for a
+  walk nobody claimed first; wrong for a door that must claim before spending, because the
+  claim is what stops two selections from both buying the same code. The norm it would have
+  broken was already guarded one layer down, and it would have come back through the door;
+- 🔴 **a gate's refusal left the verification open with a route claimed and nothing placed** —
+  4.56 again, one door further in.
+
+### And one that is still open: the vendor is not told where to report
+
+`tg_carrier` accepts a `callback_url` and nothing in `app/` supplies one, because no setting
+holds this gateway's own public address. The signed-callback door, its verification and the
+revocation sweep are all built and guarded — and if the vendor takes that address per request,
+none of them can fire in production. What is measured is our side only: whether the Gateway
+also accepts an account-side callback address is **not established**, and no capture speaks to
+it, so the work starts with the vendor's own reference rather than with a setting. Entered as
+task 4.57.
+
 ## Capabilities
 
 ### New Capabilities

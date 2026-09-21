@@ -94,8 +94,18 @@ class RouteSelectRequest(BaseModel):
 
 class RouteSelectResponse(BaseModel):
     id: int
+    # The rung that **carried** it, which on a ladder is not always the rung the consumer
+    # chose: the method is the only part of this answer the person acts on, and an
+    # application told to watch Telegram for a subscriber the Gateway declined puts the
+    # wrong instruction on the screen. Where nothing carried, this stays the selection —
+    # there is no method to name, and `status` says so.
     route: str
     status: str
+    # Why nothing carried, when nothing did. A ladder that ran and failed inside this one
+    # answer would otherwise report `failed` with no cause until the consumer polled for
+    # it, and "the method is never answered as pending" is the point of answering here at
+    # all.
+    reason: str | None = None
     # There is exactly one exception to the code never leaving the matcher, and it is a
     # **route**, not an application. On `sms_in` the person is the sender: they read the
     # code from the screen in front of them and text it to the gateway from the number

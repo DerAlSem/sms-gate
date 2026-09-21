@@ -191,8 +191,14 @@ async def walk(
             vendor_ref=attempt.vendor_ref, cost=attempt.cost)
 
         if attempt.outcome == CARRIED:
-            outcome = await queries.select_route(verification_id, app_id, route=route)
-            if outcome != "selected":
+            # `set_carrying_route` rather than `select_route`, and the difference is the
+            # whole of this norm: the caller may have claimed the consumer's pick before
+            # spending anything — that claim is what stops two selections from both
+            # walking — and the rung that carried is then a fact rather than a second
+            # choice. `select_route` writes only where the route is still null and would
+            # leave the verification naming a rung that declined it.
+            outcome = await queries.set_carrying_route(verification_id, app_id, route=route)
+            if outcome != "carried":
                 # The verification ended or was routed under us while the vendor was
                 # being asked. Said out loud rather than swallowed: on a paid rung this
                 # is money spent on a verification nobody is waiting for any more.

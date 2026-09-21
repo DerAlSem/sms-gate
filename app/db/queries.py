@@ -959,6 +959,38 @@ async def select_route(verification_id: int, app_id: str, *, route: str) -> str:
     return "expired"
 
 
+async def set_carrying_route(verification_id: int, app_id: str, *, route: str) -> str:
+    """Point an open verification at the rung that actually carried it.
+
+    The one sanctioned move of a verification from one route to another, and the reason it
+    is not `select_route`: that one writes only where `route IS NULL`, because a consumer's
+    second choice must not be able to overwrite the first. This is the other case
+    entirely. The door claims the consumer's pick *before* a penny is spent — that claim is
+    what stops two selections from both walking the ladder and both buying the same code —
+    and which rung then carried is a **fact about what happened** rather than a choice.
+    Without this, the claim wins and the verification names a rung that declined it, which
+    is exactly what `phone-verification` forbids: an application told to expect a Telegram
+    message for a person the Gateway declined puts the wrong instruction on the screen, and
+    the person waits in the wrong place while a phone they are holding rings.
+
+    Answers `carried`, `ended` or `not_found`. A verification that has stopped being open
+    is never moved: on a paid rung that is money spent on a verification nobody is waiting
+    for any more, and the caller's warning line is what says so.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET route = ? "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP",
+        (route, verification_id, app_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "carried"
+    return "not_found" if await get_verification(verification_id, app_id) is None \
+        else "ended"
+
+
 async def shorten_verification_window(verification_id: int, *, ttl_seconds: int) -> None:
     """Bring a verification's deadline in to this rung's own window, never out.
 

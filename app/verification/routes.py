@@ -117,6 +117,13 @@ _INSTRUCTIONS = {
     CALL_IN: "Call {number} from the number being verified. The call is not answered "
              "and costs you nothing; hang-up is ours.",
     SMS_IN: "Text the code you were shown to {number} from the number being verified.",
+    # The address is Telegram itself, and that is all the person needs: the message
+    # arrives in the account registered to the number being verified. Which Gateway
+    # account paid for it is the identity, and stays unsaid. This rung shipped with no
+    # entry at all, which made it an offer that named a route and told the person
+    # nothing — and the capability requires the answer to say what they must do.
+    TG_GATEWAY: "Open Telegram on the number being verified and read the code from the "
+                "message that arrives there.",
 }
 
 # Rungs whose instruction has to name a number the subscriber calls or texts. A rung whose

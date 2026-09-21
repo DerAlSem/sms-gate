@@ -798,6 +798,103 @@ and the call may well have been placed and charged in the meantime.
 - **WHEN** the first rung of a ladder consumes most of the bound before the second is tried
 - **THEN** the response still arrives within the one bound, naming a method
 
+### Requirement: Selecting a rung the gateway places walks the ladder inside that selection
+
+A route SHALL NOT be offered, selected, recorded, and then left unplaced. Where the selected
+rung is one **this gateway** acts on — as opposed to one where the subscriber acts — the
+ladder SHALL be walked before the selection is answered, and the answer SHALL state what
+became of it.
+
+**The ladder walked SHALL be the routing rule's answer for this subscriber's operator, from
+the selected rung onwards.** Rungs ahead of the selected one SHALL NOT be attempted: they
+were offered and not taken, or were never offered, and attempting one would place a route
+nobody chose — on this ladder, a paid one. Rungs behind it are the ladder continuing, which
+is what a ladder is; and because it settles inside the one answer, the person is never told
+to watch Telegram and then moved somewhere else.
+
+**A selected rung the rule does not name for that operator SHALL be carried alone.** The
+owner's decision of 21.09.2026. The offer has already stated that this rung can prove it
+will carry this number, and the rule is a statement about an operator's traffic rather than
+about a verification whose route a consumer chose by hand — so the choice is honoured, and
+the rule contributes only the continuation, which in that case is none.
+
+**The route SHALL be claimed before anything is spent, and the rung that carried SHALL then
+replace the claim.** The claim is what makes two simultaneous selections unable to both buy
+the same code, so it cannot wait until after the vendor has been paid; and a claim left
+standing would leave the verification naming a rung that declined it, which is the defect
+this capability names by hand — an application told to expect a Telegram message for a person
+the Gateway declined puts the wrong instruction on the screen. A verification that has stopped
+being open SHALL NOT be moved at all: on a paid rung that is money spent on a verification
+nobody is waiting for any more, and it SHALL be reported rather than recorded as a delivery.
+
+**A gate's refusal SHALL end the verification with that reason and SHALL be answered as a
+refusal.** Nothing was contacted and nothing was charged, so no rung SHALL be recorded — a
+row saying otherwise would put a refusal of ours into the count of what the vendors did. But
+the route was claimed before the walk, so a verification left open after a refusal is a route
+claimed with nothing placed: the same defect, one door further in. It is emphatically not a
+vendor failure and SHALL NOT be reported as one.
+
+**The gateway's own bookkeeping SHALL NOT count as vendor spend.** The spend ceiling and the
+per-number limits count every recorded rung on a paid route whatever its outcome —
+deliberately, because an ability check that never answered may have been charged without our
+learning its `request_id`. A second row written for the gateway's own convenience is
+therefore money: it halves both ceilings for the one rung that actually spends, and, being a
+paid attempt aged zero seconds against a minimum gap of fifteen, it refuses the very
+selection that wrote it while looking exactly like a gate doing its job.
+
+**The one bound SHALL be handed to each rung as what is left of it, and each carrier SHALL
+apply it to its own vendor calls.** The ladder does not abandon a rung by force, and that is
+deliberate: cancelling a carrier between a confirmed ability check and the record of its
+`request_id` would leave a fee nobody can attribute. The guarantee therefore rests on the
+carriers, and a carrier that omits the bound SHALL NOT silently fall back on a vendor
+method's own default — which on this vendor is five seconds for the check and ten for the
+send, fifteen against a bound that may be one.
+
+[backed · the door is `select_verification_route` over `app/verification/placement.py` in
+`app/api/router.py`, the re-pointing is `queries.set_carrying_route`, and the bound is the
+setting `verification_ladder_bound` (10 s, a ceiling: the Gateway answers in 178–285 ms over
+the wired path and times out at fifteen seconds on the failed-over one). Guarded by
+`tests/test_the_door_that_walks_the_ladder.py`, sixteen tests, and by the verify run described
+in `HANDOFF.md` — a file-backed database with real migrations driven through the real router,
+41 claims provoked rather than read. **Twenty mutations bite**, among them the four an
+implementation naturally writes: the claim winning over the rung that carried, the bound
+hardcoded instead of read, the gates handed in empty, and the ladder started at the top of
+the rule. 🔴 **The second rung is `flash_call` and nothing carries it** (task 4.17, blocked on
+1.1), so today a declined subscriber ends in the loud-skip path rather than in a call; that
+path is itself guarded, at the door and one layer down]
+
+#### Scenario: The rung the consumer chose is actually placed
+- **WHEN** a consumer selects the Telegram rung for a subscriber the Gateway will confirm
+- **THEN** the vendor is asked and the code is sent, and the answer names that rung as the method
+
+#### Scenario: The rung that carried is not the rung that was chosen
+- **WHEN** the Gateway declines the subscriber and the next rung of the rule carries the verification
+- **THEN** the answer and the stored verification both name the rung that carried, not the one selected
+
+#### Scenario: A rung the rule does not name for this operator
+- **WHEN** a consumer selects the Telegram rung for a subscriber the rule routes to the modem
+- **THEN** that rung is carried alone, and the route the rule named is not attempted
+
+#### Scenario: The ladder does not reach behind the consumer's choice
+- **WHEN** the rule names a dearer rung ahead of the one the consumer selected
+- **THEN** the dearer rung is not attempted at all
+
+#### Scenario: A gate refuses before any rung
+- **WHEN** the application holds no entitlement to spend and a paid rung is selected
+- **THEN** the selection is refused with that reason, no vendor is contacted, no rung is recorded, and the verification is ended rather than left open
+
+#### Scenario: One attempt is counted once
+- **WHEN** a paid rung is selected and attempted once
+- **THEN** the spend ceiling and the subscriber's own allowance each count it once
+
+#### Scenario: The bound reaches the vendor
+- **WHEN** the ladder's bound is narrower than the vendor methods' own defaults
+- **THEN** both vendor calls are made under the bound rather than under those defaults
+
+#### Scenario: A verification that ended while the vendor was being asked
+- **WHEN** a rung carries a verification that has since stopped being open
+- **THEN** the verification is not re-pointed at that rung, and the discrepancy is reported
+
 ### Requirement: An open verification ends by itself, and its end is announced
 
 A periodic sweep SHALL move open verifications past their deadline to expired, and the owning

@@ -21,6 +21,7 @@ def test_spec_has_all_soft_keys():
         "verification_ttl_seconds", "verification_max_attempts",
         "verification_retention_days", "verification_route_order",
         "verification_probe_timeout", "verification_proof_max_age_seconds",
+        "verification_ladder_bound",
         "verification_call_in_ttl_seconds", "gateway_msisdn",
         "tg_gateway_token", "tg_gateway_callback_tolerance_seconds",
         "operator_routes", "verification_templates", "operator_route_review_days",
