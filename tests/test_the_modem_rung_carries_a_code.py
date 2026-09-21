@@ -150,12 +150,12 @@ def test_what_this_gateway_says_it_places_is_what_it_can_carry():
     defect `placement` was written to remove, one rung further along — and the row
     written in its stead is the bookkeeping that reads as money on a paid route.
 
-    ⚠️ **Asserted directly because it cannot be reached through the door.** `sms_out` has
-    no probe (see `probes.py`, and task 4.17c), so no consumer can select it and no test
-    that goes through the API can exercise this. Measured rather than assumed: with this
-    assertion absent, removing `sms_out` from `PLACED_HERE` left both of these files
-    green. It is a weak guard by construction, and it is the strongest one this branch
-    can carry until the rung can be chosen.
+    Asserted here as well as through the door, and it was written when it could only be
+    asserted here: until the owner's decision of 21.09.2026 (task 4.17c) `sms_out` had no
+    probe, so no consumer could select it. Measured then: with this assertion absent,
+    removing `sms_out` from `PLACED_HERE` left both of these files green. It stays
+    because it says the invariant itself — everything carried is claimed — rather than
+    one instance of it.
     """
     modem = _Modem()
 

@@ -361,6 +361,9 @@ read it that way would put free text out over a route the rule did not name.
 app/modem/manager.py:558-653 (`_refuse_what_the_rule_routes_elsewhere` and `_refuse`,
 called at the head of `_send_one` before `encode_submit` and before the modem gate) · app/verification/refusals.py:49 (counted and
 alerted on `routing`, which ships on) · tests/test_send_path_refuses_an_uncarryable_route.py
+· the scenario below in which the modem **does** carry a code is backed from 21.09.2026 by
+app/verification/sms_carrier.py and app/verification/probes.py (`_sms_out_probe`), tasks
+4.17b and 4.17c; before them the rung was named everywhere and could carry nothing
 · conf: high]
 
 #### Scenario: Free text addressed to an operator routed to the call route

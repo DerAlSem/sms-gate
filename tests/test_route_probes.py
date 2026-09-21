@@ -6,21 +6,34 @@ positive control is what makes it an assertion about IMS.
 """
 
 import asyncio
+import json
 
 from app.db import queries
 from app.db.connection import close_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification.probes import build_probes
-from app.verification.routes import CALL_IN, SMS_IN, TG_GATEWAY, Proof
+from app.verification import rule
+from app.verification.routes import (
+    CALL_IN, SMS_IN, SMS_OUT, TG_GATEWAY, Proof,
+)
 
 PHONE = "+79261234888"
 
 
 class FakeModem:
-    def __init__(self, *, caller_id=True, linked=True):
+    """The modem as the probes see it — and the two directions are separate.
+
+    `linked` sets both, which is what every test that does not care about the split
+    wants; `transmit` and `receive` override one side each, which is what the pair of
+    rungs that hold on opposite directions needs.
+    """
+
+    def __init__(self, *, caller_id=True, linked=True, transmit=None, receive=None):
         self.caller_id_held = caller_id
         self.link_in_service = linked
+        self.can_transmit = linked if transmit is None else transmit
+        self.can_receive = linked if receive is None else receive
 
 
 def _holds():
@@ -141,12 +154,124 @@ def test_a_window_that_has_closed_frees_the_number_again():
 # --- the receiving rung -----------------------------------------------------------------
 
 def test_the_inbound_message_rung_needs_a_link_that_can_receive():
+    """And a link that can **receive**, which is not the same link as `sms_out` needs.
+
+    The third case is the load-bearing one: with the sender port gone and the reader
+    alive, asking the person to text us is the right offer, and a probe written on the
+    conjunction would withdraw it. Written the other way round — both rungs on
+    `link_in_service` — `sms_in` is never offered at all, because it sits last in the
+    order and `sms_out` proving drops it.
+    """
     async def body():
         down = await _probe(SMS_IN, modem=FakeModem(linked=False))(PHONE)
         up = await _probe(SMS_IN, modem=FakeModem(linked=True))(PHONE)
-        return down.holds, up.holds
+        send_only_down = await _probe(
+            SMS_IN, modem=FakeModem(transmit=False, receive=True))(PHONE)
+        return down.holds, up.holds, send_only_down.holds
 
-    assert _run(body) == (False, True)
+    assert _run(body) == (False, True, True)
+
+
+# --- the modem rung, and the rule as part of its precondition ---------------------------
+#
+# Task 4.17c, the owner's decision of 21.09.2026: the consumer may choose `sms_out`. Two
+# conditions had to be settled before the probe could be registered at all, and each of
+# them is a way the rung would have been offered **wrongly** rather than not offered.
+
+def test_the_modem_rung_needs_a_link_that_can_transmit():
+    """And transmitting is not receiving. The second case is the pair of the `sms_in`
+    guard above: one modem state, two rungs, opposite answers."""
+    async def body():
+        up = await _probe(SMS_OUT, modem=FakeModem(linked=True))(PHONE)
+        receive_only = await _probe(
+            SMS_OUT, modem=FakeModem(transmit=False, receive=True))(PHONE)
+        return up.holds, receive_only.holds
+
+    assert _run(body) == (True, False)
+
+
+def test_the_modem_rung_is_not_offered_where_the_rule_sends_the_operator_elsewhere():
+    """🔴 The one that matters, and the failure it prevents is this change's whole subject.
+
+    An offered rung is a rung the consumer may pick, and a rung the consumer picks is
+    honoured even where the rule does not name it — the owner's decision of 21.09.2026,
+    "carried alone". So offering the modem for an operator the rule diverts away from it
+    would put the code out over the route that operator has been rejecting, reached
+    through the **offer** rather than through the ladder: a delivery to the application
+    and a silence to the person.
+
+    The positive control is the same number, the same modem and the same probe, with the
+    one entry rewritten — which is the control shape this change settled on after twice
+    finding a guard standing over a place nothing could reach.
+    """
+    operator = "МегаФон"
+
+    async def body():
+        await queries.save_number_operator(PHONE, operator, None)
+        diverted = json.dumps(
+            [{"operator": operator, "routes": [TG_GATEWAY]},
+             {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
+             {"operator": rule.UNKNOWN, "routes": [SMS_OUT]}], ensure_ascii=False)
+        await store.set_many({rule.KEY: diverted})
+        away = await _probe(SMS_OUT)(PHONE)
+
+        named = json.dumps(
+            [{"operator": operator, "routes": [TG_GATEWAY, SMS_OUT]},
+             {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
+             {"operator": rule.UNKNOWN, "routes": [SMS_OUT]}], ensure_ascii=False)
+        await store.set_many({rule.KEY: named})
+        toward = await _probe(SMS_OUT)(PHONE)
+        return away, toward
+
+    away, toward = _run(body)
+    assert away.holds is False, \
+        "the modem was offered for an operator the rule routes away from it"
+    assert operator in away.reason, away.reason
+    assert toward.holds is True, \
+        "the positive control: the same operator, named to the modem, must be offerable"
+
+
+def test_an_unresolved_operator_takes_the_rules_unknown_entry():
+    """A number with no row is not a number the rule cannot answer for.
+
+    Read from the cache and never looked up: the application's answer does not wait for
+    enrichment, and the `?` entry is what answers meanwhile — which is exactly what the
+    sender does with the same number.
+    """
+    async def body():
+        ships_to_the_modem = await _probe(SMS_OUT)(PHONE)
+        await store.set_many({rule.KEY: json.dumps(
+            [{"operator": rule.DEFAULT, "routes": [SMS_OUT]},
+             {"operator": rule.UNKNOWN, "routes": [TG_GATEWAY]}], ensure_ascii=False)})
+        unknown_elsewhere = await _probe(SMS_OUT)(PHONE)
+        return ships_to_the_modem.holds, unknown_elsewhere.holds
+
+    assert _run(body) == (True, False)
+
+
+def test_an_unreadable_rule_does_not_offer_the_modem():
+    """Never read as "no rule". Read that way it would send every diverted operator's
+    traffic straight back to the route that is rejecting it — and the offer is where
+    that decision would be taken invisibly."""
+    async def body():
+        # Inserted rather than saved: `set_many` validates, and this state is reached by
+        # a hand-edited row or a type that changed under a stored value, not by the
+        # console. An UPDATE that matched nothing would leave the shipped rule in force
+        # and pass this test for the wrong reason.
+        from app.db.connection import get_db
+        db = await get_db()
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (rule.KEY, "{not json at all"))
+        await db.commit()
+        await store.load()
+        assert store.get(rule.KEY) == "{not json at all"
+        return await _probe(SMS_OUT)(PHONE)
+
+    proof = _run(body)
+    assert proof.holds is False
+    assert "rule" in proof.reason.lower(), proof.reason
 
 
 # --- the Telegram Gateway rung ----------------------------------------------------------

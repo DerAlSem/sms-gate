@@ -1060,9 +1060,8 @@ all eight of the sender's status writers pass through) · app/modem/manager.py (
 does not re-read the rule for a message the ladder placed) · tests/
 test_the_modem_rung_carries_a_code.py and test_a_verification_owns_its_message.py,
 sixteen mutations bitten, none surviving ·
-⚠ **reachable as a ladder continuation only:** `sms_out` has no probe, so a consumer
-cannot select it, and the rung is met only where a rule names it behind a rung that can
-be — task 4.17c · conf: high]
+app/verification/probes.py (`_sms_out_probe`, so the rung can be chosen — the owner's
+decision of 21.09.2026) · conf: high]
 
 #### Scenario: The SMS carrying a code fails
 - **WHEN** the message carrying a verification's code is failed or expired by the sender

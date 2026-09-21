@@ -17,7 +17,7 @@ from app.db import queries
 from app.db.connection import close_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
-from app.verification.routes import CALL_IN, SMS_IN, Proof
+from app.verification.routes import CALL_IN, SMS_IN, SMS_OUT, Proof
 
 PHONE = "+79261234888"
 AUTH = {"Authorization": "Bearer token-app1"}
@@ -26,6 +26,8 @@ AUTH = {"Authorization": "Bearer token-app1"}
 class FakeModem:
     caller_id_held = True
     link_in_service = True
+    can_transmit = True
+    can_receive = True
 
     def health_snapshot(self):
         return {"modem_detected": True}
@@ -90,7 +92,9 @@ def test_creation_answers_with_an_id_and_the_routes_that_can_carry_it(client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert isinstance(body["id"], int)
-    assert [o["route"] for o in body["routes"]] == [CALL_IN]
+    # `sms_out` rides here from 21.09.2026 (task 4.17c): the shipped rule sends an
+    # unresolved operator to the modem, and the modem can transmit in this fixture.
+    assert [o["route"] for o in body["routes"]] == [CALL_IN, SMS_OUT]
 
 
 def test_the_answer_says_what_the_person_must_do_and_names_no_estate(client):
@@ -172,7 +176,9 @@ def test_no_route_proving_itself_is_refused_in_the_same_answer(app, client):
     """6.7 — rather than opening a verification whose only possible outcome is to expire."""
     app.state.ims_proof = _fails()
     app.state.modem = type("Down", (), {"caller_id_held": True,
-                                        "link_in_service": False})()
+                                        "link_in_service": False,
+                                        "can_transmit": False,
+                                        "can_receive": False})()
     r = _create(client)
     assert r.status_code == 422
     assert "no_route_available" in r.text
@@ -274,9 +280,15 @@ def test_the_code_comes_back_only_when_the_person_is_the_one_who_must_type_it(ap
     the rung afterwards: at creation no rung is chosen, and handing the code to an
     application that then picks `call_in` would give away the secret for nothing.
     """
-    # Nothing cheaper proves itself, so the paid rung is on the ladder — which is the
-    # only state in which it can be selected at all.
+    # Nothing cheaper proves itself, so this rung is on the ladder — which is the only
+    # state in which it can be selected at all. Since 4.17c that takes **both**: the
+    # voice route down, and the modem unable to transmit. It can still receive, which is
+    # the whole case for offering `sms_in` — the person texts us, and we read it.
     app.state.ims_proof = _fails()
+    app.state.modem = type("ReceiveOnly", (), {"caller_id_held": True,
+                                               "link_in_service": False,
+                                               "can_transmit": False,
+                                               "can_receive": True})()
     vid = _create(client).json()["id"]
     r = client.post(f"/verifications/{vid}/route", json={"route": SMS_IN}, headers=AUTH)
     assert r.status_code == 200, r.text
@@ -368,7 +380,9 @@ def test_a_failed_rung_ends_the_verification_and_the_answer_carries_what_is_left
     body = client.get(f"/verifications/{vid}", headers=AUTH).json()
     assert body["status"] == "failed"
     assert body["reason"] == "route_unavailable"
-    assert [o["route"] for o in body["routes"]] == [SMS_IN]
+    # `sms_out` rather than `sms_in` since 4.17c: it is cheaper — this gateway pays for
+    # one SMS, the subscriber pays for the other — so the dearer rung is dropped.
+    assert [o["route"] for o in body["routes"]] == [SMS_OUT]
 
 
 def test_the_rung_that_failed_is_not_among_what_is_left_though_it_could_prove_itself(
@@ -381,7 +395,7 @@ def test_the_rung_that_failed_is_not_among_what_is_left_though_it_could_prove_it
     would pass the guard above while saying something else entirely.
     """
     vid = _create(client).json()["id"]
-    assert [o["route"] for o in _create(client).json()["routes"]] == [CALL_IN]
+    assert [o["route"] for o in _create(client).json()["routes"]] == [CALL_IN, SMS_OUT]
 
     client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
     assert _fail(vid) is True
@@ -396,8 +410,15 @@ def test_what_is_left_says_what_the_person_must_do(client):
     client.post(f"/verifications/{vid}/route", json={"route": CALL_IN}, headers=AUTH)
     _fail(vid)
 
-    offer = client.get(f"/verifications/{vid}", headers=AUTH).json()["routes"][0]
-    assert "+79990001122" in offer["instruction"]
+    offers = client.get(f"/verifications/{vid}", headers=AUTH).json()["routes"]
+    assert offers, "nothing was left to offer, so this guard asserted nothing"
+    for offer in offers:
+        assert offer["instruction"].strip(), \
+            f"{offer['route']} was named with no instruction, which is not an offer"
+        if offer["route"] in (CALL_IN, SMS_IN):
+            # The two rungs on which the subscriber has to reach us: an instruction that
+            # does not carry the number is one the person cannot act on.
+            assert "+79990001122" in offer["instruction"], offer
 
 
 def test_a_verification_still_being_carried_is_offered_nothing(client):

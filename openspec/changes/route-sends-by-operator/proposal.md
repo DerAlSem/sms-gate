@@ -495,18 +495,34 @@ is a column on `messages` rather than a field on the queued item, because the re
 path builds its items out of rows alone: carried in the queue, the fact would be dropped by
 the one path that re-sends, and the symptom would be a code refused on its retry.
 
-**The rung is carried but not yet offerable, and that is a question for the owner (task
-4.17c).** Registering its probe is four lines; it was written and withdrawn the same hour,
-because measuring it showed a collision nothing had named. `_sms_in_probe` and an `sms_out`
-probe hold on exactly one thing, `modem.link_in_service`, and `sms_in` is dropped whenever
-anything earlier in the order proved itself — so `sms_out` proving is **`sms_in` never being
-offered again**, and `sms_in` is the whole subject of the sibling change
-`verify-by-inbound-contact`. Two more collide and neither is settled: the offer is not
-filtered by the routing rule, so the rung would be offered for the one operator the rule
-diverts away from it; and an application with no template would be offered a rung that cannot
-compose its code. Until that is answered the rung is reachable as a **ladder continuation**
-only — a rule naming it behind a rung that can be chosen — which is a configuration the owner
-can write today and none of the shipped ones does.
+**The rung is offerable — the owner's answer of 21.09.2026, task 4.17c — and the two
+collisions that held it up are settled rather than accepted.** Registering the probe was four
+lines; it was written and withdrawn the same hour, because measuring it showed a collision
+nothing had named, and the withdrawal is what made both of these findable.
+
+*`sms_in` is not retired, and it was only ever going to be because of a conjunction.* Both
+probes were written on `modem.link_in_service`, which is two ports and-ed together, while
+`sms_in` is dropped whenever anything earlier in the order proves itself: identical
+preconditions meant `sms_out` proving was `sms_in` never being offered again — and `sms_in`
+is the whole subject of the sibling change `verify-by-inbound-contact`. They are two
+directions, and they are now two properties: `can_transmit`, the command port, for the
+gateway sending; `can_receive`, the URC port, for the subscriber sending to us. A sender port
+gone with the reader alive is a real state, and it is exactly the one in which asking the
+person to text us is the right offer rather than the dear one.
+
+*The routing rule is part of the rung's precondition, and it is read in the probe.* An
+operator the rule diverts away from the modem must not be **offered** the modem: the answer
+would be honoured — a rung the rule does not name is still carried, alone — and the code would
+go out over the route that operator has been rejecting. That is this change's whole subject,
+reached through the offer rather than through the ladder, and it would have looked like a
+consumer's free choice. In the probe rather than at the door because `offer` has three call
+sites and a rule read at each of them is a census, while a probe is asked once, about this
+number, which is the shape of the question.
+
+⚠️ **Both new properties were unguarded the moment they were written**, and that is worth
+recording because it is the same shape as everything else here: every probe test runs against
+a fake modem, so wiring `can_transmit` to the reader port and `can_receive` to the sender port
+changed nothing anywhere. A guard on the real manager closes it.
 
 🔴 **What this says about the guards that were green all week.** Everything downstream of an
 `sms_out`-borne code — the template, its save-time validation, the refusal count, the

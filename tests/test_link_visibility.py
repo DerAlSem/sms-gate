@@ -112,3 +112,38 @@ def test_the_diagnostics_sweep_still_reports_the_link_when_the_modem_answers():
     assert rows[0]["parsed"]["link"] == "open"
     assert rows[0]["parsed"]["link_reopens"] == 2
     assert len(rows) > 2, "the sweep must continue past the gateway row"
+
+
+# --- the two directions are two ports, and the rungs hold on opposite ones --------------
+
+def test_transmitting_and_receiving_are_answered_by_their_own_ports():
+    """Task 4.17c, on the real manager rather than on a double.
+
+    `sms_out` holds on `can_transmit` and `sms_in` on `can_receive`, and the whole point
+    of splitting them out of `link_in_service` was that one modem state gives the two
+    rungs different answers. That guarantee is two property bodies pointing at two
+    different ports — and every probe test runs against a fake modem, so nothing here
+    was reading the real ones.
+
+    🔴 Measured: with both probes guarded and the whole suite green, wiring
+    `can_transmit` to the reader port and `can_receive` to the sender port changed
+    nothing anywhere. Both mutations are red against this test.
+    """
+    m = _mgr()
+
+    class _Port:
+        def __init__(self, up):
+            self.in_service = up
+
+    m._sender = _Port(True)
+    m._reader_link = _Port(False)
+    assert m.can_transmit is True, "transmitting is not answered by the command port"
+    assert m.can_receive is False, "receiving is not answered by the URC port"
+    assert m.link_in_service is False, "the conjunction must still need both"
+
+    m._sender = _Port(False)
+    m._reader_link = _Port(True)
+    assert m.can_transmit is False
+    assert m.can_receive is True, \
+        "the state the whole split exists for: receive alive, transmit gone"
+    assert m.link_in_service is False

@@ -9,21 +9,31 @@ balance rather than on code; until its probe is registered the registry treats i
 as it treats any other rung nothing can prove, which is as unavailable. That is the
 correct answer rather than a placeholder: being configured was never evidence.
 
-🔴 **`sms_out` stood in that sentence until 21.09.2026 and does not belong in it.** The
-modem is this gateway's own hardware: there is no account to open and no balance to fund,
-so the rung is unoffered for a reason that was never true of it — while
-`verification_route_order` has shipped naming it **second** and the routing rule ships
-sending every operator but one to it. It is still absent, and now for a reason that is
-measured rather than assumed: **registering its probe retires `sms_in` outright.** Both
-probes hold on exactly one thing, `modem.link_in_service`, and `sms_in` is dropped
-whenever anything earlier in the order proved itself — so `sms_out` proving is `sms_in`
-never being offered again, and `sms_in` is the whole subject of the sibling change
-`verify-by-inbound-contact`. Two further things collide with it and neither is settled:
-the offer is not filtered by the routing rule, so the rung would be offered for the one
-operator the rule diverts *away* from it; and an application with no template would be
-offered a rung that cannot compose its code (task 4.47). The carrier exists and the
-ladder reaches it as a continuation; whether the consumer may **choose** it is the
-owner's, and it is task 4.17c.
+`sms_out` was in that sentence until 21.09.2026 and never belonged there: the modem is
+this gateway's own hardware, with no account to open and no balance to fund. It is
+offered now — the owner's decision of 21.09.2026, task 4.17c — and two things had to be
+settled before its probe could be registered, because each of them is a way the rung
+would have been offered wrongly rather than not at all.
+
+🔴 **Its precondition is not `sms_in`'s, and writing both as `link_in_service` would have
+retired `sms_in` outright.** `sms_in` sits last in the offer order and is dropped
+whenever anything earlier proves itself, so an identical precondition means it is never
+offered again — and `sms_in` is the whole subject of the sibling change
+`verify-by-inbound-contact`. The two rungs are the two directions: this gateway sending
+(`modem.can_transmit`, the command port) against the subscriber sending to us
+(`modem.can_receive`, the URC port). Written that way, the state where the sender port is
+gone and the reader is not is exactly the state in which asking the person to text us is
+the right offer.
+
+🔴 **The rule is part of the precondition, and it is read here rather than at the door.**
+An operator the rule diverts *away* from the modem must not be offered the modem: the
+answer would be honoured — a rung the rule does not name is still carried, alone, by the
+owner's decision of the same day — and the code would go out over the route that operator
+has been rejecting, which reads to the application as a delivery and behaves to the
+person as a silence. That is the one failure this whole change exists to prevent, and it
+would have been reached through the offer rather than through the ladder. Here rather
+than at the door because `offer` has three call sites and a rule read at each of them is
+a census; a probe is asked once, about this number, which is the shape of the question.
 
 `tg_gateway` is the exception to that sentence, and the exception is argued rather than
 assumed — see its probe below.
@@ -32,7 +42,8 @@ assumed — see its probe below.
 from __future__ import annotations
 
 from app.db import queries
-from app.verification.routes import CALL_IN, SMS_IN, TG_GATEWAY, Proof
+from app.verification import rule
+from app.verification.routes import CALL_IN, SMS_IN, SMS_OUT, TG_GATEWAY, Proof
 
 
 def build_probes(
@@ -60,6 +71,7 @@ def build_probes(
     return {
         CALL_IN: _call_in_probe(modem, ims_proof, excluding),
         SMS_IN: _sms_in_probe(modem),
+        SMS_OUT: _sms_out_probe(modem),
         TG_GATEWAY: _tg_gateway_probe(tg_token, tg_reachability),
     }
 
@@ -100,9 +112,58 @@ def _call_in_probe(modem, ims_proof, excluding=None):
 def _sms_in_probe(modem):
     async def probe(phone: str) -> Proof:
         # The person sends; the gateway only has to be able to receive. That is the URC
-        # link being in service — the same link `+CMTI` arrives on.
-        if not modem.link_in_service:
-            return Proof(holds=False, reason="the modem link is not in service")
+        # link being in service — the same link `+CMTI` arrives on. Deliberately **not**
+        # the conjunction: a sender port that is gone does not stop a message arriving,
+        # and asking this rung about the sender is what made it unofferable the moment
+        # `sms_out` could prove itself.
+        if not modem.can_receive:
+            return Proof(holds=False, reason="the modem cannot receive right now")
+        return Proof(holds=True)
+
+    return probe
+
+
+def _sms_out_probe(modem):
+    """The gateway's own SIM sends — if it can, and if the rule sends this number here.
+
+    Two conditions, and the second is not a condition of the hardware. See the module
+    docstring: an operator the rule diverts away from the modem must not be offered the
+    modem, because the offer would be honoured and the code would go out over the route
+    that operator has been rejecting.
+
+    The operator is read from the cache and never looked up. The application's answer
+    does not wait for enrichment — the owner's placement of that wait, 20.09.2026, is in
+    the sender and nowhere else — and a number with no row takes the rule's
+    unknown-operator entry, which is what that entry is for.
+
+    **What is deliberately not asked is the application's template.** A probe is given a
+    number and answers about the rung; which application is asking is not in the
+    question, and an entitlement dressed up as a precondition would report "the modem
+    cannot carry this number" for a configuration gap. That refusal is the door's, and
+    it is task 4.47.
+
+    Registration is not asked either, and that is the ladder's own shape: the sender
+    holds a message back while the modem is off the network rather than failing it, so a
+    momentary deregistration is a delay of seconds and not a rung that cannot carry.
+    """
+    async def probe(phone: str) -> Proof:
+        if not modem.can_transmit:
+            return Proof(holds=False, reason="the modem cannot transmit right now")
+        row = await queries.get_number_operator(phone)
+        operator = (row["operator"] or "").strip() if row is not None else ""
+        try:
+            named = rule.route_for(operator or None)
+        except rule.UnreadableRule as exc:
+            # The reader has already alerted. Unreadable is never read as "no rule": read
+            # that way it would send every diverted operator's traffic straight back to
+            # the route that is rejecting it.
+            return Proof(holds=False,
+                         reason=f"the routing rule cannot be read: {exc}")
+        if SMS_OUT not in named:
+            return Proof(
+                holds=False,
+                reason=f"the routing rule does not send "
+                       f"{operator or 'an unresolved operator'} to the modem")
         return Proof(holds=True)
 
     return probe

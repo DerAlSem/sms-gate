@@ -47,6 +47,8 @@ def status_body(status: str, **extra) -> bytes:
 class FakeModem:
     caller_id_held = True
     link_in_service = True
+    can_transmit = True
+    can_receive = True
 
     def health_snapshot(self):
         return {"modem_detected": True}

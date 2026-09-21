@@ -385,7 +385,7 @@ rather than on code.
       restart resume path builds its items out of `messages` rows alone, so a fact
       carried in the queue would be dropped by the one path that re-sends, and the
       symptom would be a code refused on its retry.
-- [ ] 4.17c **Owner: whether a consumer may choose `sms_out`, given that offering it
+- [x] 4.17c **Owner: whether a consumer may choose `sms_out`, given that offering it
       retires `sms_in`.** Registering the probe is four lines and was written and
       withdrawn on 21.09.2026, because measuring it showed a collision nothing had
       named: `_sms_in_probe` and an `sms_out` probe hold on exactly the same thing,
@@ -399,6 +399,29 @@ rather than on code.
       code (4.47). Until this is answered `sms_out` is reachable only as a **ladder
       continuation** — a rule naming it behind a rung that can be chosen — which is what
       backs 4.27 today.
+      🟢 **Answered «можно» by the owner, 21.09.2026, and the two collisions are settled
+      rather than accepted.**
+      **`sms_in` is not retired.** It was only ever going to be because both probes were
+      written on `link_in_service`, which is the *conjunction* of two ports. They are two
+      directions and now two properties on the manager: `can_transmit` (the command port)
+      for `sms_out`, `can_receive` (the URC port) for `sms_in`. The state that keeps
+      `sms_in` alive is a sender port gone with the reader alive — exactly the state in
+      which asking the person to text us is the right offer rather than the dear one.
+      ⚠️ Both properties were unguarded when first written: every probe test runs against
+      a fake modem, and wiring each to the *other* port left the whole suite green. Held
+      now by `tests/test_link_visibility.py` on the real manager.
+      🔴 **The rule is part of the precondition, and it is read in the probe.** An
+      operator the rule diverts away from the modem is not offered the modem: the answer
+      would be honoured — a rung the rule does not name is carried alone, the owner's
+      other decision of the same day — and the code would go out over the route that
+      operator has been rejecting, reached through the **offer** rather than through the
+      ladder. In the probe rather than at the door because `offer` has three call sites
+      and a rule read at each is a census; a probe is asked once, about this number.
+      The operator is read from the cache and never looked up: the application's answer
+      does not wait for enrichment, and a number with no row takes the `?` entry, which
+      is what that entry is for. Nine mutations bite, none survive.
+      **What this does not do is 4.47** — the template refusal at accept, which only
+      becomes answerable now that the rung can be chosen.
 - [x] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
       Built 20.09.2026 as `app/verification/refusals.py` plus the table
       `route_refusals`: a row per refusal, not a running total, because the

@@ -364,6 +364,30 @@ class ModemManager:
         return self._sender.in_service and self._reader_link.in_service
 
     @property
+    def can_transmit(self) -> bool:
+        """Whether this gateway's SIM can send. The command port, and only it.
+
+        Split out of `link_in_service` on 21.09.2026 because two rungs hold on the two
+        directions and the conjunction made them one question. `sms_out` is the gateway
+        sending; `sms_in` is the subscriber sending to us. Asking both of them "are both
+        ports up" meant `sms_in` could never be offered once `sms_out` was — it sits
+        last in the offer order and is dropped whenever anything earlier proves itself,
+        so an identical precondition retires it outright.
+        """
+        return self._sender.in_service
+
+    @property
+    def can_receive(self) -> bool:
+        """Whether an SMS addressed to this gateway would be read. The URC port.
+
+        The same link `+CMTI` arrives on, which is what `scan_inbox` and the reader loop
+        wait for. A sender port that is gone does not stop a message arriving here, and
+        that state — receive but not transmit — is the one in which asking the person to
+        text us is the right offer rather than the dear one.
+        """
+        return self._reader_link.in_service
+
+    @property
     def caller_id_held(self) -> bool:
         """Whether the gateway holds the caller-ID subscription on the link in service.
 
