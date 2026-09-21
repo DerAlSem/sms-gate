@@ -650,6 +650,21 @@ class ModemManager:
         asked". Routing a first message on an empty cache would take the `?` entry — the
         modem — for the very subscriber this rule diverts away from it.
         """
+        # 🔴 **A verification's code was routed by the ladder, and the ladder read the
+        # rule to do it.** Asking again here would refuse exactly the item this change
+        # exists to place: a ladder written `[tg_gateway, sms_out]` puts the modem behind
+        # a paid rung deliberately, so the rule's **first** route is not `sms_out` and
+        # the check below would refuse the code — naming `tg_gateway` in the reason, on a
+        # message the ladder had already decided, and consuming the verification's one
+        # placement. The hazard is task 4.1's, named there before this rung existed.
+        #
+        # Read from the database rather than from the queued item, and that is the whole
+        # reason it is a query: the restart resume path builds its items out of
+        # `messages` rows alone, so an ownership carried in the queue would be dropped by
+        # the one path that re-sends.
+        if await queries.verification_of_message(msg.message_id) is not None:
+            return False
+
         operator = await self._operator_for(msg.phone)
 
         try:

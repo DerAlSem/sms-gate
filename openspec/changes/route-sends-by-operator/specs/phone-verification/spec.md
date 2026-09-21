@@ -1051,7 +1051,18 @@ until a deadline, and the application learns nothing until then. It also closes 
 other direction: the live rule that every status writer notifies would otherwise push a raw
 message id to an application that only ever asked for a verification.
 
-[unbacked · modem failure vocabulary at app/modem/errors.py:19-38]
+[backed · evidence: app/verification/sms_carrier.py (the rung itself — it composes from
+the application's template, creates the message with `verification_id` set, and hands it
+to the sender) · app/db/migrate.py (`messages.verification_id`, additive and NULL for
+every existing row) · app/modem/delivery_dispatch.py
+(`_the_verification_takes_this_outcome`, on `dispatch_delivery`, which is the one door
+all eight of the sender's status writers pass through) · app/modem/manager.py (the sender
+does not re-read the rule for a message the ladder placed) · tests/
+test_the_modem_rung_carries_a_code.py and test_a_verification_owns_its_message.py,
+sixteen mutations bitten, none surviving ·
+⚠ **reachable as a ladder continuation only:** `sms_out` has no probe, so a consumer
+cannot select it, and the rung is met only where a rule names it behind a rung that can
+be — task 4.17c · conf: high]
 
 #### Scenario: The SMS carrying a code fails
 - **WHEN** the message carrying a verification's code is failed or expired by the sender

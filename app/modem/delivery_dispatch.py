@@ -30,6 +30,13 @@ logger = logging.getLogger(__name__)
 # it synchronously, so a webhook would duplicate it — and could beat the HTTP response.
 NOTIFIED_STATUSES = ("sent", "delivered", "failed", "expired")
 
+# The endings a message can have that end the verification it carries the code of.
+# `sent` and `delivered` are deliberately absent: they are the code on its way and the
+# code arrived, and a verification is not over until the person answers or the clock
+# does. The modem has a dozen named ways to reach the two below
+# (`app/modem/errors.py`), and every one of them means the code is not coming.
+_ENDS_A_VERIFICATION = frozenset({"failed", "expired"})
+
 _bg_tasks: set[asyncio.Task] = set()
 
 
@@ -64,6 +71,10 @@ async def dispatch_delivery(message_id: int, status: str, error: str | None = No
         if row is None:
             logger.warning("delivery dispatch: message %s not found", message_id)
             return False
+        if row["verification_id"] is not None:
+            await _the_verification_takes_this_outcome(
+                row["verification_id"], message_id, status, error)
+            return False
         route = find_route(row["app_id"])
         if route is None:
             return False
@@ -94,6 +105,39 @@ async def dispatch_delivery(message_id: int, status: str, error: str | None = No
     except Exception:
         logger.exception("delivery dispatch unexpected error id=%s", message_id)
         return False
+
+
+async def _the_verification_takes_this_outcome(
+    verification_id: int, message_id: int, status: str, error: str | None,
+) -> None:
+    """What happens instead of a message-status push, for a message a verification owns.
+
+    Two halves of one requirement, and the quiet half is the first.
+
+    **No message-status push, whatever the status.** The application asked about a
+    verification; a body carrying a raw message id in `id`, with a `status` whose words
+    overlap the verification contract's, is the older contract arriving about something
+    the receiver never asked about — and a receiver keyed on `id` and `status` acts on
+    it and marks the wrong thing.
+
+    **An ending ends the verification.** Announced by the sweep rather than pushed from
+    here, deliberately: one announcer sees every way a verification can end, so a writer
+    added later cannot be a writer that forgot, and exactly-once is the announcer's
+    claim rather than this writer's. `fail_verification` only moves a `pending` row, so
+    a verification the person already confirmed is not taken away from them by a report
+    that arrived late.
+    """
+    if status not in _ENDS_A_VERIFICATION:
+        logger.info("message %d carries verification %d's code and moved to %s; no "
+                    "message-status push", message_id, verification_id, status)
+        return
+    reason = f"the SMS carrying this code {status}"
+    if error:
+        reason = f"{reason}: {error}"
+    ended = await queries.fail_verification(verification_id, reason=reason)
+    logger.info("verification %d: its message %d %s (%s), so the verification %s",
+                verification_id, message_id, status, error or "no reason given",
+                "fails with it" if ended else "was already over")
 
 
 def spawn_delivery_dispatch(message_id: int, status: str, error: str | None = None) -> None:

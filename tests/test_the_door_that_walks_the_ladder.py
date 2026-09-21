@@ -216,8 +216,8 @@ def test_the_answer_names_the_rung_that_carried_not_the_one_selected(
 
     real = placement.carriers_for
 
-    def with_a_second_rung(verification_id, *, app_id):
-        built = real(verification_id, app_id=app_id)
+    def with_a_second_rung(verification_id, *, app_id, **rest):
+        built = real(verification_id, app_id=app_id, **rest)
 
         async def carry(phone, *, seconds_left, rung_id):
             return ladder.Attempt(outcome=ladder.CARRIED, vendor_ref="ucaller-1",
@@ -286,12 +286,12 @@ def test_one_bound_covers_the_whole_ladder_and_comes_from_the_setting(
     real = placement.carriers_for
     seconds_left_seen = []
 
-    def with_a_second_rung(verification_id, *, app_id):
+    def with_a_second_rung(verification_id, *, app_id, **rest):
         async def carry(phone, *, seconds_left, rung_id):
             seconds_left_seen.append(seconds_left)
             return ladder.Attempt(outcome=ladder.CARRIED)
 
-        return {**real(verification_id, app_id=app_id), FLASH_CALL: carry}
+        return {**real(verification_id, app_id=app_id, **rest), FLASH_CALL: carry}
 
     monkeypatch.setattr(placement, "carriers_for", with_a_second_rung)
 
@@ -485,7 +485,10 @@ def test_a_rung_whose_credential_is_blank_is_absent_from_the_carrier_map(app):
 
     async def with_token(value):
         await store.set_many({"tg_gateway_token": value})
-        return placement.carriers_for(1, app_id="app1")
+        # No modem, so the map holds the paid rung and nothing else: this assertion is
+        # about the credential, and a modem rung standing beside it would make the
+        # "nothing was built" half read as a carrier that exists.
+        return placement.carriers_for(1, app_id="app1", modem=None, operator=None)
 
     assert TG_GATEWAY in asyncio.run(with_token(TOKEN)), \
         "the positive control: a held token must produce a carrier"

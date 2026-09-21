@@ -42,16 +42,26 @@ import logging
 
 from app.db import queries
 from app.settings_store import store
-from app.verification import gates, ladder, rule, tg_callback, tg_carrier
-from app.verification.routes import TG_GATEWAY
+from app.verification import (
+    gates, ladder, rule, sms_carrier, tg_callback, tg_carrier,
+)
+from app.verification.routes import SMS_OUT, TG_GATEWAY
 
 logger = logging.getLogger(__name__)
 
-# The rungs on which **this gateway** acts. `call_in` and `sms_in` are deliberately absent:
-# on those the subscriber is the one who acts, and there is nothing to place. `sms_out` is
-# absent for a different reason — the modem sender carries it, on its own queue, and a
-# ladder that placed it here would place it twice.
-PLACED_HERE = frozenset({TG_GATEWAY})
+# The rungs on which **this gateway** acts. `call_in` and `sms_in` are deliberately
+# absent: on those the subscriber is the one who acts, and there is nothing to place.
+#
+# 🔴 **`sms_out` was absent here until 21.09.2026, on the reading that the modem sender
+# picks its own work up and a ladder placing it would place it twice.** That reading
+# described a mechanism nothing had built: `enqueue` had four call sites and not one of
+# them belonged to a verification, so an `sms_out`-borne code was never composed at all,
+# and `ladder.walk` met the rung as one nothing carries — alerted, advanced past, to the
+# dearer one. The ladder was already the other reading in code: `_MODEM_ROUTES` and the
+# withholding rule of 20.09.2026 are a branch about the modem rung standing **inside** a
+# ladder, and under the old reading they were unreachable. So the modem is placed here
+# like every other rung the gateway acts on, and nothing else places it.
+PLACED_HERE = frozenset({TG_GATEWAY, SMS_OUT})
 
 
 def places_here(route: str) -> bool:
@@ -63,7 +73,9 @@ def places_here(route: str) -> bool:
     return route in PLACED_HERE
 
 
-def carriers_for(verification_id: int, *, app_id: str) -> dict[str, ladder.Carrier]:
+def carriers_for(
+    verification_id: int, *, app_id: str, modem, operator: str | None,
+) -> dict[str, ladder.Carrier]:
     """The carriers that exist for this verification, right now.
 
     A rung whose credential is blank is **absent from this map** rather than present and
@@ -78,8 +90,18 @@ def carriers_for(verification_id: int, *, app_id: str) -> dict[str, ladder.Carri
     attempted, is alerted about on stock settings, and the ladder advances past it — which
     is the one configuration gap that costs money rather than traffic, and the reason it is
     loud.
+
+    **`modem` and `operator` have no defaults**, for the reason `callback_url` lost its
+    one on 21.09.2026: a caller that forgets the modem builds a map with no modem rung in
+    it, and the ladder then says out loud that nothing carries `sms_out` — loud, and
+    wrong. A parameter every caller has to decide has no right to a default.
     """
     carriers: dict[str, ladder.Carrier] = {}
+    if modem is not None:
+        # No credential to hold and no vendor to be out of credit with: what this rung
+        # needs is the sender, and a gateway with no modem has no `sms_out`.
+        carriers[SMS_OUT] = sms_carrier.carrier(
+            verification_id, app_id=app_id, modem=modem, operator=operator)
     token = store.tg_gateway_token
     if token:
         callback_url = tg_callback.url_for(store.tg_gateway_callback_base)
@@ -119,6 +141,7 @@ def ladder_from(route: str, operator: str | None) -> list[str]:
 
 async def place(
     verification_id: int, *, app_id: str, operator: str | None, phone: str, route: str,
+    modem,
 ) -> ladder.Walk:
     """Walk the ladder for a rung the consumer selected, and leave nothing in flight.
 
@@ -133,7 +156,8 @@ async def place(
         phone=phone,
         rungs=ladder_from(route, operator),
         gates=gates.for_paid_ladder(app_id, phone),
-        carriers=carriers_for(verification_id, app_id=app_id),
+        carriers=carriers_for(verification_id, app_id=app_id, modem=modem,
+                              operator=operator),
         bound=store.verification_ladder_bound,
     )
     if walk.refused_by and walk.carried_by is None:

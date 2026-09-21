@@ -112,11 +112,18 @@ rather than on code.
       not `sms_out`. A verification the ladder deliberately routed to a modem rung
       standing behind a paid one would therefore be refused by the sender — the ladder
       chose `sms_out`, and the sender asks the rule instead of asking what was chosen.
-      It is unreachable today because nothing enqueues an `sms_out`-borne code: the
-      carrier is task 4.17, blocked on 1.1. **When 4.17 lands, the item handed to
-      `enqueue` has to carry what the ladder selected**, and this test is what must
-      fail until it does. Asserting "flash_call is not picked up" alone would be hollow
-      in the way twice caught on this change.
+      🔴 **Closed by 4.17b on 21.09.2026, and the prediction in this task was right
+      about the hazard and wrong about the carrier.** The carrier was never 1.1's to
+      unblock — the modem needs no account — and the fact the sender has to honour does
+      not ride on the queued item at all: it is read from `messages.verification_id`,
+      because the restart resume path re-enqueues from rows and would drop anything
+      carried in the queue. `tests/test_the_modem_rung_carries_a_code.py` holds it,
+      including the restart shape and the positive control that ordinary free text on
+      the same rule is still refused.
+      **What is left of this task is its first half** — that a verification for an
+      operator the rule routes to `flash_call` is not picked up by the modem sender.
+      Asserting it alone would be hollow in the way twice caught on this change, and now
+      it need not be alone.
 - [x] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
       Taken **in the same file and the same session as 4.6**, not after it: three times
       on this change a guard has stood green over a place nothing could reach, and the
@@ -347,6 +354,43 @@ rather than on code.
       `send_verification_message` have **no production caller** — the ladder that drives
       them is 4.16 and the route chooser, and neither exists yet. Everything downstream
       of a message the vendor already took is live; nothing yet sends one.
+- [x] 4.17b Implement the `sms_out` rung — the carrier, the message it creates, and the sender honouring what the ladder chose
+      Split out of 4.17 on 21.09.2026 because the rest of 4.17 is the **uCaller** adapter
+      and is blocked on 1.1, while this needs no account, no balance and no vendor: the
+      modem is ours. It had been read as blocked for a week on that bundling alone.
+      `app/verification/sms_carrier.py` composes from the application's template, creates
+      the message with `verification_id` set, records the routing, and queues it. A
+      missing template is `INCAPABLE` rather than `DECLINED`: a decline is a statement
+      about the subscriber, and a rung that appears to decline everybody is a rung taken
+      out of the rule for the wrong reason.
+      🔴 **`placement.PLACED_HERE` was wrong and the ladder already knew it.** The comment
+      there said the modem sender picks its own work up and a ladder placing it would
+      place it twice — a mechanism nothing had built. Meanwhile `ladder._MODEM_ROUTES`
+      and the withholding rule of 20.09.2026 are a branch about the modem rung standing
+      **inside** a ladder, and under that reading they were unreachable. The modem is now
+      placed like every other rung this gateway acts on.
+      🔴 **The hazard 4.1 named is closed, and not where 4.1 expected.** The sender asks
+      the rule afresh and refuses anything whose **first** rung is not `sms_out`, so a
+      verification the ladder placed on the modem *behind* a paid rung would have been
+      refused — naming `tg_gateway` in the reason, on a message the ladder had already
+      decided. The ownership is read from the **database**, not from the queued item: the
+      restart resume path builds its items out of `messages` rows alone, so a fact
+      carried in the queue would be dropped by the one path that re-sends, and the
+      symptom would be a code refused on its retry.
+- [ ] 4.17c **Owner: whether a consumer may choose `sms_out`, given that offering it
+      retires `sms_in`.** Registering the probe is four lines and was written and
+      withdrawn on 21.09.2026, because measuring it showed a collision nothing had
+      named: `_sms_in_probe` and an `sms_out` probe hold on exactly the same thing,
+      `modem.link_in_service`, and `sms_in` is dropped whenever anything earlier in the
+      order proved itself. The shipped order names `sms_out` second and `sms_in` last,
+      so `sms_out` proving is `sms_in` **never being offered again** — and `sms_in` is
+      the whole subject of the sibling change `verify-by-inbound-contact`. Two more
+      collide and neither is settled: the offer is not filtered by the routing rule, so
+      the rung would be offered for the one operator the rule diverts away from it; and
+      an application with no template would be offered a rung that cannot compose its
+      code (4.47). Until this is answered `sms_out` is reachable only as a **ladder
+      continuation** — a rule naming it behind a rung that can be chosen — which is what
+      backs 4.27 today.
 - [x] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
       Built 20.09.2026 as `app/verification/refusals.py` plus the table
       `route_refusals`: a row per refusal, not a running total, because the
@@ -471,7 +515,26 @@ rather than on code.
       both paid routes in rolling windows. The test asserts on the carrier not being
       called rather than on the outcome, and on no rung row existing: a refusal of ours
       inside the vendors' count would be our refusal reported as their failure.
-- [ ] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
+- [x] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
+      🔴 **The previous handoff called this "live and blocked by nothing" and it was
+      neither — the same unmeasured word, one day later.** It had no message to own:
+      `enqueue` had four call sites (the API, the admin console twice, the restart
+      resume) and not one of them belonged to a verification, `placement.carriers_for`
+      built one carrier and it was `tg_gateway`, and no row in this schema had ever
+      carried a verification's code. The requirement says "the message it **creates**",
+      so the producer is inside the task rather than beside it: 4.17b below.
+      Built on the door rather than on the writers. `spawn_delivery_dispatch` has eight
+      call sites in the sender and the norm is "no message-status push for a
+      verification's message"; a census of eight stales the day a ninth is added, and
+      `dispatch_delivery` is the one place all eight pass through and already reads the
+      row the decision is made from.
+      Both halves are guarded and both bite. `sent` and `delivered` leave the
+      verification open — a rule that ended it on any status would end every
+      modem-carried verification the moment its code went out — and `fail_verification`
+      moves a `pending` row only, so a late `expired` cannot take a login away from
+      somebody who already confirmed. The announcement rides the existing sweep rather
+      than being pushed from here: one announcer sees every way a verification ends, so
+      a writer added later cannot be a writer that forgot (the rule 4.28 counts).
 - [x] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
       The sweep half was already held and bites four ways (the sweep not called, the sweep
       taking rows that have not expired, the announcer's claim made unconditional, the

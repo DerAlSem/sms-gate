@@ -4,10 +4,26 @@ A probe answers one question — "can this rung carry a verification for this nu
 now" — and answers it without placing anything. The registry does the rest: bounding the
 set, refusing stale evidence, and keeping the ladder's order.
 
-`sms_out` and `flash_call` belong to `route-sends-by-operator` and are blocked on accounts
-and balances rather than on code; until their probes are registered the registry treats
-them exactly as it treats any other rung nothing can prove, which is as unavailable. That
-is the correct answer rather than a placeholder: being configured was never evidence.
+`flash_call` belongs to `route-sends-by-operator` and is blocked on an account and a
+balance rather than on code; until its probe is registered the registry treats it exactly
+as it treats any other rung nothing can prove, which is as unavailable. That is the
+correct answer rather than a placeholder: being configured was never evidence.
+
+🔴 **`sms_out` stood in that sentence until 21.09.2026 and does not belong in it.** The
+modem is this gateway's own hardware: there is no account to open and no balance to fund,
+so the rung is unoffered for a reason that was never true of it — while
+`verification_route_order` has shipped naming it **second** and the routing rule ships
+sending every operator but one to it. It is still absent, and now for a reason that is
+measured rather than assumed: **registering its probe retires `sms_in` outright.** Both
+probes hold on exactly one thing, `modem.link_in_service`, and `sms_in` is dropped
+whenever anything earlier in the order proved itself — so `sms_out` proving is `sms_in`
+never being offered again, and `sms_in` is the whole subject of the sibling change
+`verify-by-inbound-contact`. Two further things collide with it and neither is settled:
+the offer is not filtered by the routing rule, so the rung would be offered for the one
+operator the rule diverts *away* from it; and an application with no template would be
+offered a rung that cannot compose its code (task 4.47). The carrier exists and the
+ladder reaches it as a continuation; whether the consumer may **choose** it is the
+owner's, and it is task 4.17c.
 
 `tg_gateway` is the exception to that sentence, and the exception is argued rather than
 assumed — see its probe below.

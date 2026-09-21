@@ -478,6 +478,26 @@ async def run_migrations() -> None:
     await _add_column_if_missing(db, "messages", "routed_route", "TEXT")
     await _add_column_if_missing(db, "messages", "routed_operator", "TEXT")
 
+    # Which verification this message carries the code of, and NULL for the ordinary
+    # traffic that is all of it today. Three separate mechanisms read it and none of them
+    # can be told the fact any other way:
+    #
+    # - the sender, which otherwise asks the routing rule afresh and refuses anything
+    #   whose first rung is not the modem — including a verification the ladder placed on
+    #   the modem deliberately, *behind* a paid rung;
+    # - the delivery webhook, which otherwise pushes a raw message id to an application
+    #   that only ever asked about a verification;
+    # - the verification itself, which takes this message's failure as its own.
+    #
+    # In the row rather than in the queued item on purpose: the restart resume path
+    # re-enqueues from these rows, so an ownership carried only in memory would be
+    # dropped by the one path that re-sends.
+    #
+    # Additive, NULL for every existing row — which is the truth about them — and
+    # reversible by deploying the old code.
+    await _add_column_if_missing(
+        db, "messages", "verification_id", "INTEGER REFERENCES verifications(id)")
+
     # Whether this application may have a verification carried by a **paid** route. An
     # ALTER rather than a column in the CREATE above, and the distinction is the whole
     # guarantee: `DEFAULT 0` on a new column applies to every row that already exists, so

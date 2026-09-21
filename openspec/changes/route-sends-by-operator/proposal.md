@@ -454,6 +454,67 @@ the owner's to obtain. The setting exists and reaches the vendor; the channel do
 and what the vendor answers to one that fails its condition is unmeasured, because every
 probe of it is a paid message to a real person.
 
+## The rung this change routes away from could not carry, 21.09.2026
+
+The whole of this change is about when to leave the modem. It turned out the modem was
+never there to leave: `sms_out` was a name in the vocabulary, a route in the rule, and the
+second entry in the shipped offer order — and nothing in the service could carry a
+verification over it.
+
+Measured before anything was written, and each of the four is its own absence:
+
+- `placement.carriers_for` built exactly one carrier, `tg_gateway`. `ladder.walk` therefore
+  met `sms_out` as a rung nothing carries — `ABSENT`, alerted about, advanced past, **to the
+  dearer rung**;
+- `probes.build_probes` built three probes and `sms_out` was not among them, so the registry
+  could never offer it;
+- `enqueue` had four call sites — the API, the admin console twice, and the restart resume —
+  and not one of them belonged to a verification;
+- so no row in this schema had ever carried a verification's code, and the requirement that a
+  verification owns the message it creates had no message to own.
+
+**Why it read as blocked for a week.** The carrier was bundled into task 4.17, whose other
+half is the uCaller adapter, which is genuinely blocked on an account the owner has to open.
+The bundle was never true of this half: the modem is this gateway's own hardware — no account,
+no balance, no vendor. That is the same shape as the lesson of 20.09.2026, one level up: a
+statement about *requirements* was taken from where a task happened to be filed.
+
+**Three decisions were taken here, and the owner may overturn any of them.**
+
+**The modem is placed by the gateway like every other rung it acts on.** `placement`'s comment
+said the opposite — that the modem sender picks its own work up, and a ladder placing it would
+place it twice — and described a mechanism nothing had built. The ladder was already the other
+reading in code: `_MODEM_ROUTES` and the withholding rule of 20.09.2026 are a branch about a
+modem rung standing **inside** a ladder, and under the old reading they were unreachable.
+
+**The sender does not re-decide the route the ladder chose, and it learns that from the
+database.** `_send_one` asks the rule afresh and refuses anything whose *first* rung is not
+`sms_out` — so a verification the ladder placed on the modem *behind* a paid rung would have
+been refused, naming `tg_gateway` in the reason, on a message already decided. The ownership
+is a column on `messages` rather than a field on the queued item, because the restart resume
+path builds its items out of rows alone: carried in the queue, the fact would be dropped by
+the one path that re-sends, and the symptom would be a code refused on its retry.
+
+**The rung is carried but not yet offerable, and that is a question for the owner (task
+4.17c).** Registering its probe is four lines; it was written and withdrawn the same hour,
+because measuring it showed a collision nothing had named. `_sms_in_probe` and an `sms_out`
+probe hold on exactly one thing, `modem.link_in_service`, and `sms_in` is dropped whenever
+anything earlier in the order proved itself — so `sms_out` proving is **`sms_in` never being
+offered again**, and `sms_in` is the whole subject of the sibling change
+`verify-by-inbound-contact`. Two more collide and neither is settled: the offer is not
+filtered by the routing rule, so the rung would be offered for the one operator the rule
+diverts away from it; and an application with no template would be offered a rung that cannot
+compose its code. Until that is answered the rung is reachable as a **ladder continuation**
+only — a rule naming it behind a rung that can be chosen — which is a configuration the owner
+can write today and none of the shipped ones does.
+
+🔴 **What this says about the guards that were green all week.** Everything downstream of an
+`sms_out`-borne code — the template, its save-time validation, the refusal count, the
+withholding rule — was built and guarded against a rung that could not carry. None of those
+guards was wrong; every one of them was asked about a mechanism whose input never arrived.
+That is the 21.09.2026 lesson in its second form: a guard reading what a layer *returns* is
+blind to what never reaches it at all.
+
 ## Capabilities
 
 ### New Capabilities

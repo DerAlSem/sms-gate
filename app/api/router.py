@@ -241,7 +241,8 @@ async def select_verification_route(
 
     if placement.places_here(body.route):
         return await _walk_the_ladder(verification_id, app_id=app_id, row=row,
-                                      route=body.route)
+                                      route=body.route,
+                                      modem=request.app.state.modem)
 
     # The one rung where the person must type the code back is the one rung where the
     # owning application is given it — it has no other way to show them. Read after the
@@ -255,7 +256,7 @@ async def select_verification_route(
 
 
 async def _walk_the_ladder(
-    verification_id: int, *, app_id: str, row, route: str,
+    verification_id: int, *, app_id: str, row, route: str, modem,
 ) -> RouteSelectResponse:
     """Carry a rung the gateway itself places, and answer with the method it took.
 
@@ -272,7 +273,7 @@ async def _walk_the_ladder(
     walk = await placement.place(
         verification_id, app_id=app_id,
         operator=operator_row["operator"] if operator_row else None,
-        phone=row["phone"], route=route,
+        phone=row["phone"], route=route, modem=modem,
     )
     if walk.refused_by and walk.carried_by is None:
         # Refused before any rung was contacted: nothing was placed, nothing was charged,

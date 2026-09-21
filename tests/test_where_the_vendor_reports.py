@@ -91,7 +91,7 @@ async def _carry(settings):
     vid = await queries.create_verification("app1", PHONE, code="1234", ttl_seconds=300)
     rung_id = await queries.record_verification_rung(
         vid, route=TG_GATEWAY, outcome=ladder.ATTEMPTING)
-    carriers = placement.carriers_for(vid, app_id="app1")
+    carriers = placement.carriers_for(vid, app_id="app1", modem=None, operator=None)
     return await carriers[TG_GATEWAY](PHONE, seconds_left=5.0, rung_id=rung_id)
 
 

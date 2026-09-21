@@ -45,7 +45,8 @@ async def get_app_by_token(token: str) -> aiosqlite.Row | None:
 
 
 async def create_message(
-    app_id: str, phone: str, text: str, resent_from: int | None = None
+    app_id: str, phone: str, text: str, resent_from: int | None = None,
+    verification_id: int | None = None,
 ) -> int:
     db = await get_db()
     async with db.execute(
@@ -53,13 +54,31 @@ async def create_message(
         # loses to a restart is still recoverable. In the normal path the sender claims
         # it long before then and clears the time.
         """
-        INSERT INTO messages (app_id, phone, text, resent_from, next_attempt_at)
-        VALUES (?, ?, ?, ?, datetime('now', '+60 seconds'))
+        INSERT INTO messages
+               (app_id, phone, text, resent_from, verification_id, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '+60 seconds'))
         """,
-        (app_id, phone, text, resent_from),
+        (app_id, phone, text, resent_from, verification_id),
     ) as cursor:
         await db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def verification_of_message(message_id: int) -> int | None:
+    """The verification this message carries the code of, or None for ordinary traffic.
+
+    Asked of the database rather than carried on the queued item, and that is the whole
+    of why it is a query. The restart resume path builds its items out of `messages`
+    rows and nothing else, so an ownership living only in the queue would be dropped by
+    the one path that re-sends — and the symptom would be a code refused on its retry,
+    with the routing rule named for it.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT verification_id FROM messages WHERE id = ?", (message_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row["verification_id"] if row is not None else None
 
 
 async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
@@ -88,11 +107,17 @@ async def get_message_any(message_id: int) -> aiosqlite.Row | None:
 
 
 async def get_message_delivery_context(message_id: int) -> aiosqlite.Row | None:
-    """What the delivery webhook needs about a message: who owns it, and whether it
-    replaces an earlier one."""
+    """What the delivery webhook needs about a message: who owns it, whether it replaces
+    an earlier one, and whether it belongs to a verification at all.
+
+    `verification_id` is read here rather than by a second query at the door, because the
+    door's decision is whether to push *this* row: a message belonging to a verification
+    raises no message-status push, and a receiver that only ever asked about a
+    verification must never be handed a raw message id to act on.
+    """
     db = await get_db()
     async with db.execute(
-        "SELECT id, app_id, resent_from FROM messages WHERE id = ?",
+        "SELECT id, app_id, resent_from, verification_id FROM messages WHERE id = ?",
         (message_id,),
     ) as cursor:
         return await cursor.fetchone()
