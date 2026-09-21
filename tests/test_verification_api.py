@@ -129,13 +129,43 @@ def test_an_application_that_supplies_its_own_code_is_refused(client):
 
 
 def test_a_blocked_number_is_refused_without_opening_anything(client):
+    """Task 4.21, first half — and the second sentence of the name is the load-bearing one.
+
+    🔴 **It was unasserted until 21.09.2026, and measured rather than suspected:** moving
+    the blacklist check to *after* `create_verification` — so that a blocked number is
+    refused having had a row opened, a live code generated and every probe spent — left
+    the whole suite green, this test included. A guard whose name states a property
+    nothing reads is the loudest half of a defect hiding the quiet half.
+
+    Both halves are here now. The refusal is the loud one; the row that must not exist is
+    the quiet one, and it is the one that matters: an open verification on a blacklisted
+    number is a live code in the store for a number the gateway has decided not to write
+    to, and `open_codes_for` counts it against every later request for that number.
+    """
     async def block():
         await queries.block_phone(PHONE)
+
+    async def opened():
+        return await queries.verifications_for_phone(PHONE)
 
     asyncio.run(block())
     r = _create(client)
     assert r.status_code == 422
     assert "blacklist" in r.text.lower()
+    assert asyncio.run(opened()) == [], \
+        "a blacklisted number was refused, but a verification had already been opened"
+
+
+def test_an_unblocked_number_on_the_same_door_still_opens_one(client):
+    """The positive control. Same door, same application, same number — the only
+    difference is the blacklist, so a guard that passed by opening nothing for anybody
+    fails here."""
+    body = _create(client).json()
+
+    async def opened():
+        return await queries.verifications_for_phone(PHONE)
+
+    assert [row["id"] for row in asyncio.run(opened())] == [body["id"]]
 
 
 def test_no_route_proving_itself_is_refused_in_the_same_answer(app, client):

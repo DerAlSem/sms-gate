@@ -121,9 +121,17 @@ rather than on code.
       including the restart shape and the positive control that ordinary free text on
       the same rule is still refused.
       **What is left of this task is its first half** — that a verification for an
-      operator the rule routes to `flash_call` is not picked up by the modem sender.
-      Asserting it alone would be hollow in the way twice caught on this change, and now
-      it need not be alone.
+      operator the rule routes to `flash_call` is not picked up by the modem sender —
+      and it is **unreachable by construction**, measured 21.09.2026 rather than read:
+      the only thing that creates a verification-owned message is `sms_carrier`, which
+      runs only where `ladder.walk` walks to `sms_out`; and `placement.ladder_from`
+      returns either the rule's own list from the chosen rung onwards or the chosen rung
+      **alone**, so `sms_out` is walked only where the rule names it. There is therefore
+      no state in which a verification's message exists for an operator the rule routes
+      to `flash_call`, and a guard written today would be green and empty. It becomes
+      reachable if the rule may change *between* placement and sending — the sender
+      honours the ladder's choice from the row and does not re-read the rule — and that
+      is the case worth writing when it is worth writing one.
 - [x] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
       Taken **in the same file and the same session as 4.6**, not after it: three times
       on this change a guard has stood green over a place nothing could reach, and the
@@ -460,6 +468,18 @@ rather than on code.
       control that the owner's own three calls answer, without which the negative passes
       on a door that refuses everybody.
 - [ ] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
+      **The first half is built and bites** (21.09.2026,
+      `tests/test_verification_api.py`). It was not, despite a test named for it: the
+      guard asserted the 422 and the word `blacklist` and nothing about "without opening
+      anything". 🔴 Measured, not suspected — moving the blacklist check to *after*
+      `create_verification`, so a blocked number is refused having had a row opened, a
+      live code generated and every probe spent, left the **whole suite** green. The
+      quiet half is the one that mattered: an open verification on a blacklisted number
+      is a live code in the store for a number the gateway has decided not to write to,
+      and `open_codes_for` counts it against every later request for that number. Both
+      halves are asserted now, with a positive control on the same door.
+      **The second half stays open and is 1.1's**: it is about a *call* that fails to
+      connect, and there is no call to place until the uCaller account exists.
 - [x] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
       The response half is enumerated **from the router**, not from a list kept in the
       test: a census of surfaces is never complete and goes stale in silence, and the next
@@ -690,6 +710,24 @@ rather than on code.
       predates the column comes out switched off. A default that reached only new rows
       would leave the guarantee empty on exactly the installations that have the defect.
 - [ ] 4.47 Test: an application with no template is refused **at accept** for a `sms_out`-routed verification, and is **not** refused for a paid-rung one, because neither paid rung carries text of ours
+      🔴 **Re-measured 21.09.2026, and the blocker is not the one the handoff of that
+      morning named.** That one said the task is unreachable because `sms_out` has no
+      probe, so a verification routed to it does not exist. The scenario's words are
+      "for a number whose operator **is routed** `sms_out`" — routed by the *rule*, which
+      the accept door can read without any offer, so that reading was too narrow.
+      The real blocker is the owner's decision of 21.09.2026 that **a rung the rule does
+      not name is still carried, alone**: a consumer that picks `tg_gateway` for a number
+      the rule routes `[sms_out]` is honoured, and the Telegram rung carries the code with
+      no text of ours. So the rule naming `sms_out` does **not** mean this verification
+      needs a template, and refusing at accept would refuse a request the gateway can in
+      fact fulfil — which is the same requirement's other half ("SHALL NOT accept a
+      request it already knows it cannot fulfil" cuts both ways).
+      It becomes answerable the moment `sms_out` can be **chosen** (4.17c): then "every
+      rung this verification can reach needs our words" is a question with an answer.
+      The shape the refusal should take is already settled by the vocabulary — refuse iff
+      no rung reachable for this operator `carries` a verification code *without* text of
+      ours — and `app/verification/routes.py` is where that property belongs, beside
+      `_CARRIES`, rather than as a branch at the door.
 - [x] 4.48 Test: a template with no code placeholder, with two, or with an unknown one is refused at save time
       Built 20.09.2026 as `app/verification/template.py` behind the typed setting
       `verification_templates` — a **setting**, not a schema: the requirement says
