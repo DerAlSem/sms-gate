@@ -332,7 +332,39 @@ rather than on code.
       🔴 **This is the first thing on this branch that executes in production.**
       It reads the rule and writes its own table; after thirty days it raises one
       alert per operator entry.
-- [ ] 4.19 Update `docs/` with the two paid rungs: what each costs, how to change the rule **and its order**, how to top up each of the two balances, how to tell from a verification which rung carried it and what it cost, which application is entitled to spend, and what to do when МегаФон recovers
+- [x] 4.19 Update `docs/` with the two paid rungs: what each costs, how to change the rule **and its order**, how to top up each of the two balances, how to tell from a verification which rung carried it and what it cost, which application is entitled to spend, and what to do when МегаФон recovers
+      `docs/verification-rungs.md`, new, in Russian and linked from both halves of the
+      README. Russian because its reader is whoever keeps the gateway — the person who
+      tops up a balance and edits the rule — and the console they do it in defaults to
+      Russian; the English-only documents in `docs/` are for integrators.
+      🔴 **The first draft stated a vendor's promise as our measurement.** It said a send
+      by the `request_id` of a paid ability check is free, which is what the adapter is
+      built on — and `captures/README.md` records the opposite: on 20.09.2026 the send
+      answered the *same* `request_cost` as the check, an echo of the request's price, and
+      whether a second charge was taken is not visible in the samples at all. Caught by
+      reading the captures rather than the code, which is where an assertion about a vendor
+      has to be checked. The document now marks it as unmeasured, and a guard holds it
+      marked.
+      The prose is not guarded and deliberately so — a guard over wording fails on every
+      honest edit and is proof-read away. What is guarded is every identifier and number
+      the document states as fact: the ten settings it names still exist, it still names
+      them, the seven defaults it prints are the shipped ones, the rule it quotes is the
+      rule that ships (compared as parsed data, so reformatting is free and changing the
+      meaning is not), and `?` is still explained as "the lookup did not answer" rather
+      than by the reading it replaced on 20.09.2026.
+      Six mutations bite, four of them by these guards alone.
+      Proofread through `ru-check` against the full corpus; twenty findings applied. Two
+      were **not** taken, and both refusals are decisions rather than oversights: the
+      proposed fix for the balance measurement said the send's answer carried no balance
+      at all, and the captures say otherwise — the field is there with `0`, in all three
+      captured sends, which is a stronger and fully measured way to make the same point,
+      and that is what the document now says. And the non-breaking-space rules (R30, R44,
+      R68) are declined by repository convention: `README.md` and `captures/README.md`
+      hold zero of them, and one file carrying invisible characters is an inconsistency
+      rather than typography.
+      🔴 The heaviest finding was one no guard could have caught: **`счёт` meant both
+      "the vendor's account" and "the refusal counter"** in a document whose first section
+      is about money. The counter is now `счётчик отказов` throughout.
 - [x] 4.20 Test: a verification belonging to one application cannot be read, checked or exhausted by another — by id, with a valid token
       Held already — `get_verification` and every conditional update in
       `check_verification` are scoped by `app_id` — and bitten on both: unscoping either

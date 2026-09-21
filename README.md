@@ -166,7 +166,9 @@ POST с номером и текстом; шлюз отправляет сооб
 - **Admin** (`app/admin/`) — шаблоны Jinja2 (i18n через gettext/Babel) за HTTP Basic auth
 
 Подробнее см. [`docs/`](docs/) (`architecture.md`, `database.md`,
-`modem.md`, `api.md`, `deployment.md`, `i18n.md`).
+`modem.md`, `api.md`, `deployment.md`, `i18n.md`,
+[`verification-rungs.md`](docs/verification-rungs.md) — платные рунги
+верификации: цены, правило маршрутизации, балансы).
 
 ## Requirements
 
@@ -426,7 +428,9 @@ The admin UI is bilingual (Russian default, English switchable). _(Sample data b
 - **Admin** (`app/admin/`) — Jinja2 templates (i18n via gettext/Babel) behind HTTP Basic auth
 
 See [`docs/`](docs/) for more details (`architecture.md`, `database.md`,
-`modem.md`, `api.md`, `deployment.md`, `i18n.md`).
+`modem.md`, `api.md`, `deployment.md`, `i18n.md`,
+[`verification-rungs.md`](docs/verification-rungs.md) — the paid verification
+rungs: prices, the routing rule, balances; written in Russian, for the operator).
 
 ## Requirements
 
