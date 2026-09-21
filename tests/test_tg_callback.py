@@ -179,15 +179,48 @@ def test_a_callback_whose_signature_does_not_verify_changes_nothing_and_is_count
 
 
 def test_a_correctly_signed_callback_replayed_later_changes_nothing_and_is_counted():
+    """The rung is asserted as well as the row, and not for symmetry's sake.
+
+    "Changes no state" is the whole of the requirement, and the rung's recorded delivery
+    outcome is state. Asserting only the verification's own status leaves a stale
+    callback free to write the rung — which is a plausible edit in its own right
+    ("record what the vendor said, just do not act on it"), and one the requirement
+    forbids. Measured: with only the row asserted, that edit left the whole suite green.
+    """
     async def body():
         verification_id = await _open_verification_on_the_telegram_rung()
         outcome = await _deliver(status_body("expired"), now=1789720000.0)
         row = await queries.get_verification(verification_id, "app1")
-        return outcome, row, dict(tg_callback.rejections)
+        rungs = await queries.verification_rungs(verification_id)
+        return outcome, row, rungs, dict(tg_callback.rejections)
 
-    outcome, row, rejections = _run(body)
+    outcome, row, rungs, rejections = _run(body)
     assert outcome.accepted is False
     assert row["status"] == "pending"
+    assert rungs[0]["outcome"] is None, "a callback refused on its timestamp wrote the rung"
+    assert rejections == {"signature": 1}
+
+
+def test_a_correctly_signed_callback_stamped_in_the_future_is_refused_on_the_same_terms():
+    """The other side of the same window, and it is not symmetry for its own sake.
+
+    A window checked in one direction only is a window a captured callback stays valid
+    in for ever, because the timestamp is signed and an attacker who replays one cannot
+    move it back inside a bound that has no far edge. Measured: with only the stale
+    direction guarded, narrowing the check to `now - sent_at > tolerance` left the whole
+    suite green.
+    """
+    async def body():
+        verification_id = await _open_verification_on_the_telegram_rung()
+        outcome = await _deliver(status_body("expired"), timestamp="1789813190")
+        row = await queries.get_verification(verification_id, "app1")
+        rungs = await queries.verification_rungs(verification_id)
+        return outcome, row, rungs, dict(tg_callback.rejections)
+
+    outcome, row, rungs, rejections = _run(body)
+    assert outcome.accepted is False
+    assert row["status"] == "pending"
+    assert rungs[0]["outcome"] is None
     assert rejections == {"signature": 1}
 
 
@@ -301,3 +334,51 @@ def test_the_mounted_door_refuses_an_unsigned_callback(client, monkeypatch):
         return await queries.get_verification(client.verification_id, "app1")
 
     assert asyncio.run(still_pending())["status"] == "pending"
+
+
+# --- 4.41 — the rung reports delivery; only the code confirms -----------------------------
+
+def test_delivered_and_read_leave_the_verification_open_for_the_code_to_confirm():
+    """4.41 — the positive control the two assertions above are worth nothing without.
+
+    `delivered` and `read` are the strongest things this rung can report, and neither is
+    evidence the code was used: the message reaching the phone and the message being
+    opened both happen without anybody typing anything. But "still pending" on its own is
+    satisfied by an implementation that confirms nothing at all, and "open" means more
+    than "not confirmed" — it means the code can still do its work. So the same
+    verification is carried all the way through: delivered, read, and then confirmed by
+    its own code at the check door.
+    """
+    async def body():
+        verification_id = await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("delivered"))
+        after_delivered = await queries.get_verification(verification_id, "app1")
+        await _deliver(status_body("read"))
+        after_read = await queries.get_verification(verification_id, "app1")
+        answer = await queries.check_verification(
+            verification_id, "app1", code="1173", max_attempts=5)
+        return (after_delivered["status"], after_read["status"], answer,
+                (await queries.get_verification(verification_id, "app1"))["status"])
+
+    after_delivered, after_read, answer, final = _run(body)
+    assert (after_delivered, after_read) == ("pending", "pending"), \
+        "a delivery report ended the verification; only the code may do that"
+    assert answer == "confirmed", \
+        "the reports closed the door the code comes through — the verification was not left open"
+    assert final == "confirmed"
+
+
+def test_a_delivered_message_does_not_make_a_wrong_code_right():
+    """The negative half of the control above. `delivered` must not weaken what the check
+    door demands — otherwise "still open" has been bought by a door that accepts
+    anything."""
+    async def body():
+        verification_id = await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("delivered"))
+        answer = await queries.check_verification(
+            verification_id, "app1", code="9999", max_attempts=5)
+        return answer, (await queries.get_verification(verification_id, "app1"))["status"]
+
+    answer, status = _run(body)
+    assert answer == "wrong_code"
+    assert status == "pending"

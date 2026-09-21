@@ -31,6 +31,17 @@ verification notifies instead, so the application that asked for a verification 
 an identifier it has not seen. An application that has not created a verification SHALL never
 receive a notification for one.
 
+[partly backed for the verification clause · `push_verification` in
+`app/verification/dispatch.py` carries `"object": "verification"` and the verification's
+identifier in `verification_id`; `id` is absent from the body entirely. 🔴 **Built wrong and
+corrected 21.09.2026:** the kind was named but the number still travelled in `id`, which is
+exactly the body this paragraph calls worse than an unrecognised one. Guarded by
+`test_a_verification_push_carries_nothing_a_message_receiver_reads_as_a_message_id` in
+`tests/test_verification_outcome_reaches_the_app.py`, which reads the message contract off a
+real message push rather than off a description of it, and by the census of terminal
+verification writers in the same file. Still unbacked: the clause forbidding a verification's
+own message from being pushed as a message status change — that path needs the door]
+
 #### Scenario: A message is delivered
 - **WHEN** the delivery report for every part of message 42 (owned by app `app1`) arrives
 - **THEN** exactly one POST is made to app `app1`'s route with `"id": 42` and `"status": "delivered"` and `"error": null`

@@ -12,6 +12,7 @@ open one. Every one of them owes the application a word, and "every one" is a cl
 rots the moment somebody adds the next writer.
 """
 
+import ast
 import asyncio
 import re
 from pathlib import Path
@@ -77,7 +78,7 @@ def test_a_verification_nobody_came_back_for_is_expired_and_announced(pushed):
         return vid
 
     vid = _run(body)
-    assert [(p["id"], p["status"]) for p in pushed] == [(vid, "expired")]
+    assert [(p["verification_id"], p["status"]) for p in pushed] == [(vid, "expired")]
 
 
 def test_the_push_cannot_be_mistaken_for_a_message(pushed):
@@ -171,43 +172,155 @@ def test_a_route_that_died_is_announced_once_however_many_writers_notice(pushed)
 
 
 # --- the enumerating guard ----------------------------------------------------------------
+#
+# Two halves, and the second is the one that rots. The rule — a writer may not mark its own
+# row announced — is worth having only if the set of writers it is applied to is the real
+# one. Both halves are therefore taken off the syntax tree rather than off the file's text:
+#
+#   * a text window around a match reaches into the next function, which produced a false
+#     alarm when an unrelated writer was added 500 characters below a genuine one;
+#   * a pattern keyed on `SET status = '<literal>'` does not recognise the same write with
+#     its fields in another order, or with the status bound as a parameter. Measured: two
+#     new terminal writers in those two shapes, each marking its own row announced, left
+#     the whole suite green.
+#
+# The sweep itself is one of the writers that a text pattern misses for a third reason —
+# its statement is an f-string, which is not a string constant at all.
 
-_TERMINAL_WRITE = re.compile(
-    r"UPDATE verifications SET status = '(confirmed|failed|expired)'")
+_TERMINAL_STATUSES = {"confirmed", "failed", "expired"}
 
-def test_no_writer_of_a_terminal_state_marks_it_announced():
-    """The claim "every ending reaches the application" rots the moment somebody adds the
-    next writer, so it is checked mechanically rather than believed.
+# Every queries.py function that moves a verification to a terminal state, and which
+# states it writes. `?` means the status is bound at call time, so the function can write
+# any of them. Adding a writer without adding it here fails the census below — which is
+# the point: the failure forces a decision about who tells the application.
+KNOWN_VERIFICATION_TERMINAL_WRITERS = {
+    "fail_verification": {"failed"},
+    "confirm_by_inbound_call": {"confirmed"},
+    "confirm_by_inbound_message": {"confirmed"},
+    "check_verification": {"confirmed", "failed"},
+    "expire_due_verifications": {"expired"},
+}
 
-    The rule it enforces is one line long: a statement that moves a verification to a
-    terminal state may not also mark it announced. Leaving `notified` at 0 hands the row
-    to the one announcer, which claims it with a conditional update and therefore tells
-    the application exactly once. A writer that marked its own row announced would be
-    silently unannounced — and that is precisely the edit nobody would notice, because
-    nothing else in the system would change.
+QUERIES_PY = Path(__file__).resolve().parents[1] / "app" / "db" / "queries.py"
+
+_SET_STATUS = re.compile(r"\bSTATUS\s*=\s*(?:'([^']*)'|(\?))", re.IGNORECASE)
+_SET_NOTIFIED = re.compile(r"\bNOTIFIED\s*=\s*1\b", re.IGNORECASE)
+
+
+def _sql_strings(node):
+    """Every SQL string in `node`, including f-strings.
+
+    An f-string is a `JoinedStr` rather than a `Constant`, and the expiry sweep — the
+    writer this file exists for — is written as one. A census that walked constants alone
+    would enumerate every writer except the sweep, and report a full house.
     """
-    source = Path("app/db/queries.py").read_text()
-    offenders = []
-    for match in _TERMINAL_WRITE.finditer(source):
-        # One statement, not one function: the window is generous enough for the longest
-        # of them and stops well before the next.
-        statement = source[match.start():match.start() + 500]
-        if "notified = 1" in statement:
-            offenders.append(statement.splitlines()[0])
-    assert offenders == [], (
-        f"these statements end a verification and mark it announced in the same breath, "
-        f"so the one announcer will never see it: {offenders}"
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+            yield " ".join(sub.value.split())
+        elif isinstance(sub, ast.JoinedStr):
+            yield " ".join("".join(
+                part.value for part in sub.values
+                if isinstance(part, ast.Constant) and isinstance(part.value, str)
+            ).split())
+
+
+def _set_clause(sql: str) -> str | None:
+    """The assignment half of an `UPDATE verifications`, or None if it is not one.
+
+    Split from the `WHERE` half on purpose: `status` appears in both, and a condition on
+    the status a row must already be in is the opposite of a write.
+    """
+    upper = sql.upper()
+    start = upper.find("UPDATE VERIFICATIONS")
+    if start < 0:
+        return None
+    set_at = upper.find(" SET ", start)
+    if set_at < 0:
+        return None
+    where_at = upper.find(" WHERE ", set_at)
+    return sql[set_at + 5:where_at if where_at > 0 else len(sql)]
+
+
+def _verification_terminal_writers() -> dict[str, set[str]]:
+    tree = ast.parse(QUERIES_PY.read_text())
+    writers: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for sql in _sql_strings(node):
+            clause = _set_clause(sql)
+            if clause is None:
+                continue
+            for literal, bound in _SET_STATUS.findall(clause):
+                written = "?" if bound else literal.lower()
+                if written == "?" or written in _TERMINAL_STATUSES:
+                    writers.setdefault(node.name, set()).add(written)
+    return writers
+
+
+def test_the_census_of_verification_terminal_writers():
+    """A new writer of a terminal verification state must be registered here.
+
+    "Every ending reaches the application" is the claim, and it rots the moment somebody
+    adds the next writer. Unlike the message side, no call site has to remember to
+    notify — one announcer sweeps up every row left with `notified` at 0 — so what this
+    census buys is the decision itself: whoever adds a writer is made to look at it and
+    confirm the announcer can still see what it wrote.
+    """
+    assert _verification_terminal_writers() == KNOWN_VERIFICATION_TERMINAL_WRITERS, (
+        "queries.py gained or lost a writer of a terminal verification status. Add it to "
+        "KNOWN_VERIFICATION_TERMINAL_WRITERS and leave its row's `notified` at 0, or the "
+        "one announcer will never tell the application how that verification ended."
     )
 
 
-def test_the_guard_above_can_actually_fail():
-    """Its own bite, inline, because a guard over source text is exactly the kind that
-    passes against a file it is no longer reading correctly."""
-    offending = ("UPDATE verifications SET status = 'failed', reason = ?, "
-                 "notified = 1 WHERE id = ?")
-    match = _TERMINAL_WRITE.search(offending)
-    assert match is not None, "the pattern no longer recognises a terminal write at all"
-    assert "notified = 1" in offending[match.start():match.start() + 500]
+def test_no_writer_of_a_terminal_state_marks_it_announced():
+    """The rule, now applied to the enumerated writers rather than to a text window.
+
+    A writer that marked its own row announced would be silently unannounced — precisely
+    the edit nobody would notice, because nothing else in the system would change.
+    Leaving `notified` at 0 hands the row to the one announcer, which claims it with a
+    conditional update and therefore tells the application exactly once.
+    """
+    tree = ast.parse(QUERIES_PY.read_text())
+    offenders = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name not in _verification_terminal_writers():
+            continue
+        for sql in _sql_strings(node):
+            clause = _set_clause(sql)
+            if clause and _SET_STATUS.search(clause) and _SET_NOTIFIED.search(clause):
+                offenders.append(node.name)
+    assert offenders == [], (
+        f"these end a verification and mark it announced in the same breath, so the one "
+        f"announcer will never see them: {sorted(set(offenders))}"
+    )
+
+
+def test_the_two_guards_above_can_actually_fail():
+    """Their own bite, inline, because a guard over source structure is exactly the kind
+    that passes against a file it is no longer reading correctly.
+
+    Both shapes that slipped past the text pattern are exercised here: the fields in
+    another order, and the status bound at call time.
+    """
+    reordered = ("UPDATE verifications SET reason = ?, status = 'failed', notified = 1 "
+                 " WHERE id = ? AND status = 'pending'")
+    bound = "UPDATE verifications SET status = ?, notified = 1 WHERE id = ?"
+    for sql in (reordered, bound):
+        clause = _set_clause(sql)
+        assert clause is not None, f"no longer recognised as a verification write: {sql}"
+        assert _SET_STATUS.search(clause), f"the status write is no longer seen in: {sql}"
+        assert _SET_NOTIFIED.search(clause), f"the announcement mark is no longer seen: {sql}"
+
+    # And the WHERE half must not be read as a write: `select_route` only requires the
+    # row to be pending, and counting it as a writer would pad the census with a
+    # function that ends nothing.
+    condition_only = ("UPDATE verifications SET route = ? "
+                      " WHERE id = ? AND app_id = ? AND status = 'pending'")
+    assert not _SET_STATUS.search(_set_clause(condition_only))
 
 
 # --- 7.2 — the detector, not just the writer ---------------------------------------------
@@ -237,7 +350,7 @@ def test_an_open_verification_whose_route_died_is_ended_by_the_sweep(pushed, mon
     vid, status, reason = _run(body)
     assert status == "failed", "the sweep let a dead route run to its deadline"
     assert reason and "precondition" in reason, reason
-    assert [(p["id"], p["status"]) for p in pushed] == [(vid, "failed")]
+    assert [(p["verification_id"], p["status"]) for p in pushed] == [(vid, "failed")]
 
 
 def test_a_verification_whose_route_still_holds_is_left_alone(pushed, monkeypatch):
@@ -267,3 +380,61 @@ def _ims_holds():
     async def proof():
         return Proof(holds=True)
     return proof
+
+
+# --- 4.15 — the two pushes travel the same route and must not be read as each other ------
+
+def test_a_verification_push_carries_nothing_a_message_receiver_reads_as_a_message_id(
+        pushed, monkeypatch):
+    """4.15 — both bodies arrive at the same URL, and `id` is how the older one names
+    the thing it is about.
+
+    The message contract is `{"id": <message id>, "status": ..., ...}`, and `failed` and
+    `expired` are words both bodies use. A receiver keyed on `id` and `status` — which is
+    the whole of the older contract — therefore acts on a verification push and marks the
+    wrong message. `object` does not save it: a receiver that never looked for `object`
+    is exactly the receiver that predates verifications.
+
+    So the two shapes are compared against each other rather than against a remembered
+    description of the message body, because the remembered description is what rots.
+    """
+    from app.modem import delivery_dispatch as message_dispatch
+
+    message_pushes = []
+
+    async def fake_message_deliver(route, payload):
+        message_pushes.append(payload)
+        return True, None
+
+    monkeypatch.setattr(message_dispatch, "deliver", fake_message_deliver)
+
+    async def body():
+        message_id = await queries.create_message("app1", PHONE, "hi")
+        await message_dispatch.dispatch_delivery(message_id, "delivered")
+        verification_id = await _open(ttl=-1)
+        await announce_verification_outcomes()
+        return message_id, verification_id
+
+    message_id, verification_id = _run(body)
+
+    message, verification = message_pushes[0], pushed[0]
+    assert message["id"] == message_id, "the message contract moved; re-read this test"
+
+    for field, value in message.items():
+        if value != message_id:
+            continue
+        assert field not in verification, (
+            f"the message body names its subject in {field!r}, and the verification body "
+            f"carries {verification.get(field)!r} there — a receiver reading {field!r} "
+            f"acts on a message it was never told about"
+        )
+
+    # And the number appears in exactly one place, under a name that says what it is.
+    # Comparing the two bodies alone cannot catch a field the message body has never
+    # had — `message_id`, say — and a field named that way is precisely one a receiver
+    # reads as a message identifier.
+    carrying = sorted(k for k, v in verification.items() if v == verification_id)
+    assert carrying == ["verification_id"], (
+        f"the verification's number travels in {carrying} — it may travel in "
+        f"'verification_id' and nowhere else"
+    )

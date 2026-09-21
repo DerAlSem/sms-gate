@@ -270,7 +270,24 @@ rather than on code.
       statement about one person rather than about this gateway. A mutation widening the
       condition to every advancing outcome turns that control red. `WITHHELD` needs no
       migration: `verification_rungs.outcome` carries no CHECK constraint.
-- [ ] 4.15 Test: a verification outcome pushed to the application is distinguishable from a message status push, so a verification id cannot be read as a message id
+- [x] 4.15 Test: a verification outcome pushed to the application is distinguishable from a message status push, so a verification id cannot be read as a message id
+      🔴 **The answer was no, and the code was wrong — see 4.15a.** The body named its kind
+      (`"object": "verification"`) and still carried the verification's number in `id`, the
+      field the message contract names its own subject in. `failed` and `expired` are words
+      both bodies use, so a receiver keyed on `id` and `status` — the whole of the older
+      contract — acted on it and marked an unrelated message. The guard reads the message
+      contract off a **real** message push rather than off a remembered description of it,
+      because the description is what rots. Five mutations bite, including one that moves the
+      message contract underneath the guard, and one that gives the verification body a
+      `message_id` carrying the same number — which body-to-body comparison alone cannot see.
+- [x] 4.15a Implement the distinction: the verification push carries its subject in
+      `verification_id` and no `id` at all
+      Not a second field beside `id` — `id` is gone from the body. A verification number
+      sitting in `id` is readable as a message identifier whatever else the body says, and the
+      requirement forbids exactly that. Measured on a file-backed database: message 1 and
+      verification 1 collide from the first row of each table, so the two spaces overlap at
+      once rather than eventually. The push has never reached a customer — the verification
+      door is not on `master` — so no live receiver is owed a migration.
 - [x] 4.16 Implement the routing rule as a typed `settings` entry per 2.3, with МегаФон as its only initial entry and its value an **ordered list** — `[tg_gateway, flash_call]` — as data, not as a branch, and with no `app_id` in the rule
       Built 20.09.2026 as the typed setting `operator_routes` in
       `app/verification/rule.py`. Two entries name no operator — `*` for an
@@ -382,7 +399,23 @@ rather than on code.
       called rather than on the outcome, and on no rung row existing: a refusal of ours
       inside the vendors' count would be our refusal reported as their failure.
 - [ ] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
-- [ ] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
+- [x] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
+      The sweep half was already held and bites four ways (the sweep not called, the sweep
+      taking rows that have not expired, the announcer's claim made unconditional, the
+      announcer fed open rows).
+      🔴 **The second half did not exist.** What stood there was a *rule* — no writer marks its
+      own row announced — applied to a regular expression over the file's text, and it was
+      blind three ways and noisy a fourth. Blind: a write with its fields in another order, a
+      write with the status bound as a parameter, and an f-string, which is not a string
+      constant at all — and the expiry sweep itself is an f-string, so the guard was silent
+      about the one writer this task names. Measured: two new terminal writers, each marking
+      its own row announced, left the whole suite green. Noisy: the 500-character window
+      around a match reached into the next function, so an unrelated writer added below a
+      genuine one raised a false alarm — a guard that cries wolf is proof-read away.
+      The census is now taken off the syntax tree, holds each writer by name and by the
+      statuses it writes, and the rule is applied per writer rather than per text window.
+      Five mutations bite and a sixth — a non-terminal neighbour marking rows announced — is
+      correctly silent, which the old guard was not.
 - [x] 4.29 Test: two concurrent checks confirm at most once and consume at most one attempt
       🔴 **The second half was unasserted.** Confirming at most once was guarded;
       "consumes at most one attempt" was not, and bumping the attempt count inside the
@@ -439,11 +472,34 @@ rather than on code.
 
 ### The Gateway's own outcomes
 
-- [ ] 4.41 Test: `delivered` and `read` leave the verification open and unconfirmed; only a correct code at `/check` confirms it
+- [x] 4.41 Test: `delivered` and `read` leave the verification open and unconfirmed; only a correct code at `/check` confirms it
+      The two existing assertions said `pending` and stopped there, which an implementation
+      that confirms nothing at all satisfies. **Open** means more than **not confirmed**: it
+      means the code can still do its work, so one verification is carried the whole way —
+      delivered, read, then confirmed by its own code at the check door — with the negative
+      half beside it, that a delivered message does not make a wrong code right. Four
+      mutations bite: `delivered` confirming, `read` closing, the check door confirming any
+      code, and the check door confirming none.
 - [x] 4.42 Test: a verification carried by `tg_gateway` that becomes confirmed, expired or out of attempts revokes its outstanding message at the vendor
       Hung on `announce_verification_outcomes` — the one pass that sees all three
       endings, so a writer added later cannot be a writer that forgot.
-- [ ] 4.43 Test: a callback whose signature does not verify changes no state and is counted; so is a correctly signed one whose timestamp is outside the tolerance; a correctly signed and timely one updates the recorded delivery outcome
+- [x] 4.43 Test: a callback whose signature does not verify changes no state and is counted; so is a correctly signed one whose timestamp is outside the tolerance; a correctly signed and timely one updates the recorded delivery outcome
+      All three branches had named green tests, and the count was genuinely asserted — the
+      predicted hole was not there. **Two others were, and both were found by biting.**
+      🔴 The replay guard asserted only the verification's own row, not the rung: a callback
+      refused on its timestamp could still write the rung's delivery outcome and the whole
+      suite stayed green. "Changes no state" is the whole of the requirement and the rung is
+      state; the edit that reaches it ("record what the vendor said, just do not act on it")
+      is a plausible one in its own right.
+      🔴 The tolerance window was guarded in one direction only. Narrowing `abs(now - sent_at)`
+      to `now - sent_at` left the suite green — and a window with no far edge is a window a
+      captured callback stays valid in for ever, because the timestamp is signed and cannot be
+      moved back inside a bound that does not exist.
+      Seven mutations bite, and the zero-tolerance control fails loudly rather than silently.
+      ⚠️ **Named, not taken:** both rejection kinds are counted under one key, so a run of
+      clock skew reads as a run of bad signatures. The module's own docstring says the kinds
+      are counted apart because they mean different things, and here they are not. The
+      requirement does not demand the split. **Owner's.**
 - [x] 4.44 Test: the attempt counter is this gateway's — a wrong code on a `tg_gateway` verification consumes one of our five and calls no vendor endpoint to decide it
 
 ### Entitlement, template, credentials

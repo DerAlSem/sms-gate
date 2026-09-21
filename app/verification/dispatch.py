@@ -6,9 +6,12 @@ route configured is silent by design, and the poll stays authoritative so a lost
 self-heals.
 
 What is different is the payload and the reason for it. A verification push says
-`"object": "verification"` because a receiver that cannot tell a verification id from a
-message id will eventually mark the wrong thing delivered — the two id spaces overlap from
-the first row of each table. And a confirmation names the **method** that proved it: the
+`"object": "verification"` and carries its subject in `verification_id`, never in `id`,
+because a receiver that cannot tell a verification id from a message id will eventually
+mark the wrong thing delivered — the two id spaces overlap from the first row of each
+table. Naming the kind is not enough on its own: a body shaped like a message status
+change, with a foreign number in `id`, is worse than an unrecognised one, because the
+receiver acts on it. And a confirmation names the **method** that proved it: the
 methods are not equally strong, a caller number is asserted by the network and can be
 forged, and an application whose stakes do not tolerate the weakest must be able to see
 what it got rather than assume the strongest.
@@ -45,7 +48,13 @@ async def push_verification(
             return False
         payload = {
             "object": "verification",
-            "id": verification_id,
+            # Deliberately **not** `id`. The message contract names its subject there,
+            # and both bodies arrive at the same URL with a `status` whose words overlap
+            # (`failed`, `expired`). A receiver keyed on `id` and `status` — which is the
+            # whole of the older contract — would act on this body and mark some
+            # unrelated message. `object` does not save it: a receiver that never looks
+            # for `object` is exactly the receiver that predates verifications.
+            "verification_id": verification_id,
             "status": status,
             "method": method,
             "reason": reason,

@@ -357,7 +357,7 @@ is that the Gateway's callback body, its headers and its signature scheme are al
 vendor's reference. A rejected callback SHALL be counted, because a run of them is either an
 attack or a rotated secret, and both need to be visible.
 
-[unbacked · vendor reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. Unbacked still — no callback has ever arrived, because no request has yet been made that had one to report]
+[partly backed · the door is `handle_callback` in `app/verification/tg_callback.py` over `callback_verifies` in `app/verification/tg_gateway.py`, guarded by `tests/test_tg_callback.py`: all three endings of this requirement are driven with a real HMAC rather than a stubbed check, and each rejection is asserted to leave both the verification's status and the carrying rung's recorded outcome untouched **and** to be counted. Seven mutations bite — the count dropped, the timestamp window dropped, the signature not compared, the accepted branch not recording, a stale callback recording the rung anyway, and the window narrowed to one direction. Two of those were live holes found by biting a suite that was already green: a rejected callback could write the rung, and a timestamp arbitrarily far in the **future** was accepted, which is a replay window with no far edge. 🔴 **The vendor reference half is unchanged and still unbacked by any observation** — no callback has ever arrived, because no request has yet been made that had one to report. Reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. ⚠️ **Both rejection kinds are counted under one key** (`signature`), so a run of clock skew is indistinguishable from a run of bad signatures — the module's own docstring says the kinds are counted apart because they mean different things, and here they are not. The requirement does not demand the split; naming it rather than taking it is deliberate. **Owner's**]
 
 #### Scenario: A callback that does not verify
 - **WHEN** a callback arrives whose signature does not verify
@@ -476,7 +476,18 @@ expired, by a push to the route already configured for it in `delivery_dispatch`
 asking `GET /verifications/{id}`. A push SHALL be distinguishable from a message status push,
 so that a receiver cannot mistake a verification id for a message id.
 
-[unbacked]
+[backed · `push_verification` in `app/verification/dispatch.py`, announced by
+`announce_verification_outcomes` and guarded by
+`tests/test_verification_outcome_reaches_the_app.py`. 🔴 **Naming the kind was not enough and
+the code was fixed here, not the requirement.** The body said `"object": "verification"` and
+still carried the verification's number in `id` — the field the message contract names its own
+subject in — and `failed` and `expired` are words both bodies use, so a receiver keyed on `id`
+and `status`, which is the whole of the older contract, acted on it. The subject now travels in
+`verification_id` and `id` is absent. The guard compares a **real** message push against a real
+verification push rather than against a remembered description of the message body, and asserts
+the verification's number appears in exactly one field; five mutations bite, including one that
+moves the message contract underneath it. Measured on a file-backed database: message 1 and
+verification 1 collide from the first row of each table]
 
 #### Scenario: The outcome is pushed
 - **WHEN** a verification is confirmed and the application has a configured route
