@@ -77,7 +77,18 @@ The `flash_call` route is the one exception, and it runs the other way: there th
 four digits of a number the vendor allocates, so what the gateway supplies is a request rather
 than a decision. That case is governed below.
 
-[unbacked]
+[backed · the refusal is `VerificationCreateRequest.refuse_a_supplied_code` in
+`app/api/schemas.py`, which rejects before a row exists; the distinct-code half is
+`_new_code(await queries.open_codes_for(phone))` in `app/api/router.py`. Guarded by
+`tests/test_the_code_and_who_may_spend_it.py` and four mutations in `bite-code.py`.
+🔴 **The distinct-code half was unguarded until 21.09.2026** — the inherited guard asserted
+what `open_codes_for` reports and never that the second code differs, so `_new_code(set())`
+left the suite green. A guard written the obvious way would have been little better: with ten
+thousand codes, two random draws collide once in ten thousand runs, so the source of digits is
+scripted and the collision made certain. The state is reachable — measured: `POST
+/verifications` refuses only a blocked number and a ladder that can prove nothing, and the
+vendors' per-number window is evaluated when a rung is walked, not when a verification is
+opened]
 
 #### Scenario: An application tries to choose the code
 - **WHEN** a verification request supplies its own code
@@ -141,7 +152,28 @@ writing it back. The gateway already refuses that shape elsewhere for the same r
 concurrent writer moves the state between the read and the write, and a person at a barrier
 double-taps `Confirm` as a matter of course.
 
-[unbacked]
+[partly backed · the matcher is `queries.check_verification` in `app/db/queries.py`, both
+halves single conditional updates. Guarded by `tests/test_the_code_and_who_may_spend_it.py`
+and six mutations in `bite-code.py`. **The vendor-facing scenarios — the `ttl` handed to
+`tg_gateway` and the vendor's own code-checking endpoint — are backed elsewhere and not
+here.**
+
+🔴 **Two of the three conditions on the confirming update were held by a second filter below
+them.** `status = 'pending'` and `attempts < ?` can each be deleted and nothing reddens,
+because a terminal verification has already had its code nulled and the update fails on
+`code = ?` instead. The guarantee is real and it is held by one line; the day destruction is
+deferred — which is what task 4.30 is about — it would be held by none. The guards therefore
+put the code **back** into a terminal row before offering it, which is the only way to assert
+about the condition that is not the one already proved.
+
+🔴 **The answer lied in one reachable state, and task 4.10a is what it cost.** The attempt
+ceiling is a setting: lowering `verification_max_attempts` while verifications are open leaves
+rows pending with more attempts spent than the limit now allows, and such a row answered
+`expired` while sitting inside its deadline — the one thing that had not happened, and the
+requirement asks the answer to say *which* of the three it is. It now answers
+`no_attempts_left`. A row that is both out of time and out of attempts is called `expired`:
+the deadline is the older word and the one the application was told at creation. That
+precedence is a choice and is guarded as one]
 
 #### Scenario: The right code
 - **WHEN** the code the person read from the calling number is checked
@@ -594,7 +626,16 @@ screen that helpfully prints what was originally charged restores the asterisk i
 reaching the page, the block never populated, and the row losing the anchor the guard finds it
 by. `verifications_for_phone` lists its columns rather than starring them, and that is the
 guarantee rather than a style: the code must reach no screen. The storage itself is
-`verify-by-inbound-contact`'s and the retention sweep with it]
+`verify-by-inbound-contact`'s and the retention sweep with it.
+
+**The ownership half is backed** — `queries.get_verification` and every conditional update in
+`check_verification` are scoped by `app_id`, so a stranger's call is answered as a missing
+verification and spends nothing. Guarded by `tests/test_the_code_and_who_may_spend_it.py` over
+all three verbs with a **valid** token of another application, paired with the positive control
+that the owner's own three calls answer, and by two mutations in `bite-code.py`. **The
+secret-destruction half is backed** by the same file, over all three terminal endings in one
+run rather than one of them: the rung-failure ending is the one the inherited guards missed,
+though it is where every walked ladder arrives when nothing carried the code]
 
 #### Scenario: The state outlives the process
 - **WHEN** the gateway restarts while a verification awaits the vendor's outcome
@@ -630,7 +671,28 @@ the call ever reaching the person — which is the whole guarantee, gone. The ga
 live paths that would carry it out: notifications relay message text to Telegram, and the
 admin console renders it.
 
-[unbacked]
+[backed · the response half is enumerated from the router rather than from a list — every
+response model on a `/verifications` path, so that the next door added to this capability is
+covered by the guard that exists rather than by one nobody wrote. `RouteSelectResponse` is the
+single sanctioned exception and it belongs to a **rung**. The destruction half is `code = NULL`
+on all three terminal endings, in `check_verification`, `fail_verification` and
+`expire_due_verifications`. Guarded by `tests/test_the_code_and_who_may_spend_it.py` and seven
+mutations in `bite-code.py`, driven over a path where the code genuinely travelled to the
+vendor.
+
+🔴 **A field-shaped guard cannot hold this requirement, and task 4.22a is what it cost.**
+`reason` is free text on both the verification and its rungs, it is filled from a vendor's
+error string and from an exception's message, and neither is ours to write. Measured
+21.09.2026: a reason carrying the code reached `GET /verifications/{id}` and the console's
+expanded row with the whole suite green. The remedy is `_without_the_code` at the **write**
+border in `app/db/queries.py` — the readers are many and a census of readers is never complete,
+while there is exactly one place such text becomes stored. The code is replaced visibly rather
+than removed, so an operator can tell something was taken out.
+
+⚠️ One of the three writers, `record_verification_rung`, has no caller that reaches it with a
+reason today — `ladder.walk` writes that row before it has anything to say. It is guarded by
+calling the border directly, because an unreachable scrub with no guard on it is the shape that
+gets deleted as dead code]
 
 #### Scenario: The code is not in the response
 - **WHEN** a verification is created or asked about

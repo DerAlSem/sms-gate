@@ -843,6 +843,53 @@ async def list_inbound(
         return list(await cursor.fetchall())
 
 
+# What a code is replaced by in text that leaves the matcher. Visible rather than removed:
+# an operator reading "the vendor refused (BAD_CODE ****)" can tell that something was
+# taken out, and a reason that silently loses a word reads as a vendor that said less than
+# it did.
+_CODE_HIDDEN = "****"
+
+
+def _without_the_code(text: str | None, code: str | None) -> str | None:
+    """Free text about to be stored against a verification, with that verification's own
+    code taken out of it.
+
+    This is the one border where text from outside this gateway becomes text this gateway
+    hands back. `reason`, on both the verification and its rungs, is filled from a
+    vendor's error string and from an exception's message, and neither is ours to write —
+    so the requirement that a code appears in no API response cannot be held by writing
+    careful strings. Measured on 21.09.2026: a reason carrying the code reached
+    `GET /verifications/{id}` and the console with the whole suite green.
+
+    Placed on the **write** rather than on the reads, for the reason every boundary in
+    this change is: the readers are many — the poll, the expanded row in the console, an
+    alert quoting a reason — and a census of readers is never complete and goes stale in
+    silence. There is one place text becomes stored, and this is it.
+    """
+    if not text or not code:
+        return text
+    return text.replace(code, _CODE_HIDDEN)
+
+
+async def _code_of(verification_id: int) -> str | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT code FROM verifications WHERE id = ?", (verification_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def _code_behind_rung(rung_id: int) -> str | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT v.code FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id WHERE r.id = ?",
+        (rung_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row[0] if row else None
+
 
 async def create_verification(
     app_id: str, phone: str, *, code: str, ttl_seconds: int,
@@ -944,6 +991,9 @@ async def fail_verification(verification_id: int, *, reason: str) -> bool:
     writer that can be added without announcing.
     """
     db = await get_db()
+    # Read before the statement that nulls it: this is the last moment the code is there
+    # to be taken out of a reason written from a vendor's words.
+    reason = _without_the_code(reason, await _code_of(verification_id))
     cursor = await db.execute(
         "UPDATE verifications SET status = 'failed', reason = ?, code = NULL "
         " WHERE id = ? AND status = 'pending'",
@@ -964,6 +1014,7 @@ async def record_verification_rung(
     against one code.
     """
     db = await get_db()
+    reason = _without_the_code(reason, await _code_of(verification_id))
     async with db.execute(
         "INSERT INTO verification_rungs "
         "       (verification_id, route, vendor_ref, cost, outcome, reason) "
@@ -1068,6 +1119,7 @@ async def set_rung_outcome(
     because a resurrected charge would be a bill nobody could explain.
     """
     db = await get_db()
+    reason = _without_the_code(reason, await _code_behind_rung(rung_id))
     await db.execute(
         "UPDATE verification_rungs "
         "   SET outcome = ?, "
@@ -1361,7 +1413,34 @@ async def check_verification(
         return "expired"
     if row["status"] == "failed":
         return "no_attempts_left"
-    return "expired"          # pending, but past its deadline: the sweep has not run yet
+
+    # Still pending, so what refused the two updates above was either the deadline or the
+    # attempt ceiling, and the row's status cannot tell them apart. Both are reachable:
+    # the sweep may simply not have run yet, and the ceiling is a **setting** — lowering
+    # `verification_max_attempts` while verifications are open leaves rows pending with
+    # more attempts spent than the limit now allows.
+    #
+    # The deadline is asked of the database rather than compared here. The row's times
+    # were written by SQLite's clock, and comparing them against this process's is the
+    # two-clock mistake every conditional update in this module exists to avoid.
+    #
+    # Asked in this order because the deadline is the older word and the one the
+    # application was told at creation: a verification that is both out of time and out of
+    # attempts is over for the reason the person can see on their own screen.
+    if await _is_past_its_deadline(verification_id):
+        return "expired"
+    return "no_attempts_left"
+
+
+async def _is_past_its_deadline(verification_id: int) -> bool:
+    """Whether this row's deadline has passed, by the clock that wrote it."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT expires_at <= CURRENT_TIMESTAMP FROM verifications WHERE id = ?",
+        (verification_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 async def expire_due_verifications() -> list[int]:

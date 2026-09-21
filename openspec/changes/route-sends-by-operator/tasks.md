@@ -182,11 +182,55 @@ rather than on code.
       before `create_message`, so the cache always held the row by the time the sender
       read it. 4.4a removed that, and moved the resolving into the sender under a bound
       of its own — see 4.4. Nothing in this task was wrong; the reason it was safe moved.
-- [ ] 4.7 Test: an application-supplied code is rejected by `POST /verifications`
+- [x] 4.7 Test: an application-supplied code is rejected by `POST /verifications`
+      The mechanism was already there and already guarded — `refuse_a_supplied_code` in
+      `app/api/schemas.py`, and the inherited
+      `test_an_application_supplied_code_is_refused`. Bitten rather than believed:
+      disarming the validator reddens. What the inherited guard did not say is that the
+      refusal happens **before** a row exists, so a request rejected late would leave the
+      number carrying a live code nobody asked for. Said now, with the positive control
+      that a request naming only the number is still accepted.
 - [ ] 4.8 Test: `call_status: 1` does not confirm a verification; only a correct code at `/check` does
 - [ ] 4.9 Test: `call_status: -1` that never resolves within the bound is recorded as unknown, not as success and not as failure
-- [ ] 4.10 Test: a confirmed verification cannot be confirmed twice; an expired one cannot be confirmed; wrong codes exhaust the attempt limit and further checks are refused even when the right code follows
-- [ ] 4.11 Test: two verifications open at the same time for one number do not share a code
+- [x] 4.10 Test: a confirmed verification cannot be confirmed twice; an expired one cannot be confirmed; wrong codes exhaust the attempt limit and further checks are refused even when the right code follows
+      🔴 **Two of the three conditions were held by a second filter and nothing said so.**
+      `status = 'pending'` and `attempts < ?` can each be deleted from the confirming
+      update with the suite green: a terminal verification has had its code nulled, so the
+      update fails on `code = ?` instead. Measured, not reasoned. The guards therefore put
+      the code **back** into a terminal row before offering it — the only way to assert
+      about the condition that is not the one already proved. The day destruction is
+      deferred, which is what 4.30 is about, the guarantee would otherwise be held by
+      nothing.
+      The attempt-ceiling branch turned out to answer wrongly in a reachable state; that
+      is 4.10a.
+- [x] 4.11 Test: two verifications open at the same time for one number do not share a code
+      🔴 **The guard was hollow and the mechanism unguarded entirely.** The inherited
+      `test_two_open_verifications_for_one_number_do_not_share_a_code` asserts what
+      `open_codes_for` reports and never that the second code *differs*: replacing the
+      door's `_new_code(await queries.open_codes_for(phone))` with `_new_code(set())` left
+      the suite green.
+      The obvious replacement would have been barely better — with ten thousand codes two
+      random draws collide once in ten thousand runs — so the source of digits is scripted
+      inside `app.api.router` and the collision made certain. Paired with the control that
+      a code live on **another** number is no collision, or the door would exhaust its
+      hundred draws on a busy gateway.
+      🔴 **The handoff's reachability question is answered yes, by measurement.**
+      `POST /verifications` refuses only a blocked number and a ladder that can prove
+      nothing; the vendors' per-number window (4.12) is evaluated when a rung is walked,
+      not when a verification is opened. The guard is not hollow for want of the state.
+- [x] 4.10a Answer an exhausted-by-a-lowered-ceiling verification with the word that is true
+      Found by 4.10 and fixed here, because a test task must not carry an implementation.
+      The attempt ceiling is a **setting**: lowering `verification_max_attempts` while
+      verifications are open leaves rows pending with more attempts spent than the limit
+      now allows, and `check_verification`'s explaining branch answered `expired` for them
+      — inside their own deadline, which is the one thing that had not happened. It now
+      asks the database whether the deadline has passed (the row's times were written by
+      SQLite's clock; comparing them against this process's is the two-clock mistake every
+      conditional update in that module avoids) and answers `no_attempts_left` otherwise.
+      **A row both out of time and out of attempts is called `expired`** — the deadline is
+      the older word and the one the application was told at creation, so it is the one
+      the person can see the truth of on their own screen. A choice, guarded as one, and
+      the owner may overturn it.
 - [ ] 4.12 Test: a second request for the same number inside the vendor's per-number window is refused by us with a wait reason, and no vendor call is placed
 - [ ] 4.13 Test: a repeat inside the free window uses `initRepeat` and keeps the same code; a retried vendor call carrying the same idempotency key does not place a second call
 - [x] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
@@ -272,9 +316,52 @@ rather than on code.
       It reads the rule and writes its own table; after thirty days it raises one
       alert per operator entry.
 - [ ] 4.19 Update `docs/` with the two paid rungs: what each costs, how to change the rule **and its order**, how to top up each of the two balances, how to tell from a verification which rung carried it and what it cost, which application is entitled to spend, and what to do when МегаФон recovers
-- [ ] 4.20 Test: a verification belonging to one application cannot be read, checked or exhausted by another — by id, with a valid token
+- [x] 4.20 Test: a verification belonging to one application cannot be read, checked or exhausted by another — by id, with a valid token
+      Held already — `get_verification` and every conditional update in
+      `check_verification` are scoped by `app_id` — and bitten on both: unscoping either
+      reddens. The guard here drives all three verbs from a **valid** token of another
+      application and spends more than the limit's worth of wrong codes at it, because
+      exhausting is the quiet verb: a stranger need read nothing and can still burn a
+      person's five attempts at a barrier they are standing at. Paired with the positive
+      control that the owner's own three calls answer, without which the negative passes
+      on a door that refuses everybody.
 - [ ] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
-- [ ] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
+- [x] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
+      The response half is enumerated **from the router**, not from a list kept in the
+      test: a census of surfaces is never complete and goes stale in silence, and the next
+      door added to this capability is exactly the one a list would miss.
+      The log and alert halves are driven over a path where the code genuinely travelled
+      to the vendor and the rung then failed loudly — a guard on a path the code never
+      reached would be the hollow shape this branch has already paid for three times.
+      ⚠️ `caplog` is levelled on the gateway's own loggers, not on the root: root at DEBUG
+      turns on asyncio's task reprs, and a coroutine repr carries its arguments — the code
+      among them. That is the harness printing the secret, not the gateway.
+      The destruction half covers all three terminal endings in one run. The rung-failure
+      ending was the one the inherited guards missed, though it is where every walked
+      ladder arrives when nothing carried the code.
+      🔴 A field-shaped guard cannot hold this requirement: `reason` is free text and it is
+      not ours. That is 4.22a.
+- [x] 4.22a Keep a vendor's words from carrying the code out to the application
+      Found by 4.22 and given its own number for the same reason 4.10a has one.
+      🔴 **Measured 21.09.2026: a `reason` carrying the code reached
+      `GET /verifications/{id}` and the console's expanded row with the whole suite
+      green.** Every guard on this requirement watched the *fields*, and a field of type
+      `str` says nothing about what is inside it. `reason` is filled from a vendor's error
+      string and from an exception's message, and neither is ours to write — so the
+      requirement cannot be held by writing careful strings.
+      `_without_the_code` in `app/db/queries.py` takes the verification's own code out of
+      any free text about to be stored against it, at the three writes that accept such
+      text. Placed at the **write** because the readers are many — the poll, the console,
+      an alert quoting a reason — and a census of readers is never complete, while there is
+      exactly one place the text becomes stored. Replaced visibly (`****`) rather than
+      removed: a reason that silently loses a word reads as a vendor that said less than it
+      did.
+      ⚠️ The samples captured from the live Gateway show no code echo today. That is
+      precisely why the guard is not written against them: it would be held up by somebody
+      else's habit.
+      ⚠️ `record_verification_rung` has no caller reaching it with a reason today —
+      `ladder.walk` writes that row before it has anything to say. Guarded by calling the
+      border directly, or an unreachable scrub with no guard on it gets deleted as dead.
 - [ ] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
 - [x] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
 - [x] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
@@ -296,7 +383,14 @@ rather than on code.
       inside the vendors' count would be our refusal reported as their failure.
 - [ ] 4.27 Test: a verification carried by the modem whose message fails or expires fails the verification, and that message raises no message-status push
 - [ ] 4.28 Test: the expiry sweep expires an untouched verification and notifies once; the writer-enumeration test covers verification state writers
-- [ ] 4.29 Test: two concurrent checks confirm at most once and consume at most one attempt
+- [x] 4.29 Test: two concurrent checks confirm at most once and consume at most one attempt
+      🔴 **The second half was unasserted.** Confirming at most once was guarded;
+      "consumes at most one attempt" was not, and bumping the attempt count inside the
+      already-confirmed branch — leaving the answer word alone — left the suite green.
+      That branch is reached by a person double-tapping Confirm with the **right** code,
+      which is the ordinary way to reach it, and an attempt spent there taxes a person for
+      the gateway's own race. Paired with the control that a wrong code still costs
+      exactly one, or an implementation that never counts would satisfy it.
 - [ ] 4.30 Implement verification retention and the destruction of a terminal verification's code
 - [x] 4.31 Make a single verification visible in the admin console beside the messages for the same number — every rung attempted, each rung's vendor outcome, whether it was confirmed, recorded cost and whether it was refunded. The counters answer "how much", and a support call is always about one person
       Built 20.09.2026 in the expanded row of `/admin/messages`, under the
