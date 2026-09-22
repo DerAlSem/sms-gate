@@ -1236,7 +1236,7 @@ rather than on code.
       honesty: write them, or strike the reasoning and let the named `tests/…` file stand alone.
       Three of the eight requirements written after the 11.09 circle rest on one of these.
 
-- [ ] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
+- [x] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
       **This is the finding both critics reached independently, and it makes the capability
       unusable on the day it ships.** `placement.place` hands `gates.for_paid_ladder` to every
       walk, and `PLACED_HERE` includes `sms_out`; three of those four gates are about money.
@@ -1249,6 +1249,15 @@ rather than on code.
       rungs are already computed on the line above the gate list. **Bite must include the mutation
       that only the new guard catches:** the suite is green on this today because the door test
       switches `may_spend` on for the whole file and the modem test never reaches the door.
+      **Built 22.09.2026.** `for_paid_ladder` takes `rungs` with no default; `place` reads the
+      ladder once and hands the same list to both. `bite-free-walk-asks-no-money.sh`, five
+      mutations, no survivors. Two of them are why this guard is not a restatement of a
+      neighbour — deciding on the *first* rung, and assembling the list from the rung the
+      consumer named — and a rule naming a free rung ahead of a paid one is what they catch.
+      ⚠️ The fifth survived its first run and the predicate was **not** the thing to change:
+      on a ladder of one rung that mutation is the identity. The hole was real, and a
+      door-level test for the mixed ladder is what closed it. Suite 1303 green on the same
+      six inherited failures.
 
 - [ ] 4.62 🔴 The number's paid limits are decided and taken in one act
       Read-then-act: `ladder.walk` runs every gate, and only afterwards writes the row recording

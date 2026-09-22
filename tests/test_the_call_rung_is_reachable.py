@@ -412,7 +412,7 @@ def test_the_block_is_a_gate_of_the_ladder_rather_than_a_check_at_one_door(clien
 
     async def go():
         await queries.block_phone(PHONE)
-        refusals = [await gate() for gate in gates.for_paid_ladder("app1", PHONE)]
+        refusals = [await gate() for gate in gates.for_paid_ladder("app1", PHONE, [FLASH_CALL])]
         return [r for r in refusals if r]
 
     refused = asyncio.run(go())

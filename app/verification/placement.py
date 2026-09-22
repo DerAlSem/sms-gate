@@ -156,13 +156,16 @@ async def place(
     selections unable to both buy the same code, and it has to happen before any money is
     spent rather than after.
     """
+    # One reading, handed to both: the gates that are asked follow the rungs of the walk,
+    # so computing the ladder twice would let the two answers drift apart.
+    rungs = ladder_from(route, operator)
     walk = await ladder.walk(
         verification_id,
         app_id=app_id,
         operator=operator,
         phone=phone,
-        rungs=ladder_from(route, operator),
-        gates=gates.for_paid_ladder(app_id, phone),
+        rungs=rungs,
+        gates=gates.for_paid_ladder(app_id, phone, rungs),
         carriers=carriers_for(verification_id, app_id=app_id, modem=modem,
                               operator=operator),
         bound=store.verification_ladder_bound,

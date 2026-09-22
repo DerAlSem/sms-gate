@@ -39,7 +39,7 @@ import logging
 
 from app.db import queries
 from app.settings_store import store
-from app.verification import limits
+from app.verification import limits, routes
 
 logger = logging.getLogger(__name__)
 
@@ -146,8 +146,21 @@ def _refuse(window: str, seen: int, ceiling: int) -> str:
             f"above the ceiling of {ceiling}")
 
 
-def for_paid_ladder(app_id: str, phone: str):
-    """Every gate a walk down the **paid** ladder has to pass, in the order they are run.
+def for_paid_ladder(app_id: str, phone: str, rungs):
+    """Every gate a walk down the ladder has to pass, in the order they are run.
+
+    🔴 `rungs` decides which of them are asked, and it has no default. Three of these four
+    are questions about money, and a walk with no paid rung in it spends none: asking them
+    there refuses a *free* send in the name of money that was never going to move. That is
+    not a corner — `may_spend` ships off for every application and the shipped rule sends
+    every operator it does not name to `sms_out` alone, so on stock settings the money
+    gates stand in front of the free route and nothing else, and the reason the caller is
+    given names a paid route the walk never contained. Found by the critic circle of
+    22.09.2026, by both critics independently (task 4.61).
+
+    The blacklist is asked whatever the rungs are: it is the one that is not about degree
+    or price at all — a number held blocked is not being carried by anything, free or
+    paid, for any application.
 
     Assembled here rather than at each door, so that a door added later cannot be a door
     that forgot one. The order is cheapest-question-first and it decides only which reason
@@ -162,5 +175,7 @@ def for_paid_ladder(app_id: str, phone: str):
     forgetting is invisible at the call site — which is why `ladder.walk` takes `gates`
     as a required parameter and why this exists to fill it.
     """
+    if not any(r in routes.PAID_ROUTES for r in rungs):
+        return (blacklist_gate(phone),)
     return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate(),
             limits.per_number_gate(phone))

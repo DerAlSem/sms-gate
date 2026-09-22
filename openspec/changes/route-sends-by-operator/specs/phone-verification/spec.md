@@ -1015,6 +1015,21 @@ stand in front of the free route and nothing else. The same error runs the other
 the ceiling and the per-number limits, where a busy paid hour, or one paid attempt on this
 number eight seconds ago, silences a modem send that costs nothing.
 
+[backed since 22.09.2026 · `gates.for_paid_ladder` takes the walk's `rungs` and has no default
+for them, and `placement.place` reads the ladder once and hands the same list to both the walk
+and the gate list, so the two answers cannot drift. Guarded by
+`tests/test_a_free_walk_is_not_asked_about_money.py`, driven through the real door on stock
+settings — the entitlement is **not** granted in that fixture, which is the whole subject — with
+a control on each half: the paid walk is still refused, the blacklist is still asked at the gate
+(blocked *after* the verification is open, so it is the gate and not the door that answers), and
+an unblocked number still walks. `bite-free-walk-asks-no-money.sh` turns five red: the gate list
+assembled unconditionally as it was before, the decision taken on the **first** rung rather than
+the rungs that remain, money never asked at all, the blacklist dropped from the free branch, and
+the list assembled from the rung the consumer named instead of the ladder that follows it. 🔴 The
+second and the fifth are the two this guard exists for — a rule may name a free rung ahead of a
+paid one, and every neighbouring guard stays green on both: the door test holds the entitlement
+on for the whole file, and the modem-rung test never reaches the door at all]
+
 A refusal here SHALL end the verification with that reason, like any other gate's: the route
 was claimed before the walk, so a door that merely answered and left the verification open
 would leave a route claimed with nothing placed.

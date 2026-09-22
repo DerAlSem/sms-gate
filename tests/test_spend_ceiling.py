@@ -309,7 +309,7 @@ def test_the_assembled_gates_run_the_entitlement_and_the_ceiling_before_any_rung
                                                     ttl_seconds=300)
             return await ladder.walk(
                 vid, app_id=app_id, operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
-                gates=gates.for_paid_ladder(app_id, PHONE),
+                gates=gates.for_paid_ladder(app_id, PHONE, [TG_GATEWAY, FLASH_CALL]),
                 carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
         # The entitlement half.
@@ -340,7 +340,7 @@ def test_the_assembled_gates_let_an_entitled_application_through():
                                                 ttl_seconds=300)
         walk = await ladder.walk(
             vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
-            gates=gates.for_paid_ladder("app1", PHONE),
+            gates=gates.for_paid_ladder("app1", PHONE, [TG_GATEWAY, FLASH_CALL]),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
         assert asked == [PHONE]
@@ -362,7 +362,7 @@ def test_the_assembled_gates_still_carry_the_per_number_limits():
                                                 ttl_seconds=300)
         walk = await ladder.walk(
             vid, app_id="app1", operator="МегаФон", phone=PHONE, rungs=[TG_GATEWAY, FLASH_CALL],
-            gates=gates.for_paid_ladder("app1", PHONE),
+            gates=gates.for_paid_ladder("app1", PHONE, [TG_GATEWAY, FLASH_CALL]),
             carriers={TG_GATEWAY: carrier, FLASH_CALL: carrier}, bound=5.0)
 
         assert walk.refused_by and "too_soon" in walk.refused_by
