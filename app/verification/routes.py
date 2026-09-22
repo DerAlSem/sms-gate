@@ -163,6 +163,12 @@ _INSTRUCTIONS = {
     # nothing — and the capability requires the answer to say what they must do.
     TG_GATEWAY: "Open Telegram on the number being verified and read the code from the "
                 "message that arrives there.",
+    # No address to give: the call comes **to** the number being verified, and the whole
+    # payload is the last four digits of the number it comes from. Said as "do not answer"
+    # because a person who answers pays nothing and learns nothing, and because a call
+    # that is answered is a call the vendor may bill differently.
+    FLASH_CALL: "Wait for a call to the number being verified and read the code off the "
+                "calling number: it is the last four digits. Do not answer the call.",
 }
 
 # Rungs whose instruction has to name a number the subscriber calls or texts. A rung whose

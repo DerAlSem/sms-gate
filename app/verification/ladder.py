@@ -58,6 +58,7 @@ ABSENT = "absent"            # nothing is configured to carry this rung at all
 INCAPABLE = "incapable"      # this rung cannot carry *this* item; not a decline
 WITHHELD = "withheld"        # not attempted: a vendor refused *us* and this is the modem
 FAILED = "failed"            # it carried and then failed — the ladder does not advance
+UNRESOLVED = "unresolved"    # it placed the call and the vendor has not said what became of it
 
 # Three classes, not two, and the third is the expensive one. The ladder advances only
 # when a rung **declines to carry** — never when it carried and then failed. A rung that
@@ -65,6 +66,16 @@ FAILED = "failed"            # it carried and then failed — the ladder does no
 # same code at the second vendor while the first one's fee cannot be refunded until its
 # `ttl` runs out.
 _ADVANCING = frozenset({DECLINED, REFUSED, UNCLASSIFIED, UNANSWERED, ABSENT, INCAPABLE})
+
+# The rung took it, was paid for it, and has not yet said what became of it. Its own class
+# because neither of the other two fits and both are wrong in an expensive direction.
+# Advancing would buy the same code at the second vendor while the first call is already
+# placed; failing would tell the application the code is not coming while a phone is about
+# to ring. uCaller's `call_status` is `-1` — "информация проверяется (от 1 сек до 1
+# минуты)" — for longer than this ladder's whole patience, and a person is standing in
+# front of a synchronous request for all of it, so this is the ordinary case on that rung
+# rather than the exotic one.
+_TAKEN_AND_PENDING = frozenset({UNRESOLVED})
 
 # The routes on which **this gateway transmits over the modem**. `call_in` and `sms_in`
 # use the same modem and are deliberately absent: the subscriber originates those, and
@@ -205,6 +216,17 @@ async def walk(
                 logger.warning("verification %d was carried by %s but could not be "
                                "marked as such (%s)", verification_id, route, outcome)
             return Walk(carried_by=route, attempts=tuple(attempts))
+
+        if attempt.outcome in _TAKEN_AND_PENDING:
+            # The rung placed it and the answer has not come. The verification keeps its
+            # route and its own deadline; what is **not** written is an outcome, because
+            # the one thing known here is that nothing is known. Whoever learns the
+            # outcome afterwards learns it from the vendor by the reference recorded on
+            # this rung's row.
+            reason = (f"{route} placed this verification and the vendor had not reported "
+                      f"its outcome within the ladder's bound")
+            logger.info("verification %d: %s", verification_id, reason)
+            return Walk(carried_by=None, reason=reason, attempts=tuple(attempts))
 
         if attempt.outcome not in _ADVANCING:
             # It carried and then failed. The ladder stops here by the norm above, and

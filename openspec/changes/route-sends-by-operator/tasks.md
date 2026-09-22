@@ -313,8 +313,32 @@ rather than on code.
       refusal happens **before** a row exists, so a request rejected late would leave the
       number carrying a live code nobody asked for. Said now, with the positive control
       that a request naming only the number is still accepted.
-- [ ] 4.8 Test: `call_status: 1` does not confirm a verification; only a correct code at `/check` does
-- [ ] 4.9 Test: `call_status: -1` that never resolves within the bound is recorded as unknown, not as success and not as failure
+- [x] 4.8 Test: `call_status: 1` does not confirm a verification; only a correct code at `/check` does
+      Held twice and at two altitudes, because one of them alone is satisfied by a carrier
+      nothing calls: `test_a_placed_call_does_not_confirm_the_verification` drives the
+      carrier, and `test_a_placed_call_leaves_the_verification_awaiting_a_code` drives a
+      real `POST /verifications/{id}/route` through the registry, the rule and placement
+      and then reads the row. Bitten by mutation 3 of `bite-flash-call.sh`, which reads a
+      failure to connect as a placed call and turns eight guards red.
+- [x] 4.9 Test: `call_status: -1` that never resolves within the bound is recorded as unknown, not as success and not as failure
+      🔴 **Unknown needed a word of its own, and the ladder did not have one.** Every
+      existing outcome is wrong here in an expensive direction: advancing buys the same
+      code at the other vendor while this call is already placed and paid for, and failing
+      tells the application the code is not coming while a phone may be about to ring. So
+      `ladder.UNRESOLVED` with its own branch — the ladder stops and the verification stays
+      pending on its own deadline.
+      ⚠️ **And this is the ordinary case on this rung rather than the exotic one.** The
+      vendor takes "от 1 сек до 1 минуты" to decide; the ladder's whole patience ships at
+      ten seconds, and a person is standing in front of a synchronous HTTP request for all
+      of it. Waiting longer is not available.
+      🔴 **What is therefore NOT built is learning the outcome afterwards.** A
+      `call_status` that resolves in the vendor's fortieth second is read by nobody: the
+      rung keeps its `unresolved` row and its `ucaller_id`, and the verification ends on
+      its own deadline unless a code is checked. Closing it is a sweep over open
+      `flash_call` rungs inside `announce_verification_outcomes`, which is the one pass
+      that already sees every ending and already asks a vendor (`_withdraw_outstanding_message`).
+      Named in `flash_carrier`'s docstring and given task 4.17e rather than left to be
+      discovered.
 - [x] 4.10 Test: a confirmed verification cannot be confirmed twice; an expired one cannot be confirmed; wrong codes exhaust the attempt limit and further checks are refused even when the right code follows
       🔴 **Two of the three conditions were held by a second filter and nothing said so.**
       `status = 'pending'` and `attempts < ?` can each be deleted from the confirming
@@ -449,7 +473,47 @@ rather than on code.
       operator with no entry and `?` for one that could not be resolved — and
       `refuse` is a way of declining rather than a way out. Matching is NFKC +
       strip + `casefold`, in Python and never in SQL. Eight mutations bite.
-- [ ] 4.17 Implement the verification endpoints, the code store and the uCaller adapter against the samples captured in 1.3
+- [x] 4.17 Implement the verification endpoints, the code store and the uCaller adapter against the samples captured in 1.3
+      The endpoints and the code store landed with the doors; what this task still owed on
+      22.09.2026 was the uCaller half, and it is built in two pieces against the samples of
+      1.3 rather than against the reference alone.
+      **The wire** — `app/verification/ucaller.py`, below the credential it already held.
+      `initCall`, `getInfo`, `getBalance`, both envelope shapes, the vendor's error codes
+      split by *who the refusal is about*, and the idempotency key. 40 guards in
+      `tests/test_ucaller_adapter.py`, 14 mutations in `bite-ucaller-adapter.sh`, no
+      survivors.
+      **The rung** — `app/verification/flash_carrier.py`, plus `ladder.UNRESOLVED`, a probe,
+      an entry in `placement.carriers_for` and `PLACED_HERE`, and the instruction the person
+      is given. 20 guards in `tests/test_flash_call_carrier.py`, 8 in
+      `tests/test_the_call_rung_is_reachable.py`, 18 mutations in `bite-flash-call.sh`.
+      🔴 **`initRepeat` is absent from `VENDOR_METHODS` as a value a test reads**, not as a
+      habit: the spec forbids calling a method that answered `405` with the repeat window
+      open, and a list the exclusion is readable from is the difference between a decision
+      and an omission.
+      🔴 **The door was minting `0000`.** Four digits, and outside uCaller's stated range of
+      0001–9999 — so one verification in ten thousand could not have used this rung at all
+      and would have advanced to another one silently, which is the failure this whole
+      change exists to remove. Fixed at the producer (`_new_code` redraws) rather than at
+      the rung, because a guard at the rung makes a rung unavailable for a bug of ours.
+      ⚠️ **Reachability was asked before it could be answered the way 4.56 answered it.**
+      `tests/test_the_call_rung_is_reachable.py` drives real HTTP through the real registry,
+      rule and placement, including the crossing — a МегаФон subscriber the Gateway declines
+      is called instead, two vendor identifiers against one code. Four of its eight guards
+      are red under mutations 15–18, which are the four ways the rung could have shipped
+      looking finished.
+      ⚠️ **What is not built is the outcome that arrives after the ladder's bound: 4.17e.**
+- [ ] 4.17e Learn the outcome of a call the vendor had not decided within the ladder's bound
+      Split out of 4.17 on 22.09.2026, and it is the one gap the rung ships with. The vendor
+      takes up to a minute to set `call_status`; the ladder waits ten seconds because a
+      person is in front of a synchronous request. A call that resolves afterwards is read
+      by nobody, so a subscriber the vendor could not reach sees the verification expire
+      rather than fail with that reason, and `cost` is never recorded for it.
+      The shape is settled and small: `announce_verification_outcomes` is the one pass that
+      already sees every ending and already asks a vendor, so it asks `getInfo` for every
+      `flash_call` rung still `unresolved` whose verification is open, and finishes it.
+      What it needs that does not exist is the query — open verifications holding an
+      unresolved rung on a route — and a bound on how long a rung is chased before it is
+      given up as unknowable.
 - [x] 4.17a Implement the Telegram Gateway adapter against the samples captured in 1.6 — `checkSendAbility`, `sendVerificationMessage` carrying our own `code` and a `ttl` taken from the verification's remaining lifetime, `revokeVerificationMessage`, and the signed callback. `checkVerificationStatus` is deliberately not used: the attempt counter stays here
       Built 20.09.2026 in `app/verification/tg_gateway.py` (the three vendor calls, the
       tolerant parser, and `callback_verifies`) and `app/verification/tg_callback.py`
@@ -664,7 +728,16 @@ rather than on code.
       ⚠️ `record_verification_rung` has no caller reaching it with a reason today —
       `ladder.walk` writes that row before it has anything to say. Guarded by calling the
       border directly, or an unreachable scrub with no guard on it gets deleted as dead.
-- [ ] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
+- [x] 4.23 Test: a verification whose vendor-reported code differs from the requested one fails with that reason rather than matching digits the vendor never dialled
+      Failed rather than adopted — the branch this change chose of the two the requirement
+      allows, because adopting means rewriting a live verification's code from a vendor's
+      word and the code is the one value here that is never written twice. The operator is
+      woken, because from the outside this is indistinguishable from every subscriber
+      suddenly typing the wrong code and every instance of it has been paid for.
+      🔴 **Both places the vendor states a code are read**, and that is not belt and
+      braces: `initCall` answers a `code` and `getInfo` answers one of its own, and a check
+      at one end only is a check the other end walks past. Mutations 5 and 6 of
+      `bite-flash-call.sh` take one end each.
 - [x] 4.24 Test: a stored routing rule that cannot be parsed alerts and does not route as an empty rule; an entry naming an unknown route is refused at save time; an operator name with surrounding whitespace still matches
 - [x] 4.25 Test: the refusal alert fires on stock settings (`notify_send_errors` off) and is deduplicated per operator and route
       🔴 **The handoff sent the previous session at the wrong alert.** It named

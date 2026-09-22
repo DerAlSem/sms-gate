@@ -247,9 +247,19 @@ established, which is why both shapes are required rather than the observed one.
 
 [backed · live samples 22.09.2026, both outcomes, in `captures/uc-1.3-*.json` with their
 findings in `captures/ucaller-samples-1.3.md`; the vendor reference of 08.09.2026 re-read by
-layers on 22.09.2026 and captured in `captures/ucaller-reference-2026-09-22.md`.
+layers on 22.09.2026 and captured in `captures/ucaller-reference-2026-09-22.md`. The parser
+is `app/verification/ucaller.py` and the rung is `app/verification/flash_carrier.py`, guarded
+by `tests/test_ucaller_adapter.py`, `tests/test_flash_call_carrier.py` and
+`tests/test_the_call_rung_is_reachable.py`, with 14 and 18 mutations in
+`bite-ucaller-adapter.sh` and `bite-flash-call.sh`.
 **Still unbacked: the `-1` bound.** `call_status: -1` was not observed once — both outcomes
-arrived already resolved — so how long the gateway waits for it rests on the reference alone]
+arrived already resolved — so how long the gateway waits for it rests on the reference alone.
+⚠️ **And the bound is the ladder's rather than a number of this rung's own**, which the
+reference makes the ordinary case rather than the exotic one: the vendor takes up to a minute
+and the ladder ships with ten seconds, because a person is standing in front of a synchronous
+request for all of it. An outcome that resolves afterwards is read by nobody today — the rung
+keeps its `unresolved` row and its `ucaller_id`, and the verification ends on its own deadline.
+Task 4.17e owns closing it]
 
 #### Scenario: The vendor refuses without saying so in `status`
 - **WHEN** `initCall` answers `status: false` with no `error` and an allocated `ucaller_id`
@@ -666,7 +676,7 @@ charged at the vendor without our ever learning the `request_id`. Such a fee can
 and cannot be refunded. It is the only class of spend this design cannot attribute to a
 verification, and if it is not counted it appears as a balance that drifts for no reason.
 
-[partly backed · the floor is `app/verification/balance.py`, held per vendor from `tg_gateway_balance_floor` and `flash_call_balance_floor`, read by the carrier from a **confirming** ability check and from nowhere else; guarded by `tests/test_balance_floor.py`, which drives the carrier through a check reporting 2.5 and a send reporting 9999 and asserts the floor fires on the check's number. The refund lowering the spend is `record_rung_delivery` in `app/db/queries.py`, guarded by `tests/test_refund_lowers_spend.py`. **uCaller half unbacked** — vendor reference `getInfo` (`cost`, `balance`) read 08.09.2026, no live sample, no adapter, and its floor ships at zero because any number would be a guess dressed as a setting. **The refund half remains backed by no observation at all**: `is_refunded` has been absent from ten captures running, no message has been left to expire unread (task 1.8), and the path cannot be reached by a probe — a confirming check states the subscriber is reachable, so only a subscriber confirmed reachable and then not reached gets there. The tests drive the recording directly and claim nothing about having seen one]
+[partly backed · the floor is `app/verification/balance.py`, held per vendor from `tg_gateway_balance_floor` and `flash_call_balance_floor`, read by the carrier from a **confirming** ability check and from nowhere else; guarded by `tests/test_balance_floor.py`, which drives the carrier through a check reporting 2.5 and a send reporting 9999 and asserts the floor fires on the check's number. The refund lowering the spend is `record_rung_delivery` in `app/db/queries.py`, guarded by `tests/test_refund_lowers_spend.py`. **uCaller half: the reading is now backed, the number is not.** `getInfo` answers `cost` and `balance` on every enquiry — live samples 22.09.2026 — and `balance` is the balance **before** this operation is charged, so `app/verification/ucaller.Info.balance_after` subtracts `cost` and the carrier watches that rather than the vendor's figure; watched as it stands the floor would fire one verification late, which mutation 9 of `bite-flash-call.sh` turns red. What stays unbacked is the **number**: every authorisation captured was a free test one at `cost: 0.00`, no charge has been observed, and the floor ships at zero because any other value would be a guess dressed as a setting. **The refund half remains backed by no observation at all**: `is_refunded` has been absent from ten captures running, no message has been left to expire unread (task 1.8), and the path cannot be reached by a probe — a confirming check states the subscriber is reachable, so only a subscriber confirmed reachable and then not reached gets there. The tests drive the recording directly and claim nothing about having seen one]
 
 #### Scenario: The balance runs low
 - **WHEN** one vendor's reported balance falls below the configured floor while the other's is healthy

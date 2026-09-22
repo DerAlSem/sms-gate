@@ -4,10 +4,10 @@ A probe answers one question — "can this rung carry a verification for this nu
 now" — and answers it without placing anything. The registry does the rest: bounding the
 set, refusing stale evidence, and keeping the ladder's order.
 
-`flash_call` belongs to `route-sends-by-operator` and is blocked on an account and a
-balance rather than on code; until its probe is registered the registry treats it exactly
-as it treats any other rung nothing can prove, which is as unavailable. That is the
-correct answer rather than a placeholder: being configured was never evidence.
+`flash_call` said that sentence until 22.09.2026 and no longer does: the account exists,
+the samples are captured and the adapter is built, so the rung has a probe and is offered
+wherever uCaller's credential is held. Blank credential, no offer — which is the same
+answer it gave before and now gives for a reason rather than for want of code.
 
 `sms_out` was in that sentence until 21.09.2026 and never belonged there: the modem is
 this gateway's own hardware, with no account to open and no balance to fund. It is
@@ -43,12 +43,14 @@ from __future__ import annotations
 
 from app.db import queries
 from app.verification import rule
-from app.verification.routes import CALL_IN, SMS_IN, SMS_OUT, TG_GATEWAY, Proof
+from app.verification.routes import (
+    CALL_IN, FLASH_CALL, SMS_IN, SMS_OUT, TG_GATEWAY, Proof,
+)
 
 
 def build_probes(
     modem, *, ims_proof=None, excluding: int | None = None,
-    tg_token: str = "", tg_reachability=None,
+    tg_token: str = "", tg_reachability=None, ucaller_bearer: str = "",
 ) -> dict:
     """The probes the gateway can actually run today, ready for the registry.
 
@@ -73,6 +75,7 @@ def build_probes(
         SMS_IN: _sms_in_probe(modem),
         SMS_OUT: _sms_out_probe(modem),
         TG_GATEWAY: _tg_gateway_probe(tg_token, tg_reachability),
+        FLASH_CALL: _flash_call_probe(ucaller_bearer),
     }
 
 
@@ -216,5 +219,36 @@ def _tg_gateway_probe(token, reachability):
         if reachability is None:
             return Proof(holds=True)
         return await reachability()
+
+    return probe
+
+
+def _flash_call_probe(bearer):
+    """The uCaller rung, offered on a held credential for the Telegram rung's own reason.
+
+    The same asymmetry, argued the same way. Nothing uCaller will answer about a
+    subscriber is free: `checkPhone` costs 0,04 ₽ and answers about the operator rather
+    than about reachability, and the only question that answers reachability is placing
+    the call itself. Asking during the offer would buy the rung before the blacklist, the
+    per-number limits, the entitlement and the spend ceiling had run — and a gate
+    evaluated after a placed call refuses something already paid for.
+
+    What justifies offering it on a held credential is that this rung does **not** die
+    silently. A dead uCaller answers: the credential is `401`, an empty account is `1002`,
+    a switched-off service is `4`, and every one of them arrives over HTTP 200 inside the
+    ladder's bound and wakes the operator by name. The rung that dies silently is
+    `call_in`, where `RING` simply stops arriving, and that is the one this registry was
+    built for.
+
+    ⚠️ **Measured for promptness on the other rung, not on this one.** The 260 ms figure
+    behind the Telegram probe's argument is the Telegram vendor's; uCaller's round trip
+    was measured once and only from the backup uplink (0.17 s, 18.09.2026, task 1.12) —
+    which is evidence that the host reaches it and not a bound on how long it takes to
+    answer. The adapter's own timeout is what holds meanwhile.
+    """
+    async def probe(phone: str) -> Proof:
+        if not bearer:
+            return Proof(holds=False, reason="no uCaller credential is held")
+        return Proof(holds=True)
 
     return probe

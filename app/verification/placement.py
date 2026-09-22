@@ -43,9 +43,9 @@ import logging
 from app.db import queries
 from app.settings_store import store
 from app.verification import (
-    gates, ladder, rule, sms_carrier, tg_callback, tg_carrier,
+    flash_carrier, gates, ladder, rule, sms_carrier, tg_callback, tg_carrier, ucaller,
 )
-from app.verification.routes import SMS_OUT, TG_GATEWAY
+from app.verification.routes import FLASH_CALL, SMS_OUT, TG_GATEWAY
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 # withholding rule of 20.09.2026 are a branch about the modem rung standing **inside** a
 # ladder, and under the old reading they were unreachable. So the modem is placed here
 # like every other rung the gateway acts on, and nothing else places it.
-PLACED_HERE = frozenset({TG_GATEWAY, SMS_OUT})
+PLACED_HERE = frozenset({TG_GATEWAY, FLASH_CALL, SMS_OUT})
 
 
 def places_here(route: str) -> bool:
@@ -85,11 +85,11 @@ def carriers_for(
     and this is the second half of the same guarantee, for the case where the token goes
     away between the offer and the selection.
 
-    `flash_call` is absent because uCaller has no account yet (task 1.1) and therefore no
-    adapter (4.17). That is not a hole: a rung the rule names and nothing carries is not
-    attempted, is alerted about on stock settings, and the ladder advances past it — which
-    is the one configuration gap that costs money rather than traffic, and the reason it is
-    loud.
+    `flash_call` was absent here until 22.09.2026 for want of an account and an adapter,
+    and is now present on exactly the same terms as the Telegram rung: present when the
+    credential is held, absent when it is blank. Absent still means the ladder advances
+    past it loudly on stock settings, which is the one configuration gap that costs money
+    rather than traffic.
 
     **`modem` and `operator` have no defaults**, for the reason `callback_url` lost its
     one on 21.09.2026: a caller that forgets the modem builds a map with no modem rung in
@@ -119,6 +119,13 @@ def carriers_for(
         carriers[TG_GATEWAY] = tg_carrier.carrier(
             verification_id, app_id=app_id, token=token, callback_url=callback_url,
             sender_username=store.tg_gateway_sender_username)
+    bearer = ucaller.configured_bearer()
+    if bearer:
+        # No callback and no reporting address to forget: this vendor tells us what became
+        # of a call only when we ask, which is why the carrier waits and why waiting is
+        # bounded there rather than here.
+        carriers[FLASH_CALL] = flash_carrier.carrier(
+            verification_id, app_id=app_id, bearer=bearer)
     return carriers
 
 

@@ -16,7 +16,7 @@ from app.db import queries
 from app.lookup.operator import record_operator
 from app.modem.manager import ModemManager
 from app.settings_store import store
-from app.verification import placement, routes as routes_vocab, template
+from app.verification import placement, routes as routes_vocab, template, ucaller
 from app.verification.probes import build_probes
 from app.verification.tg_callback import PATH as TG_CALLBACK_PATH, handle_callback
 from app.verification.routes import CALL_IN, SMS_IN, Registry, unavailable
@@ -90,7 +90,8 @@ def _registry(request: Request) -> Registry:
     modem = request.app.state.modem
     return Registry(
         probes=build_probes(modem, ims_proof=getattr(request.app.state, "ims_proof", None),
-                            tg_token=store.tg_gateway_token),
+                            tg_token=store.tg_gateway_token,
+                            ucaller_bearer=ucaller.configured_bearer() or ""),
         order=[name.strip() for name in store.verification_route_order.split(",")
                if name.strip()],
         probe_timeout=store.verification_probe_timeout,
