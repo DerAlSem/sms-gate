@@ -25,7 +25,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db import queries
-from app.db.connection import close_db, init_db
+from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification import tg_gateway, ucaller
@@ -237,3 +237,97 @@ def test_a_megafon_subscriber_the_gateway_declines_is_called_instead(client, ven
     assert walked == [(TG_GATEWAY, "declined"), (FLASH_CALL, "carried")], walked
     assert _row(vid)["route"] == FLASH_CALL, (
         "the verification names the rung that declined it rather than the one that called")
+
+
+# --- the vendor's per-number window, held from the door ------------------------------------
+
+def _age_the_paid_rungs(phone, *, seconds):
+    """Push this number's paid rung rows that far into the past.
+
+    The database's own clock, because the gate compares ages the database computed — and
+    a test that reached for this process's would be making the two-clock mistake the
+    query above it avoids.
+    """
+    async def go():
+        db = await get_db()
+        await db.execute(
+            "UPDATE verification_rungs "
+            "   SET started_at = datetime('now', ? || ' seconds') "
+            " WHERE verification_id IN (SELECT id FROM verifications WHERE phone = ?)",
+            (f"{-int(seconds):+d}", phone))
+        await db.commit()
+    asyncio.run(go())
+
+
+def test_a_second_request_inside_the_vendors_window_is_refused_with_the_wait_named(
+        client, vendor):
+    """Task 4.12, and its second half could not be asked until this rung existed.
+
+    The gate itself is guarded in `tests/test_per_number_limits.py`, against the ladder
+    driven by a fake carrier. What that could not ask is the half the task actually names:
+    **no vendor call is placed.** Until 22.09.2026 no call could be placed by anything, so
+    a guard on the absence of one passed against a gateway that had no way to place one
+    either. Here the door is real, the registry, the rule and the placement are real, and
+    the thing counted is `ucaller.init_call` — the method that spends the money and starts
+    the vendor's ten-hour block.
+    """
+    calls, _ = vendor
+    assert _select(client, _open(client)["id"]).status_code == 200
+    assert len(calls["initCall"]) == 1, "the first request placed no call"
+
+    r = _select(client, _open(client)["id"])
+    assert r.status_code == 422, r.text
+    detail = str(r.json()["detail"])
+    assert "too_soon" in detail and "wait" in detail, (
+        f"the refusal does not name the wait: {detail}")
+    assert len(calls["initCall"]) == 1, (
+        "a second call was placed for this number inside the vendor's window — which is "
+        "the ten hours of not being able to log in at all that this gate exists to spare")
+
+
+def test_the_refused_second_request_records_no_rung_and_does_not_hang(client, vendor):
+    """A refusal of ours is not something a vendor did, and the door still owes the
+    verification an ending: it claimed the route before walking."""
+    _select(client, _open(client)["id"])
+
+    second = _open(client)["id"]
+    assert _select(client, second).status_code == 422
+    assert _rungs(second) == [], \
+        "a refusal of ours was recorded as something a vendor did"
+    row = _row(second)
+    assert row["status"] == "failed", \
+        "a route was claimed, nothing was placed, and the verification was left pending"
+    assert "too_soon" in (row["reason"] or ""), row["reason"]
+
+
+def test_the_window_holds_the_whole_ladder_rather_than_the_call_rung_alone(client, vendor):
+    """Telegram publishes no rate limits, and that is the absence of a statement rather
+    than a statement of absence — so a second request selecting the Telegram rung is
+    refused on the same window, and neither vendor is contacted. Selecting the cheap rung
+    is the reachable way to spend on the dear one: the ladder descends to `flash_call`
+    when the Gateway declines."""
+    calls, _ = vendor
+    _select(client, _open(client)["id"])
+    asked_before = len(calls["checked"])
+
+    r = _select(client, _open(client)["id"], route=TG_GATEWAY)
+    assert r.status_code == 422, r.text
+    assert "too_soon" in str(r.json()["detail"])
+    assert len(calls["checked"]) == asked_before, \
+        "the Telegram rung was contacted inside a window counted over both paid rungs"
+    assert len(calls["initCall"]) == 1, \
+        "the ladder descended past the gate and called the dear rung"
+
+
+def test_a_request_after_the_window_has_passed_is_called(client, vendor):
+    """The positive control, and it is the load-bearing half: without it the guards above
+    pass against a door that refuses every second request for ever, which is a gateway
+    that verifies each number once."""
+    calls, _ = vendor
+    _select(client, _open(client)["id"])
+    _age_the_paid_rungs(PHONE, seconds=20)
+
+    r = _select(client, _open(client)["id"])
+    assert r.status_code == 200, r.text
+    assert len(calls["initCall"]) == 2, \
+        "the gap had passed and the second call was still not placed"

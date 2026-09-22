@@ -378,7 +378,21 @@ rather than on code.
       the older word and the one the application was told at creation, so it is the one
       the person can see the truth of on their own screen. A choice, guarded as one, and
       the owner may overturn it.
-- [ ] 4.12 Test: a second request for the same number inside the vendor's per-number window is refused by us with a wait reason, and no vendor call is placed
+- [x] 4.12 Test: a second request for the same number inside the vendor's per-number window is refused by us with a wait reason, and no vendor call is placed
+      Both halves, and the second one could not be asked until 22.09.2026: until the call
+      rung existed, "no vendor call is placed" passed against a gateway that had no way to
+      place one. Four guards in `tests/test_the_call_rung_is_reachable.py`, driving real
+      HTTP through the real registry, rule and placement and counting `ucaller.init_call`
+      itself — the refusal naming the wait, no rung recorded and no verification left
+      hanging, the window holding the **whole ladder** rather than the call rung alone
+      (a second request selecting Telegram is refused before either vendor is contacted),
+      and the positive control that a request after the window is called. **Eleven
+      mutations bite**, in `bite-window-from-the-door.sh`.
+      ⚠️ **Found while doing this: the requirement's backing note named `bite-limits.sh`,
+      and no such file has ever existed here** — not in the working tree, not in any
+      commit reachable from any ref. The enforcement's seven named mutations were never
+      saved as a script and cannot be re-run. The note has been corrected to say so; whether
+      that script gets written is the owner's call, and it is not blocking.
 - [ ] 4.13 Test: a repeat inside the free window uses `initRepeat` and keeps the same code; a retried vendor call carrying the same idempotency key does not place a second call
       🔴 **The first half may have no subject. Measured 22.09.2026: `initRepeat` over GET
       answered `405`,** where the same GET form worked for `getService`, `initCall`,

@@ -486,13 +486,32 @@ the count SHALL be taken over the rung attempts of both paid routes rather than 
 verifications: what the vendor counts is an authorisation placed, and one verification places
 more than one — that is what a ladder is.
 
-[backed for the enforcement · `app/verification/limits.py`, guarded by
-`tests/test_per_number_limits.py`, with a positive control and seven mutations in
-`bite-limits.sh` — counting only the call rung, dropping the gap, dropping either ceiling,
-a calendar day instead of a rolling window, hard-coded vendor numbers, and every number
-counted as one — each turning a guard red. The **numbers** remain the vendors' reference
-rather than a measurement: uCaller read 08.09.2026, Telegram Gateway read 18.09.2026, and no
-live sample shows either vendor enforcing anything]
+[backed · the enforcement is `app/verification/limits.py`, assembled into every paid walk by
+`gates.for_paid_ladder` and run inside `ladder.walk` before the first rung is contacted.
+Guarded by `tests/test_per_number_limits.py` — ten tests with three positive controls,
+covering both paid rungs counted together, a rolling window against a calendar day, and the
+limits following their settings rather than the source.
+
+**Backed from the door as well since 22.09.2026, task 4.12.** That half could not be asked
+before: until the call rung existed, "no call is placed" passed against a gateway that had
+no way to place one either. `tests/test_the_call_rung_is_reachable.py` now drives real HTTP
+through the real registry, rule and placement and counts `ucaller.init_call` itself — the
+method that spends the money and starts the vendor's ten-hour block — and
+`bite-window-from-the-door.sh` turns **eleven mutations** red: the gate left out of the
+assembly, the gates handed in empty, the gates never run, their refusal ignored, the gap
+dropped, the wait unnamed, the window counting one paid rung instead of both, the refusal
+answered as a success, the refused verification left hanging with its route claimed, our own
+refusal recorded as a vendor's rung, and a gate that refuses everything.
+
+⚠️ **The note here previously named `bite-limits.sh`, and no such file has ever existed in
+this repository** — checked against the working tree and against every commit reachable in
+it. The enforcement's own seven mutations were therefore never saved as a script and cannot
+be re-run; the mutations that have actually been run are the eleven named above. Writing
+that script is work nobody has done, not work that was lost.
+
+The **numbers** remain the vendors' reference rather than a measurement: uCaller read
+08.09.2026, Telegram Gateway read 18.09.2026, and no live sample shows either vendor
+enforcing anything]
 
 #### Scenario: A second attempt too soon
 - **WHEN** a verification is requested for a number eight seconds after the previous one
