@@ -514,6 +514,22 @@ async def run_migrations() -> None:
     # by different people for different reasons.
     await _add_column_if_missing(db, "apps", "may_spend", "INTEGER NOT NULL DEFAULT 0")
 
+    # Which operator this verification's ladder was routed for — or `?`, the rule's own
+    # word for one that could not be resolved. Task 6.8: the norm asks for "routed without
+    # a known operator" to be **countable rather than invisible**, and on the paid rungs
+    # there was nothing to count it with. A verification carried by `tg_gateway` or
+    # `flash_call` creates no `messages` row, so the pair on that table
+    # (`routed_route`/`routed_operator`) answers only for what the modem sent.
+    #
+    # A word rather than a NULL for the unknown case, because a NULL cannot tell "routed
+    # for nobody" from "written before this column existed" — and the count the rule is
+    # reviewed by would then quietly include every row older than the change. NULL keeps
+    # exactly that meaning here: not recorded.
+    #
+    # Additive and therefore reversible by deploying the old code: nothing before this
+    # change reads it, and SQLite carries an unread column at no cost.
+    await _add_column_if_missing(db, "verifications", "routed_operator", "TEXT")
+
     # Runs after the base script, which is what makes the index handling above necessary,
     # and outside `executescript`, which is what makes it atomic.
     await _rebuild_message_parts(db)

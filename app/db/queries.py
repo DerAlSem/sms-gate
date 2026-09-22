@@ -1872,6 +1872,39 @@ async def _delete_refusal_reason(message_id: int) -> str:
 
 
 
+# What `verifications.routed_operator` holds where the lookup did not answer. The rule's
+# own entry for that case, spelled the same way (`app.verification.rule.UNKNOWN`) and kept
+# equal to it by a guard, because the two are one decision: the store writes the word and
+# the rule reads it, and apart they drift into a count that matches nothing.
+#
+# Spelled here rather than imported to keep this module free of the verification package
+# above it; `app.verification.routes` is the one exception already made, and it holds
+# vocabulary rather than behaviour.
+ROUTED_WITHOUT_A_KNOWN_OPERATOR = "?"
+
+
+async def record_verification_routing(
+    verification_id: int, *, operator: str | None
+) -> None:
+    """The operator this verification's ladder was routed for, recorded once per walk.
+
+    On the verification rather than on each rung because it is one fact per walk: the
+    ladder is the rule's answer for this subscriber's operator, and every rung of it was
+    routed for the same one.
+
+    `None` becomes `?` at this border rather than at the caller's. A caller that has to
+    remember to convert is a caller that can forget, and what it would write instead is a
+    NULL — indistinguishable from a row written before the column existed, which is
+    precisely the invisibility the requirement is about.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE verifications SET routed_operator = ? WHERE id = ?",
+        (operator or ROUTED_WITHOUT_A_KNOWN_OPERATOR, verification_id),
+    )
+    await db.commit()
+
+
 async def record_message_routing(
     message_id: int, *, route: str, operator: str | None
 ) -> None:

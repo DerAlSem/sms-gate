@@ -334,6 +334,84 @@ def test_every_rung_is_recorded_before_it_is_contacted():
     _run(body)
 
 
+def test_the_operator_a_verification_was_routed_for_is_recorded(): 
+    """Task 6.8. The norm asks for the unknown-operator case to be **countable rather
+    than invisible**, and on the paid rungs there was nothing to count it with: a
+    verification carried by `tg_gateway` or `flash_call` creates no `messages` row at
+    all, and neither `verifications` nor `verification_rungs` held an operator.
+
+    Recorded on the verification rather than on each rung because it is one fact per
+    walk: the ladder is the rule's answer for **this subscriber's** operator, and every
+    rung of it was routed for the same one.
+    """
+    async def body():
+        vid = await _open()
+        await ladder.walk(vid, app_id="app1", operator="МегаФон", phone=PHONE,
+                          rungs=[TG_GATEWAY], gates=(),
+                          carriers={TG_GATEWAY: _carrier(ladder.CARRIED, asked=[])},
+                          bound=5.0)
+        return dict(await queries.get_verification(vid, "app1"))
+
+    row = _run(body)
+    assert row["routed_operator"] == "МегаФон"
+
+
+def test_a_verification_routed_without_a_known_operator_says_so_in_a_countable_word():
+    """🔴 The case the clause exists for, and the reason it is a word rather than a
+    `NULL`: a null cannot tell "routed for nobody" from "written before this column
+    existed", and the count the rule is reviewed by would quietly include every old row.
+
+    The word is the rule's own `?` — the entry that answers for an operator that could
+    not be resolved — and it is spelled with a character an operator name cannot contain,
+    so a real network can never be mistaken for it.
+    """
+    async def body():
+        vid = await _open()
+        await ladder.walk(vid, app_id="app1", operator=None, phone=PHONE,
+                          rungs=[TG_GATEWAY], gates=(),
+                          carriers={TG_GATEWAY: _carrier(ladder.CARRIED, asked=[])},
+                          bound=5.0)
+        row = dict(await queries.get_verification(vid, "app1"))
+        db = await _db()
+        async with db.execute(
+            "SELECT COUNT(*) FROM verifications WHERE routed_operator = ?",
+            (rule.UNKNOWN,),
+        ) as cur:
+            countable = (await cur.fetchone())[0]
+        return row, countable
+
+    row, countable = _run(body)
+    assert row["routed_operator"] == rule.UNKNOWN
+    assert countable == 1
+
+
+def test_the_operator_is_recorded_even_where_the_ladder_places_nothing():
+    """A walk refused by a gate, or by the rule itself, was still routed — and the
+    unknown-operator entry being *set to a refusal* is the configuration this clause was
+    written about. Recorded before the refusals for that reason: a case that disappears
+    from the count exactly when it is refused is the invisible one all over again."""
+    async def body():
+        vid = await _open()
+        await ladder.walk(vid, app_id="app1", operator=None, phone=PHONE,
+                          rungs=[rule.REFUSE], gates=(), carriers={}, bound=5.0)
+        return dict(await queries.get_verification(vid, "app1"))
+
+    row = _run(body)
+    assert row["routed_operator"] == rule.UNKNOWN
+
+
+def test_the_word_for_no_known_operator_is_the_rules_own(): 
+    """The two spellings are one decision. The store writes the word and the rule reads
+    it; kept apart they drift, and the drift is silent — a count that matches nothing and
+    a rule entry nobody hits."""
+    assert queries.ROUTED_WITHOUT_A_KNOWN_OPERATOR == rule.UNKNOWN
+
+
+async def _db():
+    from app.db.connection import get_db
+    return await get_db()
+
+
 def test_the_verification_names_the_rung_that_carried_it_not_the_first_tried():
     """An application told to expect a Telegram message for a person the Gateway declined
     would put the wrong instruction on the screen: the person waits in the wrong place

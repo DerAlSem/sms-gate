@@ -1612,13 +1612,28 @@ rather than on code.
       красные, включая контроль «переименовано всё подряд» (он теряет `delivered`,
       `read` и `revoked`, то есть чинит имя ценой факта). Набор: 1323 зелёных.
 
-- [ ] 6.8 A paid rung records no operator, so «routed without a known operator» is uncountable
+- [x] 6.8 A paid rung records no operator, so «routed without a known operator» is uncountable
       `routed_operator` пишет единственное место (`queries.py:1866`) и только с трёх
       модемных путей (`manager.py:721,749`, `sms_carrier.py:85`); `verification_rungs` и
       `verifications` оператора не держат вовсе, а `tg_carrier`/`flash_carrier` строк в
       `messages` не создают. Требование `outbound-routing/spec.md:289-349` велит записывать
       случай, «so that the case is countable rather than invisible» — на платных рунгах он
       невидим. Лечится кодом.
+      **Сделано 22.09.2026.** `verifications.routed_operator` — аддитивная колонка
+      (миграция `_add_column_if_missing`, откат = выкатить старый код: до этой правки её
+      не читает никто), пишется ОДИН раз на ходку из `ladder.walk` и ДО отказов: случай,
+      выпадающий из счёта ровно тогда, когда его отказали, — та же невидимость.
+      На верификации, а не на каждом рунге: это один факт на ходку — лестница есть ответ
+      правила для оператора ЭТОГО абонента, и все её рунги поехали за одного и того же.
+      🔴 Неизвестный пишется СЛОВОМ `?`, а не NULL-ом: NULL не отличает «поехало ни за
+      кого» от «строка старше колонки», и число, по которому пересматривают правило, тихо
+      включило бы всю историю. Слово — то же, что у правила (`rule.UNKNOWN`), и написано
+      символом, которого не может быть в имени сети; равенство двух написаний держит
+      отдельный сторож, иначе они разойдутся молча.
+      Превращение `None` → `?` стоит на ГРАНИЦЕ записи, а не у вызывающего: вызывающий,
+      который обязан помнить, — вызывающий, который забудет, и записал бы он NULL.
+      Четыре сторожа, новый укус `bite-routed-operator-is-countable.sh` — четыре мутации,
+      все красные. Набор: 1327 зелёных.
 
 - [ ] 6.9 A fee that bought nothing is recorded but not readable beside the spend
       Исход `unanswered` на рунге записывается, но «the count is readable beside the

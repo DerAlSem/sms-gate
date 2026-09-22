@@ -146,6 +146,12 @@ async def walk(
     refusal under "could not be resolved" — silently, and in the one number the rule is
     reviewed by.
     """
+    # Before the refusals, deliberately. A verification the rule turns away was still
+    # routed, and the unknown-operator entry *set to a refusal* is the configuration this
+    # record exists to make countable — a case that dropped out of the count exactly when
+    # it was refused would be the invisible one all over again.
+    await queries.record_verification_routing(verification_id, operator=operator)
+
     if rule.refuses(list(rungs)):
         # Counted, not just returned. A rule set during an outage outlives the outage,
         # and this is the number that says what it is costing while it does.
