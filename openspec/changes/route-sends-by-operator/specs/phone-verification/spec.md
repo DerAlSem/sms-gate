@@ -35,7 +35,41 @@ Telegram message for a person the Gateway declined would put the wrong instructi
 screen, which is worse than no instruction: the person waits in the wrong place while a phone
 they are holding rings.
 
-[unbacked · the public API today is `/sms/send` and `/sms/{id}` only]
+🔴 **Where a rung asks the subscriber to reach the gateway, the number SHALL be carried as
+data and not only inside the sentence.** The owner's decision of 22.09.2026. The instruction is
+English and the gateway does not translate it — `docs/i18n.md` covers the admin console and
+there is no gettext in this package at all — so an application whose person reads another
+language had two options and both were bad: show them English, or recover the digits with a
+regular expression over our prose. The second is the worse one, because it makes our wording an
+**unwritten part of the contract**, which breaks silently on the day somebody improves a
+sentence, on the consumer's side, in front of a person at a barrier. The remedy is a field
+rather than a translation: the estate holds the number as configuration and can hand it over as
+data, leaving the wording to the application that owns the screen.
+
+The field SHALL be absent — `null` — on every rung where the gateway is the one that acts.
+There is nothing for the person to dial on those, and an address handed back invites an
+application to send somebody to a number that is expecting nothing. It SHALL agree with the
+sentence beside it: a field that disagrees is worse than no field, because an application will
+trust the data.
+
+**It SHALL be additive**, and additive is a property of the schema rather than a claim in a
+commit message: a consumer written before the field SHALL still be able to construct and read
+the response. That is guarded against the model itself and not only through the door — the door
+always supplies the field, so a guard driven through HTTP stays green whether the default
+exists or not, and the promise would break with the whole suite passing.
+
+[backed · `app/api/schemas.py` (`RouteOffer.number`), `app/verification/routes.py`
+(`Offer.number` and `_number_for`, keyed on the same set the instruction's own precondition is
+keyed on, so field and sentence cannot disagree) and both response sites in
+`app/api/router.py`. Guarded by `tests/test_the_call_rung_is_reachable.py` and bitten by
+`bite-the-number-as-data.sh` — four mutations: the field assembled and dropped at the door, the
+number returned on every rung, the field disagreeing with the prose, and the default removed.
+The contract carries it in `docs/verification-api.md`. The rest of this requirement — the shape
+of the door itself — is backed by the same file and by `tests/test_verification_api.py`]
+
+#### Scenario: The number a rung asks the subscriber to reach is handed over as data
+- **WHEN** a verification is offered a rung on which the subscriber must call or text the gateway
+- **THEN** the answer carries that number as its own field as well as inside the instruction, and carries none on the rungs where the gateway acts
 
 #### Scenario: A number on an operator routed to the call
 - **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, flash_call]` and the Gateway declines the subscriber

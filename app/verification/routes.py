@@ -197,6 +197,21 @@ class Offer:
 
     route: str
     instruction: str
+    # The number the subscriber must dial or text, as **data** rather than only inside the
+    # sentence. `None` on every rung where there is nothing for them to reach: the gateway
+    # acts, and a number there would be an address to somewhere they must not go.
+    #
+    # 🔴 The owner's decision of 22.09.2026, and the reason is that `instruction` is English
+    # and not ours to translate: `docs/i18n.md` covers the admin console and nothing else,
+    # and there is no gettext anywhere in this package. An application whose person reads
+    # Russian therefore had two options and both were bad — show them English, or recover
+    # the digits with a regular expression over our prose, which would make our wording an
+    # unwritten contract that breaks the day somebody improves a sentence.
+    #
+    # The remedy is a field rather than a translation. The estate holds the number as
+    # configuration and can hand it over as data, leaving the wording to the application
+    # that owns the screen.
+    number: str | None = None
 
 
 Probe = Callable[[str], Awaitable[Proof]]
@@ -270,7 +285,8 @@ class Registry:
                             name, self._probe_timeout)
                 continue
             if self._proven(name, task):
-                offers.append(Offer(route=name, instruction=self._instruction(name)))
+                offers.append(Offer(route=name, instruction=self._instruction(name),
+                                    number=self._number_for(name)))
         return self._drop_paid_rung_if_anything_cheaper_proved_itself(offers)
 
     def _drop_paid_rung_if_anything_cheaper_proved_itself(
@@ -326,3 +342,17 @@ class Registry:
     def _instruction(self, name: str) -> str:
         template = _INSTRUCTIONS.get(name, "")
         return template.format(number=self._gateway_number)
+
+    def _number_for(self, name: str) -> str | None:
+        """The number this rung asks the subscriber to reach, or `None`.
+
+        Keyed on the same set the instruction's own precondition is keyed on, so the field
+        and the sentence cannot disagree: a rung that is offered at all has passed
+        `_can_instruct`, which is what guarantees the number is held. Anywhere else the
+        answer is `None` rather than the gateway's number — on those rungs the gateway is
+        the one that acts, and handing back an address would invite an application to tell
+        somebody to call it.
+        """
+        if name not in _NEEDS_GATEWAY_NUMBER:
+            return None
+        return self._gateway_number or None

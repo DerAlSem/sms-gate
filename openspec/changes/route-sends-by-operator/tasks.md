@@ -160,8 +160,35 @@ funded balance.
       Where digits are genuinely needed the contract points at the `instruction` string,
       which the gateway interpolates from `gateway_msisdn` — the one place the estate
       holds them as configuration, exactly as this task requires.
-- [ ] 3.3 Confirm with the developer whether `sp_app` can receive a webhook, or will poll. Both are supported; the answer decides which one is documented as the recommended path
-- [ ] 3.4 🔴 **The number the subscriber must dial or text reaches the application only inside an English sentence.** `RouteOffer` is `{route, instruction}`, and `instruction` is built in `routes._instruction` by interpolating `gateway_msisdn` into an English template — "Call {number} from the number being verified…". The gateway does not translate it: `docs/i18n.md` covers the admin UI and nothing else, and there is no gettext anywhere in `app/verification/`. So an application whose person reads Russian has two options and both are bad — show them English, or re-word it and have nowhere to read the digits from but a regular expression over our prose. **The remedy is a field, not a translation:** the estate holds the number as configuration and can hand it over as data, leaving the wording to the application that owns the screen. Additive, so no consumer breaks. **Owner's call**, because the contract's substance was settled by him on 18.09.2026 and this is a fifth item added to it; named here rather than built so the decision is his. Until it is decided, the contract says so in as many words — `docs/verification-api.md`, "The instruction is English"
+- [x] 3.3 Confirm with the developer whether `sp_app` can receive a webhook, or will poll. Both are supported; the answer decides which one is documented as the recommended path
+      **Decided by the owner 22.09.2026 without waiting for the answer, because the
+      recommendation is ours and not theirs: polling.** Both paths stay supported and neither
+      is deprecated. The reason is the threshold, and the threshold decides whether any
+      МегаФон subscriber ever sees an improvement — polling asks nothing of `sp_app`: no
+      public address, no signature check, no handling of a push that arrives twice. And the
+      screen is already open in front of the person, so a poll a second inside a five-minute
+      window is tens of requests rather than load. `docs/verification-api.md` renamed the
+      section that was called "Polling is the floor" to say what we recommend rather than
+      what is merely possible.
+- [x] 3.4 🔴 **The number the subscriber must dial or text reaches the application only inside an English sentence.** `RouteOffer` is `{route, instruction}`, and `instruction` is built in `routes._instruction` by interpolating `gateway_msisdn` into an English template — "Call {number} from the number being verified…". The gateway does not translate it: `docs/i18n.md` covers the admin UI and nothing else, and there is no gettext anywhere in `app/verification/`. So an application whose person reads Russian has two options and both are bad — show them English, or re-word it and have nowhere to read the digits from but a regular expression over our prose. **The remedy is a field, not a translation:** the estate holds the number as configuration and can hand it over as data, leaving the wording to the application that owns the screen. Additive, so no consumer breaks. **Owner's call**, because the contract's substance was settled by him on 18.09.2026 and this is a fifth item added to it; named here rather than built so the decision is his. Until it is decided, the contract says so in as many words — `docs/verification-api.md`, "The instruction is English"
+      ✅ **Decided 22.09.2026: the field is added.** `RouteOffer.number` carries the address
+      as data beside the sentence, filled on the rungs that ask the subscriber to reach us
+      (`call_in`, `sms_in`) and `null` wherever the gateway is the one that acts — on those
+      there is nothing to dial, and an address handed back would invite an application to
+      send somebody to a number that is expecting nothing.
+      **Additive, and guarded as a property of the schema rather than claimed in prose**:
+      `RouteOffer` still constructs without the field. That guard is written against the
+      model directly and deliberately — the door always passes the field, so every guard
+      driven through HTTP stays green whether the default exists or not, and the promise
+      would break with the whole suite passing.
+      `bite-the-number-as-data.sh`, four mutations: the field assembled and then dropped at
+      the door (implemented-but-unreachable, the shape this change has paid for three
+      times), the number handed back on **every** rung, the field disagreeing with the prose
+      — worse than no field, because an application will trust the data — and the default
+      removed. Contract updated: the example carries the field, and the paragraph asking the
+      developer to "say so if you need them as data" is replaced by an instruction **not** to
+      parse digits out of our prose, which would make our wording an unwritten contract that
+      breaks the day somebody improves a sentence.
 
 ## 4. Implement, tests first
 

@@ -29,7 +29,9 @@ from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification import tg_gateway, ucaller
-from app.verification.routes import FLASH_CALL, Proof, TG_GATEWAY
+from app.verification.routes import (
+    CALL_IN, FLASH_CALL, Proof, SMS_IN, SMS_OUT, TG_GATEWAY,
+)
 
 PHONE = "+79261234888"
 AUTH = {"Authorization": "Bearer token-app1"}
@@ -459,3 +461,66 @@ def test_the_two_spellings_are_offered_the_same_ladder(client):
     national = "8" + PHONE[2:]
     assert ({o["route"] for o in _open(client, phone=national)["routes"]}
             == {o["route"] for o in _open(client)["routes"]})
+
+
+# --- the number the person must reach, as data (task 3.4) ------------------------------
+
+MSISDN = "+79990001122"
+
+
+def test_the_rungs_that_ask_the_person_to_reach_us_hand_over_the_number_as_data(client):
+    """🔴 Task 3.4, the owner's decision of 22.09.2026.
+
+    `instruction` is English and it is not ours to translate — `docs/i18n.md` covers the
+    admin console and nothing else, and there is no gettext anywhere in `app/verification`.
+    So an application whose person reads Russian had two options and both were bad: show
+    them English, or recover the digits from our prose with a regular expression. The second
+    is the worse one, because it makes our wording an **unwritten part of the contract** that
+    breaks the day somebody improves a sentence.
+
+    The remedy is a field. The estate holds the number as configuration and can hand it over
+    as data, leaving the wording to the application that owns the screen.
+    """
+    offers = {o["route"]: o for o in _open(client)["routes"]}
+    asking = {r for r in offers if r in {CALL_IN, SMS_IN}}
+    assert asking, "neither inbound rung was offered; this asserts nothing as written"
+
+    for route in asking:
+        assert offers[route]["number"] == MSISDN, (
+            f"{route} tells the person to reach a number and hands the application none")
+        assert offers[route]["number"] in offers[route]["instruction"], (
+            f"{route}'s field and its sentence name different numbers")
+
+
+def test_the_rungs_where_the_gateway_acts_hand_over_no_number(client):
+    """The failing direction, and it is not tidiness. On these rungs the gateway is the one
+    that acts; an address handed back invites an application to tell somebody to call it,
+    and the person would be dialling a number that is expecting nothing."""
+    offers = {o["route"]: o for o in _open(client)["routes"]}
+    acting = {r for r in offers if r in {SMS_OUT, TG_GATEWAY, FLASH_CALL}}
+    assert acting, "no rung the gateway acts on was offered; this asserts nothing"
+    for route in acting:
+        assert offers[route]["number"] is None, (
+            f"{route} handed back an address on a rung where the gateway acts")
+
+
+def test_the_sentence_is_unchanged_by_the_field_existing(client):
+    """A consumer reading only `instruction` sees exactly what it saw before."""
+    offers = {o["route"]: o for o in _open(client)["routes"]}
+    assert offers[FLASH_CALL]["instruction"].startswith("Wait for a call")
+    if CALL_IN in offers:
+        assert offers[CALL_IN]["instruction"].startswith(f"Call {MSISDN} from")
+
+
+def test_the_field_is_additive_and_not_merely_new():
+    """🔴 Back-compat as a property of the schema, not as a sentence in a commit message.
+
+    Additive means a caller that predates the field still constructs the model. Written
+    against `RouteOffer` directly because that is where the promise lives: the door always
+    passes the field, so every guard driven through HTTP is green whether the default exists
+    or not — and the promise would be broken with the whole suite still passing."""
+    from app.api.schemas import RouteOffer
+
+    offer = RouteOffer(route=FLASH_CALL, instruction="Wait for a call")
+    assert offer.number is None, \
+        "the field has no default, so a consumer that predates it can no longer build one"

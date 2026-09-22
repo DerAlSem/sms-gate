@@ -76,6 +76,12 @@ class RouteOffer(BaseModel):
     # What the person must do, in words they can act on. An address, never an identity:
     # which SIM answers the number is none of the application's business.
     instruction: str
+    # The same address as **data**, for the rungs that have one, and `None` for the rest.
+    # Additive: a consumer that ignores unknown fields is unaffected, and one that wants to
+    # write its own wording in its own language no longer has to recover the digits from
+    # `instruction` with a regular expression. That recovery would have made our English
+    # prose an unwritten part of the contract.
+    number: str | None = None
 
 
 class VerificationCreateResponse(BaseModel):

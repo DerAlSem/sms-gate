@@ -183,7 +183,8 @@ async def create_verification(
     return VerificationCreateResponse(
         id=verification_id,
         status="pending",
-        routes=[RouteOffer(route=o.route, instruction=o.instruction) for o in offers],
+        routes=[RouteOffer(route=o.route, instruction=o.instruction, number=o.number)
+               for o in offers],
     )
 
 
@@ -407,7 +408,8 @@ async def get_verification_status(
     return VerificationStatusResponse(
         id=row["id"], phone=row["phone"], status=row["status"], route=row["route"],
         method=row["confirmed_by"], reason=row["reason"], attempts=row["attempts"],
-        routes=[RouteOffer(route=o.route, instruction=o.instruction) for o in offers],
+        routes=[RouteOffer(route=o.route, instruction=o.instruction, number=o.number)
+               for o in offers],
         created_at=row["created_at"], expires_at=row["expires_at"],
         confirmed_at=row["confirmed_at"],
     )

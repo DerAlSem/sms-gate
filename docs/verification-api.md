@@ -71,11 +71,18 @@ its own code — is refused rather than partly honoured.
   "routes": [
     {
       "route": "call_in",
-      "instruction": "Call <number> from the number being verified. The call is not answered and costs you nothing; hang-up is ours."
+      "instruction": "Call <number> from the number being verified. The call is not answered and costs you nothing; hang-up is ours.",
+      "number": "<number>"
     },
     {
       "route": "sms_in",
-      "instruction": "Text the code you were shown to <number> from the number being verified."
+      "instruction": "Text the code you were shown to <number> from the number being verified.",
+      "number": "<number>"
+    },
+    {
+      "route": "flash_call",
+      "instruction": "Wait for a call to the number being verified and read the code off the calling number: it is the last four digits. Do not answer the call.",
+      "number": null
     }
   ]
 }
@@ -89,9 +96,17 @@ its own code — is refused rather than partly honoured.
 
 `instruction` is what the person must do, in words they can act on. It names an address
 and never an identity: which SIM answers, which vendor account paid, which modem is in the
-rack — none of that is yours or theirs to see. **Where a route needs the subscriber to
-reach us, the number to reach is inside this string and nowhere else.** See
+rack — none of that is yours or theirs to see. See
 [The instruction is English](#the-instruction-is-english) before you build a screen on it.
+
+`number` is that same address **as data**, and it is what you should read if you write your
+own wording. It carries the number the subscriber must dial or text on the routes that ask
+them to reach us (`call_in`, `sms_in`), and is `null` on every route where the gateway is the
+one that acts — there is nothing for the person to dial on those, and a number would be an
+address to somewhere that is expecting nothing.
+
+The field is **additive**: it was added 22.09.2026, it has a default, and an application
+written before it is unaffected.
 
 Routes whose instruction is empty are the ones where the person only has to wait: a
 message or a call comes to them.
@@ -309,7 +324,7 @@ accept; we do not read the body.
 
 ## Things that will bite you
 
-### Polling is the floor, and for a confirmation it is also the fast path
+### Polling is the recommended path, and for a confirmation it is also the fast path
 
 `GET /verifications/{id}` is authoritative. The push is an accelerator on top of it, and it
 is **not instant**: terminal states are swept out to applications on a **one-minute tick**,
@@ -318,6 +333,14 @@ endpoint. The poll sees it immediately.
 
 If a person is standing in front of a barrier waiting to be let through, poll. Use the push
 to reconcile, not to open the gate.
+
+**So poll is what we recommend, and the push is the option.** Both are supported and neither
+is deprecated; this is our judgement about which to reach for first, settled 22.09.2026.
+Polling needs nothing from you — no public address, no signature check, no handling of a
+delivery that arrives twice — and the screen is already open in front of the person, so a
+poll each second inside a five-minute window is tens of requests rather than load. Take the
+push when you have an endpoint already and want the outcome without waiting for your next
+tick.
 
 Delivery of the push is best-effort on the same terms as the SMS one: up to 3 attempts
 (configurable), 10 s timeout each, 1 s then 4 s between them, then dropped. A restart
@@ -358,10 +381,12 @@ ignore the ones you do not know rather than rejecting the request.
 application speaks to the person in another language, you will want to compose your own
 wording per `route`.
 
-⚠️ **Today the number the subscriber must dial or text exists only inside that English
-sentence**, so an application that re-words it has nowhere to read the digits from. If you
-need them as data, say so before you build the screen — it is a field we can add, not a
-thing you should be parsing out of prose.
+✅ **The number the subscriber must dial or text is handed to you as data**, in `number`
+beside `instruction`, since 22.09.2026. Read it from there and write your own sentence.
+
+🔴 **Do not recover the digits from `instruction` with a regular expression.** That would
+make our English wording an unwritten part of the contract, and it would break on the day
+somebody improves a sentence — silently, on your side, in front of a person at a barrier.
 
 ## What a deployment can carry today
 
