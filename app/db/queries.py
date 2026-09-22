@@ -1661,7 +1661,12 @@ async def expire_due_verifications() -> list[int]:
         return []
     marks = ",".join("?" * len(ids))
     await db.execute(
-        f"UPDATE verifications SET status = 'expired', reason = 'expired', code = NULL "
+        # `window_expired`, not a second `expired`: the status already says the row ran
+        # out of time, and the word repeated says nothing it had not said — while the
+        # same word, from the vendor's delivery field, means a fee coming back. Every
+        # reading of `expired` in this capability names the field it came from.
+        f"UPDATE verifications SET status = 'expired', reason = 'window_expired', "
+        f"       code = NULL "
         f" WHERE id IN ({marks}) AND status = 'pending'",
         ids,
     )

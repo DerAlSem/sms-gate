@@ -145,7 +145,7 @@ async def handle_callback(
     refunded, note = _refund_note(status)
     verification_id = await queries.record_rung_delivery(
         status.request_id, route=TG_GATEWAY,
-        outcome=status.delivery_status or "unknown", reason=note, refunded=refunded)
+        outcome=_outcome_word(status.delivery_status), reason=note, refunded=refunded)
 
     if verification_id is None:
         rejections["unattributed"] += 1
@@ -172,6 +172,22 @@ async def handle_callback(
                 verification_id, status.delivery_status)
     return CallbackOutcome(accepted=True, verification_id=verification_id,
                            reason=status.delivery_status or "")
+
+
+# What the vendor's delivery field is written down as. Everything it says goes in under
+# its own word, except `expired`: two different fields in this capability carry that one,
+# and they mean different things. A **delivery** expiry means the fee comes back and
+# nothing reached the subscriber; a **verification** expiry means the code window shut and
+# says nothing about delivery or money. Recorded bare, the two land in one line of the
+# console from two unrelated facts, and a ledger that confused them would refund a
+# verification that was delivered or charge for one that never arrived.
+_DELIVERY_EXPIRED = "delivery_expired"
+
+
+def _outcome_word(delivery_status: str | None) -> str:
+    if delivery_status == "expired":
+        return _DELIVERY_EXPIRED
+    return delivery_status or "unknown"
 
 
 def _refund_note(status: tg_gateway.RequestStatus) -> tuple[bool, str]:

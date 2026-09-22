@@ -147,6 +147,61 @@ def test_an_expired_message_fails_the_verification_with_that_reason():
     assert rungs[0]["refunded"] == 1
 
 
+def test_the_expiry_the_rung_records_names_which_field_it_came_from():
+    """Task 6.7. Two different fields in this capability say `expired` and they mean
+    different things — one of them is about money.
+
+    `DeliveryStatus.status` expiring means the fee comes back and nothing reached the
+    subscriber. The **verification** expiring means the code window shut, and says
+    nothing about delivery or about money. The requirement is written against exactly
+    that pair: the gateway SHALL never record or act on a bare `expired`, and every
+    reading of the word SHALL name which field it came from.
+
+    Recorded bare, the two arrive in one line of the console — `v.status`, `v.reason` and
+    `r.outcome` all reading `expired`, from two unrelated facts — and an operator reading
+    it cannot tell a vendor that gave up from a person who never answered.
+    """
+    async def body():
+        verification_id = await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("expired", is_refunded=True))
+        return await queries.verification_rungs(verification_id)
+
+    rungs = _run(body)
+    assert rungs[0]["outcome"] == "delivery_expired", rungs[0]["outcome"]
+
+
+def test_the_window_closing_is_not_written_down_as_a_bare_expired():
+    """The other half of the same pair, and the one the console puts on the same line.
+
+    The verification's own `status` stays `expired` — that is this capability's word for
+    a row that ran out of time, and it is the field the word belongs to. What was bare is
+    the **reason** beside it: `expired` repeated, which says nothing the status had not
+    said and reads, next to a rung, as though the same thing had happened twice.
+    """
+    async def body():
+        verification_id = await queries.create_verification(
+            "app1", PHONE, code="1173", ttl_seconds=-1)
+        await queries.expire_due_verifications()
+        return await queries.get_verification(verification_id, "app1")
+
+    row = _run(body)
+    assert row["status"] == "expired"
+    assert row["reason"] == "window_expired", row["reason"]
+
+
+def test_a_delivery_that_did_not_expire_is_recorded_under_its_own_word():
+    """The positive control: a mapping that renamed everything, or that fired on the
+    wrong branch, would satisfy the two guards above and lose the vendor's other
+    words."""
+    async def body():
+        verification_id = await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("revoked"))
+        return await queries.verification_rungs(verification_id)
+
+    rungs = _run(body)
+    assert rungs[0]["outcome"] == "revoked"
+
+
 def test_a_refund_the_vendor_did_not_mention_is_not_recorded_as_one():
     """`is_refunded` was absent from all seven captures. Absent is not `false`, and the
     norm forbids assuming either — so the affirmative is the only thing that writes the

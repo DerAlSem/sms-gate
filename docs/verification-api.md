@@ -359,10 +359,12 @@ A verification that failed is over. It does not reopen, it does not re-arm, and 
 counter is not refilled. The next attempt is a **new** verification — which is also how the
 person gets a fresh code and a freshly proved ladder.
 
-### `expired` arrives with no reason, and it is not the only way to wait in vain
+### `expired` says the clock ran out, and it is not the only way to wait in vain
 
-`expired` means the clock ran out. It carries no `reason`, because there is nothing to
-say beyond the clock.
+`expired` means the clock ran out. Its `reason` is `window_expired` and there is nothing
+to say beyond the clock — the word names the field it came from, because a **delivery**
+expiry reported by a carrier is a different fact about a different thing, and one of the
+two is about money.
 
 What is **not** reported as an expiry is a route that died under an open verification: the
 sweep ends such a verification as `failed` with a reason naming the route that lost its

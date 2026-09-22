@@ -1588,7 +1588,7 @@ rather than on code.
       «новый писатель отдельной функцией» — без него правка выглядела бы как перепись,
       которая вообще ничего не проверяет. Набор: 1320 зелёных.
 
-- [ ] 6.7 A bare `expired` puts two different facts in one console line
+- [x] 6.7 A bare `expired` puts two different facts in one console line
       `tg_callback.py:146-148` пишет `outcome='expired'` голым словом, а заметку про
       возврат кладёт в `reason`. Воспроизведено обычной последовательностью:
       `v.status='expired'`, `v.reason='expired'` и `r.outcome='expired'` встают в одну
@@ -1597,6 +1597,20 @@ rather than on code.
       Половина «act on» при этом держится: ни одна ветка не сравнивает
       `verification_rungs.outcome` с `'expired'`, возврат живёт отдельной колонкой.
       Лечится кодом (`delivery_expired` / `window_expired`) либо спекой.
+      **Сделано 22.09.2026 — КОДОМ, и спека тут права безоговорочно:**
+      `spec.md:426` запрещает записывать и действовать на голый `expired` прямым текстом,
+      «every reading of that word SHALL name which of the two fields it came from».
+      Исход рунга из вендорского поля доставки пишется как `delivery_expired`
+      (`_outcome_word` в `tg_callback.py`; остальные слова вендора идут своими),
+      собственное окно пишет `reason='window_expired'`, а СТАТУС верификации остаётся
+      `expired` — это слово принадлежит её полю (`spec.md:246`).
+      ⚠️ Побочно закрыт дрейф контракта: `docs/verification-api.md` утверждал «`expired`
+      arrives with no reason», а код всегда писал туда слово. Теперь абзац говорит
+      правду. Сторожа у этого утверждения не было — ни один тест
+      `test_verification_contract_doc.py` его не читал.
+      Три сторожа, новый укус `bite-expiry-names-its-field.sh` — три мутации, все
+      красные, включая контроль «переименовано всё подряд» (он теряет `delivered`,
+      `read` и `revoked`, то есть чинит имя ценой факта). Набор: 1323 зелёных.
 
 - [ ] 6.8 A paid rung records no operator, so «routed without a known operator» is uncountable
       `routed_operator` пишет единственное место (`queries.py:1866`) и только с трёх
