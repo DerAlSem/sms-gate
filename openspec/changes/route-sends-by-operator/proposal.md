@@ -714,6 +714,15 @@ remedy away — which is the whole reason a finding and its cure are checked sep
 verdicts are kept beside the spec, whole, in `critique-2026-09-22-*.md`; the resolutions are
 tasks 4.60–4.66.
 
+**Five of the seven are built, on the same day.** The free-walk gates (4.61), the deadline
+(4.63), the limits taken in one act (4.62), the gateway's own number normalised at the save
+(4.64), and all eleven missing bites written and run (4.60) — 83 mutations, no survivors. The
+remaining two are the owner's to decide and are not the session's to take: which channel says
+"nobody is watching this balance" (4.65), and whether a rotated credential is honoured for a
+grace period (4.66). The bites, in turn, found two holes of their own and re-aimed four
+mutations; both are recorded against 4.60, because "a bite confirms" and "a bite searches" are
+different claims and only the second is worth the money.
+
 Also run, before the round and after the merge: `openspec validate --strict`, `check.py`, and a
 diff of scenario names against the census taken before the merge — 135 before, 140 after, none
 lost.
