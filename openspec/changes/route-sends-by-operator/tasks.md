@@ -1224,7 +1224,7 @@ rather than on code.
       conversion broken at the shared source. **The second is the point** — it is what a
       validator decays into, and "the validator is visible in the code" would have passed it.
 
-- [ ] 4.60 Eleven bites are named in the spec as the basis of a norm and **were never written**
+- [x] 4.60 Eleven bites are named in the spec as the basis of a norm and **were never written**
       Found by the circle of 22.09.2026 and then measured rather than eyeballed: `bite-carrier.sh`,
       `bite-code.py`, `bite-credentials.sh`, `bite-ladder.sh`, `bite-lookup.sh`, `bite-modem.sh`,
       `bite-refusals.sh`, `bite-rule.sh`, `bite-template.sh`, `bite-verif-view.sh` and
@@ -1267,8 +1267,22 @@ rather than on code.
       **`bite-lookup.sh` (два), `bite-credentials.sh` (четыре) и `bite-verif-view.sh`
       (пять) написаны и прогнаны 22.09.2026** — все одиннадцать красные, перенаправлять
       не пришлось ничего.
-      Осталось три: `bite-refusals.sh` (тринадцать), `bite-rule.sh` (восемь),
-      `bite-template.sh` (девять).
+      **Закрыто 22.09.2026: все одиннадцать написаны и прогнаны, 83 мутации, выживших
+      нет.** Последние три — `bite-rule.sh` (восемь), `bite-template.sh` (девять),
+      `bite-refusals.sh` (тринадцать). Ни одной фразы «скрипт никогда не был написан» в
+      спеке не осталось; каждое основание теперь называет прогон.
+      🔴 **Итог, который дороже самих скриптов: укус — это не подтверждение, а поиск.**
+      Одиннадцать скриптов дали две настоящие дыры (обе в `bite-code.py`: подтверждающий
+      апдейт без владельца и неохраняемая концовка подметания) и четыре мутации,
+      покрасневшие только со второго прицеливания — тождество на константе исхода, узкий
+      файл тестов вместо обоих, «снятая ветвь» вместо изменённого исхода, и календарный
+      день, расширявший все три окна вместо одного. Восемь скриптов легли с первого
+      захода: значит сторожа под ними были настоящими, а не только названными.
+      ⚠️ Три ловушки якорей, каждая оплачена: отступ в четыре пробела там, где ожидались
+      восемь (`template._entry`); одинарная кавычка внутри якоря, которую bash не
+      переживает без `'"'"'` (обошли, заменив хвост выражения на `or`); и мутация,
+      оставляющая ДВА `WHERE` подряд — синтаксическая ошибка краснит всё и выглядит как
+      сильная находка.
       Набор 1317 зелёных при тех же шести унаследованных падениях.
 
 - [x] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through

@@ -141,11 +141,14 @@ Two entries whose operator names normalise to the same thing SHALL be refused at
 Which of the two wins would otherwise be decided by the order of the list, invisibly, and the
 data already holds one operator under two spellings.
 
-[backed · `app/verification/rule.py`, guarded by `tests/test_routing_rule.py`; eight mutations
-reasoned for `bite-rule.sh` — **a script never written, see task 4.60** — exact-string
-matching, a hard-coded ladder order, an accepted unknown route, a broken rule read as empty,
-an unanswerable rule guessing the modem, an accepted `app_id`, two spellings of one operator,
-and a `refuse` continuing into a ladder; each *would* turn a guard red. **Reasoned, not run**]
+[backed · `app/verification/rule.py`, guarded by `tests/test_routing_rule.py` and by
+**`bite-rule.sh`, written and run 22.09.2026** (task 4.60), eight red: exact-string matching in
+place of the fold, the ladder ordered "Telegram first" by the code, an accepted unknown route, a
+broken rule read as empty, an unanswerable rule guessing the modem, an accepted `app_id`, two
+spellings of one operator accepted at save time, and a `refuse` continuing into a ladder. The
+first is the dearest of the eight: `number_operators` holds МегаФон under two spellings — 120
+numbers and 57, read 08.09.2026 — so an `==` would route a third of the subscribers correctly
+and the rest to the route that has been rejecting them, silently]
 
 #### Scenario: An operator with a configured route
 - **WHEN** the rule routes МегаФон to `[tg_gateway, flash_call]` and a verification is requested for a МегаФон number
@@ -736,7 +739,13 @@ is reviewed and a rule that is forgotten.
 [backed · `app/verification/refusals.py`, counting rows of `route_refusals` grouped on the
 folded operator name (`rule.fold` — NFKC + casefold, in Python, never in SQL), reachable at
 `/admin/stats` beside the message counters and under the same period control. Guarded by
-`tests/test_route_refusals.py` and by thirteen mutations reasoned for `bite-refusals.sh` — **a script never written, see task 4.60**. ⚠️ **Counted is
+`tests/test_route_refusals.py` and by **`bite-refusals.sh`, written and run 22.09.2026** (task
+4.60), thirteen red: the refusal not counted at all, grouped on the unfolded name, the
+application or the route dropped from the row, an unresolved operator left unnamed, the alert
+hung on `notify_send_errors` — off on a stock install, and every install with this defect is a
+stock install — deduplicated per item and then per operator alone, a changed entry not
+restarting its review period, a dropped entry still watched, the period hard-coded, the report
+firing every tick, and `*`/`?` pulled into it. ⚠️ **Counted is
 not produced:** the only caller today is `ladder.walk`, which has no production caller of its
 own — the send-path refusal that produces the measured seventy a month is task 4.6 and calls
 `refusals.record` the same way]

@@ -1426,11 +1426,11 @@ can.
 [partly backed · the save-time half is `app/verification/template.py`, reached as the typed
 setting `verification_templates` through `validate_raw`/`normalize_raw` in
 `app/settings_store.py` and rendered as a textarea on the settings page; guarded by
-`tests/test_verification_template.py` and by nine mutations reasoned for `bite-template.sh` — **a script never written, see task 4.60** — a template
-with no placeholder, with two, with an unknown one, a blank one, one application named twice, an
-unreadable setting read as absent, a formatter interpreting the template, and each of the two
-wirings into the settings layer removed — each of which *would* turn a guard red. **Reasoned,
-not run.** The shipped default is
+`tests/test_verification_template.py` and by **`bite-template.sh`, written and run 22.09.2026**
+(task 4.60), nine red: a template with no placeholder, with two, with an unknown one, a blank
+one, one application named twice, an unreadable setting read as absent rather than refused
+loudly, a formatter interpreting the template, and each of the two wirings into the settings
+layer removed. The shipped default is
 **empty**, so an estate that configures nothing refuses every `sms_out`-carried code rather than
 sending wording nobody chose.
 🟢 **The refusal at accept is backed from 21.09.2026** (task 4.47): `app/verification/routes.py`
