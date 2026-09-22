@@ -359,17 +359,26 @@ rather than on code.
       🔴 **The first half may have no subject. Measured 22.09.2026: `initRepeat` over GET
       answered `405`,** where the same GET form worked for `getService`, `initCall`,
       `getInfo` and `getBalance` in the same series. Two readings and the measurement does
-      not separate them — GET is not taken by this method and the reference's GET example
-      is wrong, or the method itself is unavailable to this service or tariff, which the
+      not separate them. 🔴 **The first — "GET is not taken" — has since
+      been tested and is dead: POST with `{"uid":…}` and
+      `Content-Type: application/json`, the reference's own form, answered `405` too.**
+      What remains is that the method is unavailable to this service or tariff, which the
       reference hints at by marking every free-repeat field `deprecate` while `/limits/`
-      still promises two repeats and `getInfo` still fills them in (`repeatable: true`,
-      `repeat_times: 2`). The separating probe is the same call as POST with
-      `{"uid":…}`, plus a re-read of `getInfo` so the `405` cannot be blamed on an expired
-      window — which the vendor codes `11`, and a spent limit `12`, neither of which we
-      saw. ⚠️ **If the method is dead this task is void rather than unwritten**, and that
+      still promises two repeats. Weighing in: an expired window is coded `11` and a spent
+      allowance `12`, and neither was ever returned — including on a call made while
+      `getInfo` still said `repeatable: true`. Weighing against: minutes passed between
+      that reading and that call, so nobody saw the window open in the same second as the
+      refusal. The separating probe is a fresh `initCall` on a test number followed
+      immediately by `getInfo` and `initRepeat` back to back — free, and conclusive either
+      way. ⚠️ **If the method is dead this task is void rather than unwritten**, and that
       is the owner's call. Detail in `captures/ucaller-samples-1.3.md`.
       The second half — idempotency via `unique` — is untouched by this: `unique` has
       never been passed in any capture.
+      ⚠️ **And `getInfo` is not stable for one `ucaller_id`:** the same authorisation read
+      minutes later came back `repeatable: false` with **no `repeat_times` field at all**
+      (`captures/uc-1.3-getInfo-unreachable-later.json` beside the first). A reader that
+      treats `repeat_times` as present because `repeatable` once was `true` breaks on an
+      ordinary expiry rather than on a vendor fault.
 - [x] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
       `tests/test_vendor_failure_spares_the_modem.py`, five mutations in
       `bite-modem.sh`. 🔴 **The handoff's premise was wrong and measuring it is what

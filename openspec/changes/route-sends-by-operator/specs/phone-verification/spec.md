@@ -520,7 +520,23 @@ verification's id and its method rather than with a bare refusal. The idempotenc
 the vendor's side of a lost response; it does nothing for an application that lost ours and is
 left holding a ringing phone with no id to check a code against.
 
-[unbacked · vendor reference: `initRepeat`, `unique` (UUID v4), read 08.09.2026]
+[unbacked · vendor reference: `initRepeat`, `unique` (UUID v4), read 08.09.2026 and again by
+layers 22.09.2026.
+🔴 **And the free repeat may not exist for this account at all.** Measured 22.09.2026:
+`initRepeat` answered `405 Method Not Allowed` on both documented call forms, GET and POST,
+including a call made while `getInfo` still reported `repeatable: true` — where an expired
+window is coded `11` and an exhausted allowance `12`, neither of which was ever returned. The
+reference marks every free-repeat field `deprecate` while `/limits/` still promises two
+repeats. Not yet conclusive: nobody watched the window be open in the same second as the
+refusal, and the separating probe is named in `captures/ucaller-samples-1.3.md`.
+**The clause above already fails safe** — a repeat is offered only once a live sample
+establishes that the vendor repeats from the same number, and no such sample exists — so a
+dead `initRepeat` costs this requirement its first paragraph and nothing else: the gateway
+opens a new verification and says the digits changed.
+⚠️ **`getInfo`'s field set is not stable for one `ucaller_id`**: read again minutes later, the
+same authorisation returned `repeatable: false` and **no `repeat_times` at all**. A reader that
+treats `repeat_times` as present because `repeatable` once was `true` breaks on an ordinary
+expiry rather than on a vendor fault. Both captures are kept side by side]
 
 #### Scenario: The person asks for the call again
 - **WHEN** a repeat is requested more than sixty seconds after the original and within the free allowance
