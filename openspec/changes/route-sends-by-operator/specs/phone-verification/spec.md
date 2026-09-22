@@ -257,9 +257,12 @@ arrived already resolved — so how long the gateway waits for it rests on the r
 ⚠️ **And the bound is the ladder's rather than a number of this rung's own**, which the
 reference makes the ordinary case rather than the exotic one: the vendor takes up to a minute
 and the ladder ships with ten seconds, because a person is standing in front of a synchronous
-request for all of it. An outcome that resolves afterwards is read by nobody today — the rung
-keeps its `unresolved` row and its `ucaller_id`, and the verification ends on its own deadline.
-Task 4.17e owns closing it]
+request for all of it. An outcome that resolves afterwards is read by
+`flash_carrier.resolve_outstanding`, from the sweep that announces every other ending and
+before the expiry in the same pass (task 4.17e, `tests/test_the_call_outcome_that_arrives_late.py`,
+11 mutations in `bite-late-call-outcome.sh`). Past the verification's own lifetime the rung
+stops being chased and keeps saying `unresolved`, which is the truthful record rather than a
+reading]
 
 #### Scenario: The vendor refuses without saying so in `status`
 - **WHEN** `initCall` answers `status: false` with no `error` and an allocated `ucaller_id`

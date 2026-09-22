@@ -27,11 +27,11 @@ orderings are the whole of it.
    outside, from every subscriber suddenly typing the wrong code — while every instance of
    it is paid for. Both places the vendor states a code are read.
 
-⚠️ **What this module does not do is learn an outcome that arrives after the bound.** A
-`call_status` that resolves in the vendor's fortieth second is never read here; the rung
-keeps its `unresolved` row and its `ucaller_id`, and the verification ends on its own
-deadline unless somebody checks a code. Closing that costs a sweep over open `flash_call`
-rungs, and it is named here rather than left to be discovered.
+🟢 **The outcome that arrives after the bound is read by `resolve_outstanding` at the foot
+of this module** (task 4.17e), from the one sweep that already sees every way a
+verification can end. Until it existed, a subscriber the vendor could not reach watched the
+verification expire instead of being told the call failed, and the call's `cost` was never
+recorded against the rung that incurred it.
 """
 
 from __future__ import annotations
@@ -41,8 +41,10 @@ import logging
 import time
 
 from app.db import queries
+from app.settings_store import store
 from app.verification import balance, ladder, ucaller
 from app.verification.routes import FLASH_CALL
+from app.verification.ucaller import configured_bearer
 
 logger = logging.getLogger(__name__)
 
@@ -241,3 +243,88 @@ def _alert(call) -> None:
                 f"({call.error or 'no reason given'}, code {call.error_code}); the ladder "
                 f"advanced as it would past a decline")
     notify("routing", text, dedup_extra=f"flash_call:{call.error_code}")
+
+
+# --- the outcome that arrives after the ladder has stopped waiting (task 4.17e) ----------
+
+async def resolve_outstanding() -> int:
+    """Ask the vendor what became of every call it had not decided in time.
+
+    🔴 **This is not a tidy-up, it is the other half of the rung.** The ladder waits ten
+    seconds because a person is standing in front of a synchronous request; the vendor
+    takes up to a minute to set `call_status`. Without this pass a subscriber the vendor
+    could not reach watches the verification expire instead of being told the call failed,
+    and the call's `cost` is never recorded against the rung that incurred it — which is
+    the number the weekly spend is reconciled with.
+
+    Run from `announce_verification_outcomes`, which is the one pass that already sees
+    every way a verification can end and already asks a vendor. Here rather than in its own
+    loop for that reason: an ending learned in a pass of its own is an ending somebody has
+    to remember to announce.
+
+    Returns how many rungs it settled, which is what the caller logs. Never raises: a
+    vendor's mood must not be able to stop the sweep that announces every other ending.
+    """
+    bearer = configured_bearer()
+    if not bearer:
+        return 0
+
+    settled = 0
+    for row in await queries.unresolved_rungs(
+            FLASH_CALL, within_seconds=store.verification_ttl_seconds):
+        try:
+            settled += await _settle(row, bearer=bearer)
+        except Exception:
+            logger.exception("verification %s: settling the call rung %s raised",
+                             row["verification_id"], row["vendor_ref"])
+    return settled
+
+
+async def _settle(row, *, bearer: str) -> int:
+    try:
+        uid = int(row["vendor_ref"])
+    except (TypeError, ValueError):
+        logger.warning("verification %s holds a call rung whose reference is not a "
+                       "uCaller id (%r)", row["verification_id"], row["vendor_ref"])
+        return 0
+
+    fetched = await ucaller.get_info(uid, bearer=bearer)
+    info = fetched.info
+    if not ucaller.resolved(info):
+        # Still thinking, or the vendor would not say. Left alone rather than given a
+        # reading: the give-up is the age of the rung and it lives in the query, so a rung
+        # that never resolves stops being chased without ever being told a story.
+        return 0
+
+    # The one place this gateway learns uCaller's balance outside a live ladder, and the
+    # same subtraction: `balance` is the balance before this operation is charged.
+    balance.observe(FLASH_CALL, info.balance_after)
+
+    still_open = row["status"] == "pending"
+    code = row["code"]
+
+    if info.call_status == ucaller.PLACED and not _digits_changed(info.code, code or ""):
+        await queries.set_rung_outcome(
+            row["rung_id"], outcome=ladder.CARRIED, cost=info.cost,
+            reason="the vendor reported the call placed after the ladder stopped waiting")
+        logger.info("verification %s: the call rung %s resolved as placed",
+                    row["verification_id"], uid)
+        return 1
+
+    if info.call_status == ucaller.PLACED:
+        # Placed, and dialling digits the person cannot be matched against. The same
+        # branch the carrier takes, reached a minute later.
+        reason = "the vendor allocated different digits from the ones requested"
+        _mismatch(row["verification_id"], str(uid), ours=code or "", theirs=info.code,
+                  cost=info.cost)
+    else:
+        reason = "the vendor could not connect the call to this subscriber"
+
+    await queries.set_rung_outcome(row["rung_id"], outcome=ladder.FAILED, cost=info.cost,
+                                   reason=reason)
+    if still_open:
+        # The ending the person was owed and did not get. An expired verification would
+        # have reported the one thing that did not happen: the window did not run out,
+        # the call did not arrive.
+        await queries.fail_verification(row["verification_id"], reason=reason)
+    return 1

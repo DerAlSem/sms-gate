@@ -1340,6 +1340,36 @@ async def unnotified_terminal_verifications() -> list[aiosqlite.Row]:
         return list(await cursor.fetchall())
 
 
+async def unresolved_rungs(route: str, *, within_seconds: float) -> list[aiosqlite.Row]:
+    """Rungs whose vendor took the work and never said what became of it.
+
+    The row the ladder wrote holds the vendor's reference, and the reference is the only
+    handle by which a call already paid for can be asked about afterwards. Rungs are
+    returned with their verification beside them because what is done with the answer
+    depends on whether anybody is still waiting: an open verification is failed or left
+    carrying, an ended one gets only its cost recorded — and the cost is not optional,
+    because a week whose recorded spend disagrees with the vendor's balance is exactly
+    what the two counters exist to catch.
+
+    `within_seconds` is a **give-up**, not a schedule. A rung older than it is left saying
+    `unresolved` for ever, which is the truthful record: past the verification's own
+    lifetime the answer can no longer change anything a person sees, and chasing it is a
+    request per sweep for ever against a vendor that rate-limits per IP.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT r.id AS rung_id, r.verification_id, r.vendor_ref, "
+        "       v.app_id, v.status, v.code "
+        "  FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id "
+        " WHERE r.route = ? AND r.outcome = ? AND r.vendor_ref IS NOT NULL "
+        "   AND strftime('%s', 'now') - strftime('%s', r.started_at) <= ? "
+        " ORDER BY r.id",
+        (route, "unresolved", int(within_seconds)),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
 async def mark_verification_notified(verification_id: int) -> bool:
     """Claim the right to announce this one. True only for the caller that won it."""
     db = await get_db()

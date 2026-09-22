@@ -502,18 +502,30 @@ rather than on code.
       are red under mutations 15–18, which are the four ways the rung could have shipped
       looking finished.
       ⚠️ **What is not built is the outcome that arrives after the ladder's bound: 4.17e.**
-- [ ] 4.17e Learn the outcome of a call the vendor had not decided within the ladder's bound
-      Split out of 4.17 on 22.09.2026, and it is the one gap the rung ships with. The vendor
-      takes up to a minute to set `call_status`; the ladder waits ten seconds because a
-      person is in front of a synchronous request. A call that resolves afterwards is read
-      by nobody, so a subscriber the vendor could not reach sees the verification expire
-      rather than fail with that reason, and `cost` is never recorded for it.
-      The shape is settled and small: `announce_verification_outcomes` is the one pass that
-      already sees every ending and already asks a vendor, so it asks `getInfo` for every
-      `flash_call` rung still `unresolved` whose verification is open, and finishes it.
-      What it needs that does not exist is the query — open verifications holding an
-      unresolved rung on a route — and a bound on how long a rung is chased before it is
-      given up as unknowable.
+- [x] 4.17e Learn the outcome of a call the vendor had not decided within the ladder's bound
+      Split out of 4.17 on 22.09.2026 and closed the same day. The vendor takes up to a
+      minute to set `call_status`; the ladder waits ten seconds because a person is in
+      front of a synchronous request — so `unresolved` is this rung's ordinary ending, and
+      until this existed it was permanent: the subscriber the vendor could not reach
+      watched the verification expire rather than being told the call failed.
+      `flash_carrier.resolve_outstanding`, run from `announce_verification_outcomes` — the
+      one pass that already sees every way a verification can end and already asks a
+      vendor. **First in that pass, before expiry**, because an ending learned in the same
+      interval the window ran out in would otherwise be reported as "expired", which is the
+      one thing that did not happen.
+      🔴 **The money is settled whether or not anybody is still waiting.** A verification
+      that expired while the vendor was thinking still owes its rung a `cost`: the weekly
+      reconciliation (5.4) compares what was recorded against what the balance fell by, and
+      a charge with no row is exactly the disagreement it exists to find. What is *not*
+      overwritten is the ending such a verification already had.
+      ⚠️ **The give-up is an age and it lives in the query**, not a story told about the
+      rung: past the verification's own lifetime the answer can change nothing a person
+      sees, so the rung stops being chased and keeps saying `unresolved` — truthful, and
+      one request per sweep cheaper for ever against a vendor that rate-limits per IP.
+      9 guards in `tests/test_the_call_outcome_that_arrives_late.py`, 11 mutations in
+      `bite-late-call-outcome.sh`, no survivors. Two of them found real holes first: the
+      sweep's balance reading was watched by nobody, and the age bound was asserted only
+      through SQL nothing drove.
 - [x] 4.17a Implement the Telegram Gateway adapter against the samples captured in 1.6 — `checkSendAbility`, `sendVerificationMessage` carrying our own `code` and a `ttl` taken from the verification's remaining lifetime, `revokeVerificationMessage`, and the signed callback. `checkVerificationStatus` is deliberately not used: the attempt counter stays here
       Built 20.09.2026 in `app/verification/tg_gateway.py` (the three vendor calls, the
       tolerant parser, and `callback_verifies`) and `app/verification/tg_callback.py`

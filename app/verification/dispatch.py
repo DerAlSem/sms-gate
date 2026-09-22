@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from app.db import queries
 from app.modem.delivery_dispatch import deliver, find_route
 from app.settings_store import store
-from app.verification import tg_gateway
+from app.verification import flash_carrier, tg_gateway
 from app.verification.routes import TG_GATEWAY
 
 logger = logging.getLogger(__name__)
@@ -79,6 +79,15 @@ async def announce_verification_outcomes() -> int:
     Returns how many announcements were made, which is what a caller logs.
     """
     announced = 0
+
+    # First, because it *creates* endings the rest of this pass then announces. A call the
+    # vendor had not decided within the ladder's bound is settled here — placed, or failed
+    # with the reason the person was owed — and a verification failed by it is announced in
+    # the same pass rather than the next one, for the same reason expiry comes before the
+    # announcement below.
+    settled = await flash_carrier.resolve_outstanding()
+    if settled:
+        logger.info("Settled %d outstanding call rung(s)", settled)
 
     # Expire what is due. These rows are left unannounced on purpose and picked up by the
     # same loop as every other ending below: one announcer, so that a writer added later
