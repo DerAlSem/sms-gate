@@ -560,6 +560,75 @@ def test_an_application_with_no_entitlement_is_refused_and_the_verification_does
         "a refusal of ours was recorded as something a vendor did"
 
 
+# --- the rule that cannot be read: a refusal, not a traceback --------------------------
+
+def _break_the_rule():
+    """The stored rule replaced by something that is not one, past the setting's own
+    validation — which is how it happens: a hand-edited row, or a value that reached the
+    settings by a door that did not validate."""
+    from app.db.connection import get_db
+
+    async def go():
+        db = await get_db()
+        await db.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            ("operator_routes", "{not a list"))
+        await db.commit()
+        await store.load()
+
+    asyncio.run(go())
+
+
+def test_an_unreadable_rule_refuses_the_selection_instead_of_leaving_it_pending(
+        client, vendor, app):
+    """Task 6.2, found by the conformance sweep of 22.09.2026 and reproduced through this
+    door: the selection answered **500**, and the verification stayed `pending` with the
+    route claimed and no rungs — which is the state the first sentence of this
+    requirement forbids by name.
+
+    `placement.ladder_from` was the one reader of the rule with no `except
+    UnreadableRule`; the sender (`app/modem/manager.py`) and the probe
+    (`app/verification/probes.py`) both had one. An unreadable rule is never read as an
+    empty rule here either, and the reason is the same one they give: read that way, a
+    diverted operator's traffic goes straight back to the route that is rejecting it —
+    only here it would be worse, because the rung it went back to is a **paid** one.
+
+    The rule is broken between the offer and the selection, which is both the honest
+    ordering and the only one that reaches this code: the offer is what proves the rung
+    can carry, and the selection is where the ladder is named.
+    """
+    calls, _ = vendor
+
+    body = _open(client)
+    _break_the_rule()
+    r = _select(client, body["id"])
+
+    assert r.status_code == 422, r.text
+    assert "rule" in str(r.json()["detail"]).lower()
+    assert len(calls["checked"]) == 0, "an unreadable rule reached a vendor anyway"
+    row = _row(body["id"])
+    assert row["status"] == "failed", \
+        "the verification was left pending with a route claimed and nothing placed"
+    assert "rule" in (row["reason"] or "").lower(), row["reason"]
+    assert _rungs(body["id"]) == [], \
+        "a refusal of ours was recorded as something a vendor did"
+
+
+def test_a_readable_rule_still_walks_after_the_refusal_is_in_place(client, vendor, app):
+    """The positive control, and the shape it guards against is a `try` wide enough to
+    swallow a readable rule as well: the same door, the same selection, with the rule
+    left alone."""
+    calls, _ = vendor
+
+    body = _open(client)
+    r = _select(client, body["id"])
+
+    assert r.status_code == 200, r.text
+    assert r.json()["route"] == TG_GATEWAY
+    assert len(calls["sent"]) == 1
+
+
 # --- the rungs the subscriber acts on are untouched -----------------------------------
 
 def test_the_inbound_rungs_place_nothing_and_are_unchanged(client, vendor):

@@ -63,6 +63,12 @@ logger = logging.getLogger(__name__)
 # like every other rung the gateway acts on, and nothing else places it.
 PLACED_HERE = frozenset({TG_GATEWAY, FLASH_CALL, SMS_OUT})
 
+# Who refused, when the refusal is the rule itself rather than a gate. It travels the same
+# channel a gate's refusal travels — `Walk.refused_by`, a 422 at the door and an ending on
+# the verification — because to a consumer the two are the same event: nothing was placed,
+# nothing was charged, and this is not a vendor failing.
+_THE_RULE = "the routing rule"
+
 
 def places_here(route: str) -> bool:
     """Whether selecting this rung is something the gateway has to go and do.
@@ -158,18 +164,37 @@ async def place(
     """
     # One reading, handed to both: the gates that are asked follow the rungs of the walk,
     # so computing the ladder twice would let the two answers drift apart.
-    rungs = ladder_from(route, operator)
-    walk = await ladder.walk(
-        verification_id,
-        app_id=app_id,
-        operator=operator,
-        phone=phone,
-        rungs=rungs,
-        gates=gates.for_paid_ladder(app_id, phone, rungs),
-        carriers=carriers_for(verification_id, app_id=app_id, modem=modem,
-                              operator=operator),
-        bound=store.verification_ladder_bound,
-    )
+    try:
+        rungs = ladder_from(route, operator)
+    except rule.UnreadableRule as exc:
+        # Refused, never read as an empty rule — the reading the other two readers of this
+        # rule refuse in the same words (`app/modem/manager.py`, `app/verification/
+        # probes.py`). Read as empty, a diverted operator's traffic goes straight back to
+        # the route that is rejecting it, and here that route is one somebody pays for.
+        #
+        # Carrying the selected rung alone is not the answer either, tempting as it is:
+        # "carried alone" is what the norm says about a rung **the rule does not name**,
+        # and an unreadable rule has not said that or anything else. The alert was raised
+        # by `route_for` itself, once per read; what is owed here is the refusal — and the
+        # ending below, because the route is claimed by now and a selection left pending
+        # with nothing placed is exactly what this requirement forbids in its first line.
+        walk = ladder.Walk(
+            refused_by=_THE_RULE,
+            reason=f"the stored routing rule cannot be read, so the ladder this "
+                   f"selection walks cannot be named: {exc}",
+        )
+    else:
+        walk = await ladder.walk(
+            verification_id,
+            app_id=app_id,
+            operator=operator,
+            phone=phone,
+            rungs=rungs,
+            gates=gates.for_paid_ladder(app_id, phone, rungs),
+            carriers=carriers_for(verification_id, app_id=app_id, modem=modem,
+                                  operator=operator),
+            bound=store.verification_ladder_bound,
+        )
     if walk.refused_by and walk.carried_by is None:
         # Nothing was placed and nothing will be. Ended here rather than left to the clock,
         # because "expired" told to a consumer whose request was refused before any vendor
