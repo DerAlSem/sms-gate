@@ -956,11 +956,16 @@ there: `bite-call-is-not-a-bad-number.sh` turns six red, the count advanced from
 ending, the count touched at all on a call that *did* connect, a block lifted by a failed
 call, and the two controls that the counter is alive and that the threshold still blocks.
 
-⚠️ **Normalisation is not backed at this door.** `VerificationCreateRequest.phone` runs the
-same `validate_and_normalize` validator `SmsSendRequest.phone` runs and `tests/test_phone.py`
-guards the function itself — but nothing drives an unnormalised number through
-`POST /verifications` and checks that the operator was looked up on the normalised one, which
-is the half this requirement argues for and the half that silently takes the default route]
+**Normalisation is backed at this door since 22.09.2026** —
+`tests/test_the_call_rung_is_reachable.py` drives the national spelling through the real door
+and asks what became of it, rather than asking whether a validator is present: the verification
+is opened on the normalised number, and the paid rung is offered, which it can only be if the
+operator resolved. Paired with the control that both spellings are offered the same ladder.
+`bite-normalised-before-the-operator.sh` turns three red — the validator removed from this
+door, the validator kept but reduced to an existence check that returns the input unchanged,
+and the conversion broken at its shared source. Before this, the backing was "the validator is
+visible in the code", which is the one form of evidence this change has repeatedly found
+worthless: it does not guard the line's removal]
 
 #### Scenario: A blocked number is asked to verify
 - **WHEN** a verification is requested for a number the gateway holds blocked

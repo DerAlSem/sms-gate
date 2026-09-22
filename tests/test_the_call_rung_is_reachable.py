@@ -418,3 +418,44 @@ def test_the_block_is_a_gate_of_the_ladder_rather_than_a_check_at_one_door(clien
         "no gate of the paid ladder refuses a blocked number; the block is being asked at "
         "a door rather than on the boundary, and the next door will not ask it")
     assert any("blacklist" in r.lower() for r in refused), refused
+
+
+# --- the number is normalised before the operator is looked up ------------------------
+
+def test_a_number_written_unnormalised_is_normalised_before_the_operator_is_read(client):
+    """The half of the same requirement that had no guard at this door.
+
+    The validator is there — `VerificationCreateRequest.phone` runs the same
+    `validate_and_normalize` the send's schema runs — and `tests/test_phone.py` guards the
+    function itself. What nothing asked is the consequence the requirement actually argues
+    for: **the operator table is keyed on the normalised number.** An unnormalised one
+    resolves to no operator at all, takes the rule's unknown-operator entry, and for a
+    МегаФон subscriber that entry is the modem — the one route this whole change exists to
+    route away from. The number would be perfectly valid, the request would succeed, and the
+    code would go out over the route that has been failing.
+
+    So this drives the national form through the real door and asks what came of it, rather
+    than asking whether a validator is present.
+    """
+    national = "8" + PHONE[2:]          # 89261234888 for +79261234888
+    assert national != PHONE
+
+    body = _open(client, phone=national)
+    row = _row(body["id"])
+    assert row["phone"] == PHONE, (
+        f"the verification was opened on {row['phone']!r} rather than on the normalised "
+        f"number; the operator table is keyed on the normalised form")
+
+    offered = {o["route"] for o in body["routes"]}
+    assert FLASH_CALL in offered, (
+        "the operator did not resolve, so the rule answered through its unknown entry and "
+        "the paid rung this subscriber needs was never offered")
+
+
+def test_the_two_spellings_are_offered_the_same_ladder(client):
+    """The positive control, and it is the one with teeth: it fails on a door that refuses
+    or mangles the national form outright, where the guard above would also fail but for the
+    wrong reason."""
+    national = "8" + PHONE[2:]
+    assert ({o["route"] for o in _open(client, phone=national)["routes"]}
+            == {o["route"] for o in _open(client)["routes"]})

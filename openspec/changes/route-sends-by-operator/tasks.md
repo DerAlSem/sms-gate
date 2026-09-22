@@ -1181,6 +1181,22 @@ rather than on code.
       it with the reason. The move is not an equivalent rearrangement; it also changes what the
       person is left with, which is a verification hanging with nothing behind it.
 
+- [x] 4.59 The number is normalised **before the operator is read**, and that is guarded at this door
+      The requirement argued for it all along and nothing asked. The validator was there —
+      `VerificationCreateRequest.phone` runs the same `validate_and_normalize` the send's
+      schema runs — and `tests/test_phone.py` guards the function; what stood unasked is the
+      consequence: **the operator table is keyed on the normalised number.** An unnormalised
+      one resolves to no operator, takes the rule's unknown-operator entry, and for a МегаФон
+      subscriber that entry is the modem — the route this whole change exists to route away
+      from. The request succeeds, the number is perfectly valid, and the code goes out over the
+      route that has been failing.
+      Driven through the real door in the national spelling rather than asserted on the
+      validator's presence, with the control that both spellings are offered the same ladder.
+      `bite-normalised-before-the-operator.sh`, three mutations: the validator removed here,
+      the validator reduced to an existence check that returns its input unchanged, and the
+      conversion broken at the shared source. **The second is the point** — it is what a
+      validator decays into, and "the validator is visible in the code" would have passed it.
+
 ## 5. Verify against the real thing
 
 - [ ] 5.1 Run one verification end to end to `+79851600019` on the production host: the call arrives, the digits are read, `/check` confirms, and the outcome reaches the application. The modem route cannot reach that number at all today, so this is the only proof the change works
