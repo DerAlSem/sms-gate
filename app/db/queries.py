@@ -1082,7 +1082,72 @@ async def record_verification_rung(
         return cursor.lastrowid  # type: ignore[return-value]
 
 
-async def paid_attempts_for_number(phone: str, *, within_seconds: int) -> list[int]:
+_PAID_FOR_NUMBER = (
+    "SELECT COUNT(*) FROM verification_rungs r "
+    "  JOIN verifications v ON v.id = r.verification_id "
+    f" WHERE v.phone = ? AND r.verification_id <> ? AND r.route IN ({_PAID_PLACEHOLDERS}) "
+    "   AND r.started_at > datetime('now', ? || ' seconds')"
+)
+
+
+def _for_number(phone: str, verification_id: int, within_seconds: int) -> tuple:
+    """The parameters of `_PAID_FOR_NUMBER`, in its order."""
+    return (phone, verification_id, *_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}")
+
+
+async def claim_paid_rung(
+    verification_id: int, *, route: str, phone: str, outcome: str, gap_seconds: int,
+    per_minute: int, per_day: int, window_seconds: int,
+) -> int | None:
+    """Take this number's paid allowance and record the attempt, in one statement.
+
+    Answers the id of the row written, or `None` where the allowance refused it. This is
+    the whole of the norm: the limits are **decided and taken in one act** rather than
+    read by a gate and acted on afterwards. Read-then-act let two verifications for one
+    number — which this capability explicitly permits — both read an empty history, both
+    pass, and both reach a vendor inside the fifteen-second gap the gateway promised. The
+    claim on the route does not close that: it is keyed on the verification, and these are
+    two verifications. What is at stake is not the second call but the vendor holding the
+    number for ten hours.
+
+    The obvious remedy is forbidden and the shape is the one this schema already uses
+    where two requests arrive together: a single conditional statement, the way confirming
+    a code and consuming an attempt are each one conditional update. A row written first
+    and then read would be a paid attempt aged zero seconds against a minimum gap of
+    fifteen — it would refuse the very selection that wrote it.
+
+    🔴 **This verification's own rungs are excluded, and that is not an economy.** A ladder
+    claims its second paid rung while its first one's row is zero seconds old, so a count
+    that read its own walk would make the ladder unable to advance at all — the same trap,
+    one level deeper. They still count for every *other* request, which is what the norm
+    asks for: what the vendor counts is an authorisation placed, and one verification
+    places more than one.
+
+    The three conditions are the vendor's, and they are passed in rather than read here
+    because they are settings: the numbers are the vendor's and not ours.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO verification_rungs (verification_id, route, outcome) "
+        "SELECT ?, ?, ? "
+        # The three limits, one clause each and one statement for all of them. Kept on
+        # separate lines with the limit each enforces named, so that a mutation can drop
+        # exactly one of them and a reader can see which is missing.
+        f" WHERE ({_PAID_FOR_NUMBER}) = 0 "   # the gap since the last attempt
+        f"   AND ({_PAID_FOR_NUMBER}) < ? "   # the ceiling per rolling minute
+        f"   AND ({_PAID_FOR_NUMBER}) < ?",   # the ceiling per rolling window
+        (verification_id, route, outcome,
+         *_for_number(phone, verification_id, gap_seconds),
+         *_for_number(phone, verification_id, 60), per_minute,
+         *_for_number(phone, verification_id, window_seconds), per_day),
+    )
+    await db.commit()
+    return cursor.lastrowid if cursor.rowcount == 1 else None
+
+
+async def paid_attempts_for_number(
+    phone: str, *, within_seconds: int, excluding_verification: int | None = None,
+) -> list[int]:
     """How long ago each paid rung was attempted for this number, newest first.
 
     Counted over the rungs rather than over the verifications, because the thing the
@@ -1097,10 +1162,12 @@ async def paid_attempts_for_number(phone: str, *, within_seconds: int) -> list[i
         "SELECT CAST(strftime('%s', 'now') - strftime('%s', r.started_at) AS INTEGER) "
         "  FROM verification_rungs r "
         "  JOIN verifications v ON v.id = r.verification_id "
-        f" WHERE v.phone = ? AND r.route IN ({_PAID_PLACEHOLDERS}) "
+        f" WHERE v.phone = ? AND r.verification_id <> ? "
+        f"   AND r.route IN ({_PAID_PLACEHOLDERS}) "
         "   AND r.started_at > datetime('now', ? || ' seconds') "
         " ORDER BY r.started_at DESC",
-        (phone, *_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}"),
+        (phone, excluding_verification or -1, *_PAID_ROUTE_VALUES,
+         f"{-int(within_seconds):+d}"),
     ) as cursor:
         return [max(0, int(row[0])) for row in await cursor.fetchall()]
 

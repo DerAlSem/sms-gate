@@ -55,16 +55,20 @@ mut "1. считаем только звонковый рунг" "$QR" \
 
 # 2. Пауза между двумя попытками снята. Блокирует вендора именно частота, а не
 #    объём, так что это самая дешёвая дорога к десяти часам.
-mut "2. пауза снята" "$LM" \
-'        if ages[0] < gap:@@@        if False:'
+#    🔴 С 22.09.2026 (задача 4.62) все три условия живут в ОДНОМ операторе,
+#    который и решает, и записывает, — поэтому мутируется клауза SQL, а не ветвь
+#    на Python. Ветвь на Python осталась только в `_why`, и она называет причину
+#    отказа, а не принимает его: мутация там доказывала бы про текст.
+mut "2. пауза снята" "$QR" \
+'f" WHERE ({_PAID_FOR_NUMBER}) = 0 "   # the gap since the last attempt@@@f" WHERE (({_PAID_FOR_NUMBER}) = 0 OR 1=1) "   # the gap since the last attempt'
 
 # 3. Минутный потолок снят.
-mut "3. минутный потолок снят" "$LM" \
-'        if in_a_minute >= store.verification_per_minute:@@@        if False:'
+mut "3. минутный потолок снят" "$QR" \
+'f"   AND ({_PAID_FOR_NUMBER}) < ? "   # the ceiling per rolling minute@@@f"   AND (({_PAID_FOR_NUMBER}) < ? OR 1=1) "   # the ceiling per rolling minute'
 
 # 4. Суточный потолок снят.
-mut "4. суточный потолок снят" "$LM" \
-'        if len(ages) >= store.verification_per_day:@@@        if False:'
+mut "4. суточный потолок снят" "$QR" \
+'f"   AND ({_PAID_FOR_NUMBER}) < ?",   # the ceiling per rolling window@@@f"   AND (({_PAID_FOR_NUMBER}) < ? OR 1=1)",   # the ceiling per rolling window'
 
 # 5. Календарный день вместо скользящего окна. База хранит наивный UTC, вендор
 #    русский: календарный день, прочитанный не в той зоне, сбрасывает счётчик на
@@ -75,20 +79,18 @@ mut "4. суточный потолок снят" "$LM" \
 #    календарным днём они оказываются «вчера» лишь пока час по UTC меньше 20.
 #    После 20:00 UTC мутация зелёная законно. Строка выше печатает текущий час,
 #    чтобы прогон нельзя было прочитать неправильно.
-mut "5. календарный день вместо скользящего окна" "$QR" \
-'"   AND r.started_at > datetime('"'"'now'"'"', ? || '"'"' seconds'"'"') "@@@"   AND r.started_at > date('"'"'now'"'"') AND ? IS NOT NULL "'
+mut "5. календарный день вместо скользящего окна" "$LM" \
+'per_day=store.verification_per_day, window_seconds=window_hours * 3600)@@@per_day=store.verification_per_day, window_seconds=int(__import__("time").time() % 86400))'
 
 # 6. Вендорские числа зашиты в код вместо настроек. Числа не наши, вендор меняет
 #    их не спросив, и тогда лечение — выкатка вместо сохранения.
 mut "6. вендорские числа зашиты" "$LM" \
-'        in_a_minute = sum(1 for age in ages if age < 60)
-        if in_a_minute >= store.verification_per_minute:@@@        in_a_minute = sum(1 for age in ages if age < 60)
-        if in_a_minute >= 4:'
+'gap_seconds=gap, per_minute=store.verification_per_minute,@@@gap_seconds=gap, per_minute=4,'
 
 # 7. Номер не участвует в отборе — все номера считаются как один. Лимит,
 #    заведённый защищать АБОНЕНТА, начинает отказывать по чужому трафику.
 mut "7. все номера как один" "$QR" \
-'" WHERE v.phone = ? AND r.route IN ({_PAID_PLACEHOLDERS}) "@@@" WHERE (v.phone = ? OR 1=1) AND r.route IN ({_PAID_PLACEHOLDERS}) "'
+'f" WHERE v.phone = ? AND r.verification_id <> ? AND r.route IN ({_PAID_PLACEHOLDERS}) "@@@f" WHERE (v.phone = ? OR 1=1) AND r.verification_id <> ? AND r.route IN ({_PAID_PLACEHOLDERS}) "'
 
 restore
 echo "== восстановлено; финальный прогон"

@@ -48,14 +48,16 @@ PYEOF
   run
 }
 
-# 1. Лестница платного пути собрана без гейта по номеру — вендор узнаёт свой лимит сам.
-mut "1. гейт по номеру не собран" "$GT" \
-'    return (entitlement_gate(app_id), ceiling_gate(), limits.per_number_gate(phone))@@@    return (entitlement_gate(app_id), ceiling_gate())'
+# 1. Лимит по номеру не берётся при записи рунга — вендор узнаёт свой лимит сам.
+#    🔴 С 22.09.2026 (задача 4.62) он не гейт в списке, а условие того самого
+#    оператора, который пишет строку платного рунга: отсюда и мутация.
+mut "1. лимит по номеру не берётся" "$LD" \
+'        if route in PAID_ROUTES:@@@        if False:'
 
 # 2. Дверь зовёт лестницу с пустым списком гейтов — та самая забывчивость, ради
 #    невозможности которой `for_paid_ladder` и существует.
 mut "2. дверь передаёт гейты пустыми" "$PL" \
-'        gates=gates.for_paid_ladder(app_id, phone),@@@        gates=(),'
+'        gates=gates.for_paid_ladder(app_id, phone, rungs),@@@        gates=(),'
 
 # 3. Гейты перечисляются, но не исполняются.
 mut "3. гейты не исполняются" "$LD" \
@@ -68,13 +70,14 @@ mut "4. отказ гейта проигнорирован" "$LD" \
 '            return Walk(refused_by=refusal)@@@            pass'
 
 # 5. Пауза между двумя попытками снята — остаются только потолки, а блокирует вендора
-#    именно частота.
-mut "5. пауза между попытками снята" "$LM" \
-'        if ages[0] < gap:@@@        if False:'
+#    именно частота. Клауза SQL, а не ветвь на Python: с 4.62 решение и запись —
+#    один оператор.
+mut "5. пауза между попытками снята" "$QR" \
+'f" WHERE ({_PAID_FOR_NUMBER}) = 0 "   # the gap since the last attempt@@@f" WHERE (({_PAID_FOR_NUMBER}) = 0 OR 1=1) "   # the gap since the last attempt'
 
 # 6. Отказ больше не называет, сколько ждать: человеку сказано «нельзя» без «когда».
 mut "6. отказ не называет паузу" "$LM" \
-'            return f"too_soon: wait {wait}s before asking again"@@@            return "too_soon"'
+'        return f"too_soon: wait {wait}s before asking again"@@@        return "too_soon"'
 
 # 7. Окно считается по одному рунгу вместо обоих платных — лестница переходит с
 #    телеграма на звонок и проходит потолок, которого на самом деле достигла.
@@ -102,13 +105,10 @@ mut "10. наш отказ записан рунгом" "$LD" \
             await queries.record_verification_rung(
                 verification_id, route=rungs[0], outcome=REFUSED)'
 
-# 11. Положительный контроль наоборот: гейт, отказывающий всегда, — шлюз, который
+# 11. Положительный контроль наоборот: клейм, отказывающий всегда, — шлюз, который
 #     верифицирует каждый номер ровно один раз.
-mut "11. гейт отказывает всегда" "$LM" \
-'    async def gate() -> str:
-        window_hours = store.verification_day_window_hours@@@    async def gate() -> str:
-        return "too_soon: wait 15s before asking again"
-        window_hours = store.verification_day_window_hours'
+mut "11. клейм отказывает всегда" "$LM" \
+'    if rung_id is not None:@@@    if False:'
 
 restore
 echo "== восстановлено; финальный прогон"

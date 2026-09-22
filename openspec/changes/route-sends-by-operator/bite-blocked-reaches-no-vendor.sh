@@ -54,7 +54,7 @@ PYEOF
 
 # 1. Гейт не собран в платную лестницу — возврат к состоянию до этой правки.
 mut "1. гейт не собран" "$GT" \
-'    return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate(),@@@    return (entitlement_gate(app_id), ceiling_gate(),'
+'    return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate())@@@    return (entitlement_gate(app_id), ceiling_gate())'
 
 # 2. Гейт собран, но никогда не отказывает.
 mut "2. гейт никогда не отказывает" "$GT" \

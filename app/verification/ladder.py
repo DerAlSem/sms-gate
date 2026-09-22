@@ -31,6 +31,15 @@ Every rung attempted is its own recorded row, written **before** the carrier is 
 That ordering is the money one: a crash between the vendor's confirmation and our record
 would otherwise leave a fee nobody can attribute, and the row is what the carrier updates
 the moment a charge is incurred.
+
+🔴 **On a paid rung that row is also the decision.** This number's own limits are not among
+the gates, and their absence there is the norm: a gate that reads what a number has spent
+and a row written after every gate has passed lets two verifications for one number — which
+this capability explicitly permits — both read an empty history, both pass, and both reach a
+vendor inside the fifteen-second gap. The route claim does not close it, being keyed on the
+verification. So the limits are decided and taken in **one conditional statement**, the one
+that writes this rung, and a caller who hands in an empty gate list cannot spend the
+subscriber's ten-hour block by forgetting (task 4.62).
 """
 
 from __future__ import annotations
@@ -41,8 +50,8 @@ from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Sequence
 
 from app.db import queries
-from app.verification import refusals, rule
-from app.verification.routes import SMS_OUT
+from app.verification import limits, refusals, rule
+from app.verification.routes import PAID_ROUTES, SMS_OUT
 
 logger = logging.getLogger(__name__)
 
@@ -191,8 +200,20 @@ async def walk(
                        "traffic of a vendor outage"))
             continue
 
-        rung_id = await queries.record_verification_rung(
-            verification_id, route=route, outcome=ATTEMPTING)
+        if route in PAID_ROUTES:
+            # The decision and the record are one statement. A refusal here has contacted
+            # nothing and recorded nothing, so it ends the walk the way a gate's refusal
+            # does — and unlike a gate's, it cannot be lost by a caller assembling the
+            # list by hand.
+            rung_id, refusal = await limits.claim(
+                verification_id, route=route, phone=phone, outcome=ATTEMPTING)
+            if rung_id is None:
+                logger.info("verification %d: %s was not attempted, by %s",
+                            verification_id, route, refusal)
+                return Walk(refused_by=refusal, attempts=tuple(attempts))
+        else:
+            rung_id = await queries.record_verification_rung(
+                verification_id, route=route, outcome=ATTEMPTING)
 
         attempt = await _attempt(route, phone, seconds_left=seconds_left,
                                  rung_id=rung_id, carriers=carriers)

@@ -45,8 +45,8 @@ def _run(body):
         asyncio.run(close_db())
 
 
-async def _open(ttl=300):
-    return await queries.create_verification("app1", PHONE, code="1234", ttl_seconds=ttl)
+async def _open(ttl=300, phone=PHONE):
+    return await queries.create_verification("app1", phone, code="1234", ttl_seconds=ttl)
 
 
 def _carrier(outcome, *, asked, delay=0.0, cost=None, vendor_ref=None, reason=""):
@@ -76,19 +76,24 @@ def test_the_order_of_the_rungs_comes_from_the_rule_and_not_from_the_code():
     async def body():
         order = []
 
-        async def walk_once():
+        async def walk_once(phone):
+            # A number of its own per walk, because the two walks here happen inside one
+            # second and every rung of both is a paid attempt: on one number the second
+            # walk is refused by that number's own allowance before it reaches a rung,
+            # and this test would then be asserting about an empty list. Task 4.62.
             seen = []
             carriers = {r: _noting(r, seen, ladder.DECLINED)
                         for r in (TG_GATEWAY, FLASH_CALL)}
-            await ladder.walk(await _open(), app_id="app1", operator="МегаФон",
-                              phone=PHONE, rungs=rule.route_for("МегаФон"), gates=(),
+            await ladder.walk(await _open(phone=phone), app_id="app1",
+                              operator="МегаФон", phone=phone,
+                              rungs=rule.route_for("МегаФон"), gates=(),
                               carriers=carriers, bound=5.0)
             order.append(tuple(seen))
 
-        await walk_once()
+        await walk_once(PHONE)
         await store.set_many({"operator_routes": _rule_json(
             ("МегаФон", [FLASH_CALL, TG_GATEWAY]))})
-        await walk_once()
+        await walk_once("+79031680015")
 
         assert order[0] == (TG_GATEWAY, FLASH_CALL)
         assert order[1] == (FLASH_CALL, TG_GATEWAY), \

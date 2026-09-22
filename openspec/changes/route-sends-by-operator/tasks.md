@@ -1259,7 +1259,7 @@ rather than on code.
       door-level test for the mixed ladder is what closed it. Suite 1303 green on the same
       six inherited failures.
 
-- [ ] 4.62 🔴 The number's paid limits are decided and taken in one act
+- [x] 4.62 🔴 The number's paid limits are decided and taken in one act
       Read-then-act: `ladder.walk` runs every gate, and only afterwards writes the row recording
       this attempt. Two verifications for one number — which this capability **explicitly
       permits** — selecting a paid rung together both read an empty history, both pass, and both
@@ -1271,6 +1271,30 @@ rather than on code.
       fifteen, so it refuses the very selection that wrote it. The shape has to be the one this
       capability already uses for confirming a code — a single conditional operation that decides
       and records together.
+      **Built 22.09.2026.** The limits left the gate list entirely: `queries.claim_paid_rung`
+      is one `INSERT … SELECT … WHERE` carrying all three of them as clauses, and `ladder.walk`
+      writes every paid rung through it — so the enforcement sits on the boundary where the
+      money moves rather than on a list a door has to remember to assemble, and the guard hands
+      `walk` an **empty** gate list on purpose. The refusal's *reason* is still read afterwards,
+      from the same history, because naming which of the three refused is for whoever reads the
+      answer and never for the decision.
+      🔴 **The named trap has a second floor nobody named.** A ladder claims its second paid
+      rung while the first one's row is zero seconds old, so a claim counting its own walk
+      refuses the ladder the right to advance at all — and every neighbouring guard stays green,
+      because they all walk a ladder of one rung that carries. The claim therefore excludes this
+      verification's own rungs, and a test for the mixed ladder is what holds it.
+      `bite-limits-in-one-act.sh`, five mutations, no survivors; the one that matters is the
+      decision and the record split into **two statements with the same conditions** — a test
+      asserting merely that a limit exists stays green on it.
+      ⚠️ Three older bite scripts had anchors into the code this moved, and **two of them were
+      already stale before this task** — `bite-window-from-the-door.sh` #1 and
+      `bite-blocked-reaches-no-vendor.sh` #1 both anchored on the two-argument
+      `for_paid_ladder` that 4.61 had already replaced, so they had been printing "якорь не
+      нашёлся" rather than a verdict. All three re-pointed and re-run: 11, 7 and 4 red
+      respectively. `bite-limits.sh` #5 is now surgical — it shortens the *day* window to
+      seconds-since-midnight instead of widening all three — and kills only the rolling-window
+      test, where before it killed three positive controls with it.
+      Suite 1310 green on the same six inherited failures.
 
 - [x] 4.63 A carrier holds the ladder's bound as a deadline, not as a duration
       `tg_carrier` hands the same `seconds_left` to `checkSendAbility` and again to

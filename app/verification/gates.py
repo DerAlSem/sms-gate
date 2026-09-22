@@ -5,7 +5,11 @@ each of them decides is its own. They answer with the reason they refuse, or wit
 empty string, because a refusal here is not an exception and emphatically not a vendor
 failure: nothing was placed, nothing was charged, and nothing is owed a retry.
 
-Three questions live here, and keeping them apart is the point:
+Three questions live here, and keeping them apart is the point. A fourth — what this
+**number** has already spent — deliberately does not: its limits are decided and taken in
+one act at the row that records the attempt (`limits.claim`), because a gate that reads and
+a row written afterwards lets two verifications for one number both pass and both reach a
+vendor inside the fifteen-second gap. Task 4.62.
 
 **Has this gateway decided not to contact this number at all?** The blacklist, which is the
 one state that shuts every route to a person at once. It is asked here rather than only at
@@ -39,7 +43,7 @@ import logging
 
 from app.db import queries
 from app.settings_store import store
-from app.verification import limits, routes
+from app.verification import routes
 
 logger = logging.getLogger(__name__)
 
@@ -149,7 +153,7 @@ def _refuse(window: str, seen: int, ceiling: int) -> str:
 def for_paid_ladder(app_id: str, phone: str, rungs):
     """Every gate a walk down the ladder has to pass, in the order they are run.
 
-    🔴 `rungs` decides which of them are asked, and it has no default. Three of these four
+    🔴 `rungs` decides which of them are asked, and it has no default. Two of these three
     are questions about money, and a walk with no paid rung in it spends none: asking them
     there refuses a *free* send in the name of money that was never going to move. That is
     not a corner — `may_spend` ships off for every application and the shipped rule sends
@@ -165,11 +169,15 @@ def for_paid_ladder(app_id: str, phone: str, rungs):
     Assembled here rather than at each door, so that a door added later cannot be a door
     that forgot one. The order is cheapest-question-first and it decides only which reason
     a refused caller is given: entitlement is a fact about the application and never
-    changes under load; the ceiling is about this gateway as a whole; the per-number
-    limits are about this one subscriber. The blacklist comes before all of them because it
-    is the one that is not about degree at all — a number held blocked is not being carried
-    by anything, at any price, for any application. All four read the database and none of
-    them contacts a vendor.
+    changes under load, and the ceiling is about this gateway as a whole. The blacklist
+    comes before both because it is the one that is not about degree at all — a number held
+    blocked is not being carried by anything, at any price, for any application. All three
+    read the database and none of them contacts a vendor.
+
+    **This number's own paid limits are not among them, and their absence is the norm
+    rather than a gap.** They are the one question here that two requests can lose a race
+    on, so they are decided and taken in one act where the rung is recorded — inside
+    `ladder.walk`, before that rung is contacted — and not read here and acted on later.
 
     ⚠️ A list with a default would be a caller that spends money by forgetting, and the
     forgetting is invisible at the call site — which is why `ladder.walk` takes `gates`
@@ -177,5 +185,4 @@ def for_paid_ladder(app_id: str, phone: str, rungs):
     """
     if not any(r in routes.PAID_ROUTES for r in rungs):
         return (blacklist_gate(phone),)
-    return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate(),
-            limits.per_number_gate(phone))
+    return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate())

@@ -548,11 +548,16 @@ the count SHALL be taken over the rung attempts of both paid routes rather than 
 verifications: what the vendor counts is an authorisation placed, and one verification places
 more than one — that is what a ladder is.
 
-[backed · the enforcement is `app/verification/limits.py`, assembled into every paid walk by
-`gates.for_paid_ladder` and run inside `ladder.walk` before the first rung is contacted.
-Guarded by `tests/test_per_number_limits.py` — ten tests with three positive controls,
-covering both paid rungs counted together, a rolling window against a calendar day, and the
-limits following their settings rather than the source.
+[backed · the enforcement is `app/verification/limits.py`, and since 22.09.2026 (task 4.62)
+it is **taken where the rung is recorded** rather than assembled into a list of gates:
+`limits.claim` is the single conditional statement `ladder.walk` writes a paid rung with, so
+a caller that assembles the gate list by hand cannot spend the subscriber's ten hours by
+forgetting. Guarded by `tests/test_per_number_limits.py` — eleven tests with four positive
+controls, covering both paid rungs counted together, a rolling window against a calendar day,
+the allowance being written as well as decided, and the limits following their settings rather
+than the source. `bite-limits.sh` turns its seven red against the new shape: the window
+counting one paid rung, the gap dropped, either ceiling dropped, a calendar day instead of a
+rolling window, the vendor's numbers hard-coded, and the phone dropped from the selection.
 
 **Backed from the door as well since 22.09.2026, task 4.12.** That half could not be asked
 before: until the call rung existed, "no call is placed" passed against a gateway that had
@@ -1015,6 +1020,11 @@ stand in front of the free route and nothing else. The same error runs the other
 the ceiling and the per-number limits, where a busy paid hour, or one paid attempt on this
 number eight seconds ago, silences a modem send that costs nothing.
 
+Since 22.09.2026 this number's own limits satisfy that by construction rather than by being
+listed: they are taken at the statement that records a **paid** rung, so a walk with no paid
+rung in it never asks them. The requirement stands over both shapes — what it forbids is a
+money question asked of a walk that spends no money, wherever the question lives.
+
 [backed since 22.09.2026 · `gates.for_paid_ladder` takes the walk's `rungs` and has no default
 for them, and `placement.place` reads the ladder once and hands the same list to both the walk
 and the gate list, so the two answers cannot drift. Guarded by
@@ -1191,6 +1201,25 @@ a code and consuming an attempt are each decided by one conditional update. It S
 row written earlier and then read by the same gate — that is the gateway's own bookkeeping
 counted as vendor spend, forbidden immediately above, and it would refuse the very selection
 that wrote it.
+
+**A walk's own rungs SHALL NOT count against that walk.** A ladder claims its second paid rung
+while the first one's row is zero seconds old, so a count that read its own walk would refuse
+the ladder the right to advance at all — the same defect the paragraph above forbids, one level
+deeper. Every *other* request still counts them, which is what this requirement asks for: what
+the vendor counts is an authorisation placed, and one verification places more than one.
+
+[backed since 22.09.2026 · `queries.claim_paid_rung` is one `INSERT … SELECT … WHERE` carrying
+all three limits as clauses, and `ladder.walk` writes every paid rung through it; the
+per-number question is **not** in `gates.for_paid_ladder` at all, so the guard hands `walk` an
+empty gate list on purpose. Guarded by
+`tests/test_the_numbers_limits_are_taken_in_one_act.py`, where two walks for one number are
+driven concurrently and the vendor is counted — controlled by two walks for two *different*
+numbers, which must both be carried. `bite-limits-in-one-act.sh` turns five red: the paid row
+written unconditionally (the defect as found), 🔴 **the decision and the record split into two
+statements with the same conditions** — the mutation the whole file exists for, and the one a
+test asserting merely that a limit exists would stay green on — the count reading the walk's own
+rungs, the claim's refusal ignored, and the control that a claim refusing everything satisfies
+"the vendor was contacted once" perfectly]
 
 **The one bound SHALL be handed to each rung as what is left of it, and each carrier SHALL
 hold it as a deadline rather than as a duration.** A rung that calls its vendor more than once
