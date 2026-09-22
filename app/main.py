@@ -43,6 +43,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     store.on_change("Alerting", lambda: _alert_reconfigure(store))
     logger.info("Settings loaded")
 
+    # Said here rather than from a loop, and before anything can be verified: a paid rung
+    # whose balance floor is not set is a prepaid vendor nobody is watching, and the
+    # question "is anybody watching this" must be answerable without waiting for an event.
+    # `balance.observe` cannot answer it — it runs only once a balance has arrived, which
+    # is only once the rung has already carried something. Owner's decision of 22.09.2026,
+    # task 4.65.
+    from app.verification import balance as verification_balance
+    await verification_balance.report_unwatched_rungs()
+
     # The modem is deliberately *not* awaited here. Establishing the link used to happen
     # before this function yielded, which made a reachable modem a precondition for
     # serving HTTP at all: on 2026-08-28 an unplugged device meant uvicorn never listened

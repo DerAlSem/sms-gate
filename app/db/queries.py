@@ -1317,6 +1317,28 @@ async def record_rung_delivery(
     return row["verification_id"]
 
 
+async def rungs_awaiting_report(route: str) -> int:
+    """How many rungs of this route hold a vendor reference and no outcome from it yet.
+
+    That count is the size of one specific loss: the callback is the only path a refund
+    ever takes, so a credential rotated now drops the refund of every one of these. Asked
+    at the moment a signed callback is refused, because that is the moment an operator
+    can still act on it — either by putting the previous credential back, or by knowing
+    what the recorded spend is about to overstate.
+
+    A rung with no reference was never bought and has nothing to report.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM verification_rungs "
+        " WHERE route = ? AND vendor_ref IS NOT NULL "
+        "   AND (outcome IS NULL OR outcome = 'carried')",
+        (route,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
 async def confirm_by_inbound_call(phone: str, *, method: str) -> int | None:
     """Confirm the open `call_in` verification for this caller, at most once.
 

@@ -64,6 +64,17 @@ async def _open_verification_on_the_telegram_rung() -> int:
     return verification_id
 
 
+@pytest.fixture
+def alerts(monkeypatch):
+    sent = []
+    import app.alerting as alerting
+    monkeypatch.setattr(
+        alerting, "notify",
+        lambda event, text, dedup_extra=None, phone=None: sent.append(
+            (event, text, dedup_extra)))
+    return sent
+
+
 def _run(body):
     async def go():
         await init_db(":memory:")
@@ -200,7 +211,10 @@ def test_a_correctly_signed_callback_replayed_later_changes_nothing_and_is_count
     assert outcome.accepted is False
     assert row["status"] == "pending"
     assert rungs[0]["outcome"] is None, "a callback refused on its timestamp wrote the rung"
-    assert rejections == {"signature": 1}
+    # `stale` rather than `signature` since 22.09.2026 (task 4.66): a callback outside the
+    # window is refused as stale whatever its signature says, and the two are counted
+    # apart because a clock and a credential are different events.
+    assert rejections == {"stale": 1}
 
 
 def test_a_correctly_signed_callback_stamped_in_the_future_is_refused_on_the_same_terms():
@@ -223,7 +237,7 @@ def test_a_correctly_signed_callback_stamped_in_the_future_is_refused_on_the_sam
     assert outcome.accepted is False
     assert row["status"] == "pending"
     assert rungs[0]["outcome"] is None
-    assert rejections == {"signature": 1}
+    assert rejections == {"stale": 1}
 
 
 def test_the_door_is_shut_entirely_while_the_gateway_holds_no_token():
@@ -384,3 +398,126 @@ def test_a_delivered_message_does_not_make_a_wrong_code_right():
     answer, status = _run(body)
     assert answer == "wrong_code"
     assert status == "pending"
+
+
+# --- a rotation does not look like an attack, task 4.66 --------------------------------
+#
+# Owner's decision of 22.09.2026, on the circle's finding: the loss is **made visible**
+# rather than softened — the previous credential is not honoured for a grace period, and
+# the signature check is not weakened by a second. What changes is that the two rejections
+# stop being one number, and that a run of them says out loud what it may cost.
+#
+# A rotation takes effect with no restart, so messages already bought go on reporting,
+# signed with the key just replaced. The callback is the **only** path a refund ever takes,
+# so every one of those refunds is lost and the recorded spend stands above the money
+# actually spent — the one direction this ledger is elsewhere written to forbid.
+
+def test_a_stale_callback_and_a_bad_signature_are_two_different_numbers():
+    """🔴 They were one (`signature`) until 22.09.2026, so a run of clock skew and a run
+    of forged callbacks were indistinguishable — and so was a credential rotation, which
+    is neither. The module's own docstring already said the kinds are counted apart
+    because they mean different things."""
+    async def body():
+        await _open_verification_on_the_telegram_rung()
+        stale = await _deliver(status_body("expired"), now=1789720000.0)
+        forged = await _deliver(status_body("expired"), signature="deadbeef")
+        return stale, forged, dict(tg_callback.rejections)
+
+    stale, forged, rejections = _run(body)
+    assert stale.accepted is False and forged.accepted is False
+    assert rejections == {"stale": 1, "signature": 1}, rejections
+    assert stale.reason == "stale" and forged.reason == "signature"
+
+
+def test_a_refused_signature_says_what_a_rotation_would_have_cost(alerts):
+    """The loss, made visible as a number rather than as a warning.
+
+    The rungs awaiting a report are exactly the messages whose refunds a rotation drops,
+    so the alert carries that count: an operator who has just rotated the token reads it
+    as the size of what they gave up, and one who has not reads it as an attack. Both
+    readings are named, because from here the two are genuinely indistinguishable.
+    """
+    async def body():
+        await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("expired"), signature="deadbeef")
+
+    _run(body)
+    assert alerts, "a run of refused signatures reached nobody"
+    text = alerts[0][1]
+    assert "1" in text, f"the alert does not say how many reports are in flight: {text}"
+    assert "rotat" in text.lower(), text
+
+
+def test_clock_skew_alone_does_not_cry_rotation(alerts):
+    """The control, and it is the point of having split the counter at all: a stale
+    callback is a clock, not a credential, and waking somebody about a lost refund for it
+    would be the false alarm that gets the channel muted."""
+    async def body():
+        await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("expired"), now=1789720000.0)
+
+    _run(body)
+    assert alerts == [], f"clock skew raised a credential alert: {alerts}"
+
+
+def test_a_callback_that_verifies_raises_nothing(alerts):
+    """The other control: the alert is about refusals, not about callbacks."""
+    async def body():
+        await _open_verification_on_the_telegram_rung()
+        await _deliver(status_body("delivered"))
+
+    _run(body)
+    assert alerts == []
+
+
+def test_a_stale_callback_with_a_forged_signature_is_still_only_stale(alerts):
+    """🔴 Found by `bite-rotation-is-not-an-attack.sh`: the order of the two checks was
+    unguarded, and it is not a matter of taste.
+
+    Checked signature-first, anything outside the window that is also badly signed counts
+    as a *signature* refusal — which means anyone who can reach this public door can raise
+    the credential alarm at will by posting stale garbage. The window is what already made
+    that traffic harmless; counting it under the expensive key hands an attacker the alert
+    as a tool.
+    """
+    async def body():
+        await _open_verification_on_the_telegram_rung()
+        outcome = await _deliver(status_body("expired"), signature="deadbeef",
+                                 now=1789720000.0)
+        return outcome, dict(tg_callback.rejections)
+
+    outcome, rejections = _run(body)
+    assert outcome.reason == "stale", (
+        "a callback the window already refused was counted as a credential problem")
+    assert rejections == {"stale": 1}
+    assert alerts == [], "stale traffic raised the credential alarm"
+
+
+def test_the_count_in_flight_is_what_a_rotation_would_actually_cost(alerts):
+    """The control on the number, without which "it prints a number" is the whole claim.
+
+    Three rungs on this route and only one of them is at risk: one has already reported —
+    its refund, if any, has been recorded — and one holds no vendor reference at all,
+    which means nothing was ever bought for it and there is nothing to report.
+    """
+    async def body():
+        in_flight = await _open_verification_on_the_telegram_rung()
+        assert in_flight
+
+        reported = await queries.create_verification(
+            "app1", PHONE, code="2222", ttl_seconds=300)
+        already = await queries.record_verification_rung(
+            reported, route=TG_GATEWAY, vendor_ref="req-old", cost=0.01)
+        await queries.set_rung_outcome(already, outcome="delivered")
+
+        never_bought = await queries.create_verification(
+            "app1", PHONE, code="3333", ttl_seconds=300)
+        await queries.record_verification_rung(never_bought, route=TG_GATEWAY)
+
+        await _deliver(status_body("expired"), signature="deadbeef")
+
+    _run(body)
+    assert alerts, "a refused signature reached nobody"
+    text = alerts[0][1]
+    assert "1 message" in text, (
+        f"the alert overstates or understates what is actually in flight: {text}")

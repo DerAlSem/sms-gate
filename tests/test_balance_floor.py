@@ -157,13 +157,18 @@ def test_a_route_with_no_floor_configured_is_not_read_as_fine(alerts, caplog):
 
 def test_a_paid_route_with_no_floor_setting_at_all_is_reported(alerts, caplog):
     """The guard for a third paid vendor added without its floor: the failure shape is a
-    vendor whose balance nobody watches, and it has to be loud on the way in."""
+    vendor whose balance nobody watches, and it has to be loud on the way in.
+
+    ⚠️ This used to assert `alerts == []` — that the line stayed in the log. The owner
+    reversed it on 22.09.2026 (task 4.65): a log line is read when somebody already
+    suspects something, which is never the case for a floor nobody set. The channel is
+    asserted next door; what stays here is that the log still carries it too.
+    """
     async def body():
         with caplog.at_level("WARNING"):
             balance.observe("some_new_paid_rung", 0.4)
         assert any("no balance floor is configured" in r.message
                    for r in caplog.records)
-        assert alerts == []
 
     _run(body)
 
@@ -265,3 +270,124 @@ def test_nothing_here_asks_the_vendor_anything(monkeypatch):
         assert called == []
 
     _run(body)
+
+
+# --- "nobody is watching this" is answerable without an event, task 4.65 ---------------
+#
+# Found by the critic circle of 22.09.2026 and decided by the owner the same day: a check
+# at startup, and `notify` rather than the log. Both unwatched states used to leave through
+# `logger.warning` while the floor they belong to wakes the operator — and worse, `observe`
+# runs only once a balance has arrived, which is to say only once the rung is already
+# carrying. The rung nobody has used yet is exactly the case the norm was written about,
+# and it said nothing at all.
+
+def test_an_unwatched_floor_wakes_the_operator_rather_than_the_log(alerts):
+    """As loudly as the floor itself. A floor that is not set is indistinguishable, from
+    the log's point of view, from a vendor that never runs out."""
+    async def body():
+        await store.set_many({"flash_call_balance_floor": "0"})
+        balance.observe(FLASH_CALL, 0.4)
+
+        assert alerts, "an unwatched vendor balance was left in the log"
+        assert "uCaller" in alerts[0][1], "the alert must name which vendor"
+        assert alerts[0][0] == "routing", alerts[0]
+
+    _run(body)
+
+
+def test_a_paid_route_with_no_floor_setting_at_all_wakes_the_operator(alerts):
+    """The third paid vendor added without its floor. The route name is all there is to
+    say, so the alert says it rather than staying quiet for want of a vendor name."""
+    async def body():
+        balance.observe("some_new_paid_rung", 0.4)
+        assert alerts and "some_new_paid_rung" in alerts[0][1], alerts
+
+    _run(body)
+
+
+def test_a_watched_balance_above_its_floor_still_says_nothing(alerts):
+    """The control on both of the above: the loudness is about being unwatched, not about
+    every balance that arrives."""
+    async def body():
+        await store.set_many({"flash_call_balance_floor": "5"})
+        balance.observe(FLASH_CALL, 40.0)
+        assert alerts == []
+
+    _run(body)
+
+
+def test_a_configured_rung_with_no_floor_is_reported_before_it_carries_anything(alerts):
+    """🔴 The half `observe` cannot reach at all: this rung has carried nothing, so no
+    balance has arrived, so nothing calls `observe`. The norm was written about exactly
+    this rung, and until 22.09.2026 it was the one case that said nothing."""
+    async def body():
+        await store.set_many({"tg_gateway_token": "a-token",
+                              "tg_gateway_balance_floor": "0"})
+        await balance.report_unwatched_rungs()
+
+        assert alerts, "a configured paid rung with no floor was not reported at startup"
+        assert "Telegram Gateway" in alerts[0][1], alerts
+        assert alerts[0][0] == "routing", alerts[0]
+
+    _run(body)
+
+
+def test_a_configured_rung_with_a_floor_is_not_reported(alerts):
+    """The control. Without it the check is satisfied by one that reports every rung."""
+    async def body():
+        await store.set_many({"tg_gateway_token": "a-token",
+                              "tg_gateway_balance_floor": "10"})
+        await balance.report_unwatched_rungs()
+        assert alerts == []
+
+    _run(body)
+
+
+def test_an_unconfigured_rung_is_not_reported_for_want_of_a_floor(alerts):
+    """The other control, and it is the one that keeps the channel worth reading.
+
+    A rung with no credential is never offered — the registry refuses it at the probe and
+    `placement.carriers_for` leaves it out of the map — so it spends nothing and its
+    missing floor costs nothing. Reporting it on every start would teach an operator to
+    ignore the channel that also carries "this vendor is running out".
+    """
+    async def body():
+        await store.set_many({"tg_gateway_balance_floor": "0",
+                              "flash_call_balance_floor": "0"})
+        await balance.report_unwatched_rungs()
+        assert alerts == [], "a rung nothing can carry was reported for want of a floor"
+
+    _run(body)
+
+
+def test_the_startup_path_actually_asks_before_it_serves():
+    """🔴 The check exists and is called, and the second half is asserted here.
+
+    Read as an AST rather than as text: `assert "report_unwatched_rungs" in source` goes
+    green on an import line or a comment mentioning it, which is the form of evidence this
+    change has repeatedly found worthless. What is asserted is an `await` of that name
+    inside `lifespan`, **before the `yield`** — after it would be a check that runs at
+    shutdown, when the answer is no use to anybody.
+    """
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path("app/main.py").read_text(encoding="utf-8"))
+    lifespan = next(
+        (n for n in ast.walk(tree)
+         if isinstance(n, ast.AsyncFunctionDef) and n.name == "lifespan"), None)
+    assert lifespan is not None, "app/main.py has no lifespan to start anything from"
+
+    called_at, yielded_at = None, None
+    for node in ast.walk(lifespan):
+        if isinstance(node, ast.Yield) and yielded_at is None:
+            yielded_at = node.lineno
+        if (isinstance(node, ast.Await) and isinstance(node.value, ast.Call)
+                and isinstance(node.value.func, ast.Attribute)
+                and node.value.func.attr == "report_unwatched_rungs"):
+            called_at = node.lineno
+
+    assert called_at is not None, \
+        "nothing at startup asks which paid rung nobody is watching the balance of"
+    assert yielded_at is not None and called_at < yielded_at, \
+        "the check runs after the app yields, which is to say at shutdown"

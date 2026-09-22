@@ -410,16 +410,38 @@ def callback_verifies(
     `now` is passed rather than read so that the tolerance is testable at all; there is
     no correct default for it.
     """
+    return not callback_refusal(body, timestamp=timestamp, signature=signature,
+                                token=token, tolerance=tolerance, now=now)
+
+
+def callback_refusal(
+    body: bytes, *, timestamp: str, signature: str, token: str,
+    tolerance: float, now: float,
+) -> str:
+    """Why this callback is refused — `""`, `"stale"` or `"signature"`.
+
+    🔴 **The two are one refusal and two different events, and saying which is the whole
+    of task 4.66's cheap half.** A run of `stale` is a clock; a run of `signature` is a
+    forged callback — or a credential rotated while messages were in flight, which is
+    neither, and which silently drops every refund those messages would have reported.
+    Counted under one key, all three looked alike, and the one that costs money looked
+    exactly like the one that does not.
+
+    The order is deliberate: a callback outside the window is refused as stale whatever
+    its signature says, because a signature computed over a replayed body verifies
+    perfectly and the window is what makes the replay useless. The failing direction is
+    unchanged — anything this cannot read is `"signature"`.
+    """
     if not token or not signature:
-        return False
+        return "signature"
     try:
         sent_at = float(timestamp)
     except (TypeError, ValueError):
-        return False
+        return "signature"
     if abs(now - sent_at) > tolerance:
-        return False
+        return "stale"
 
     secret = hashlib.sha256(token.encode()).digest()
     expected = hmac.new(secret, timestamp.encode() + b"\n" + body,
                         hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, signature)
+    return "" if hmac.compare_digest(expected, signature) else "signature"

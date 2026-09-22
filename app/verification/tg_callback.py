@@ -117,12 +117,20 @@ async def handle_callback(
     now: float,
 ) -> CallbackOutcome:
     """Verify a callback and, if it is the vendor's, record what it reports."""
-    if not tg_gateway.callback_verifies(body, timestamp=timestamp, signature=signature,
-                                        token=token, tolerance=tolerance, now=now):
-        rejections["signature"] += 1
-        logger.warning("tg_gateway callback refused: signature or timestamp "
-                       "(%d refused so far)", rejections["signature"])
-        return CallbackOutcome(accepted=False, reason="signature")
+    refusal = tg_gateway.callback_refusal(body, timestamp=timestamp, signature=signature,
+                                          token=token, tolerance=tolerance, now=now)
+    if refusal:
+        # 🔴 Two keys, not one. A run of `stale` is a clock; a run of `signature` is a
+        # forged callback — or a credential rotated while messages were in flight, which
+        # is neither. Counted together, the one that costs money looked exactly like the
+        # one that does not. Task 4.66, the owner's decision of 22.09.2026: the loss is
+        # made visible rather than softened, so nothing here honours a previous key.
+        rejections[refusal] += 1
+        logger.warning("tg_gateway callback refused: %s (%d refused so far)",
+                       refusal, rejections[refusal])
+        if refusal == "signature":
+            await _say_what_a_rotation_would_cost()
+        return CallbackOutcome(accepted=False, reason=refusal)
 
     try:
         status = tg_gateway.parse_request_status(json.loads(body))
@@ -179,3 +187,29 @@ def _refund_note(status: tg_gateway.RequestStatus) -> tuple[bool, str]:
     if status.is_refunded is False:
         return False, "the vendor reports the fee not refunded"
     return False, "the vendor said nothing about a refund"
+
+
+async def _say_what_a_rotation_would_cost() -> None:
+    """Name the two readings of a refused signature, and put a number on the expensive one.
+
+    From this door the two are genuinely indistinguishable, so both are said. What is not
+    a guess is the count: the rungs still awaiting a report are exactly the messages whose
+    refunds a rotation drops, and the callback is the only path a refund ever takes. An
+    operator who has just rotated the token reads it as the size of what they gave up; one
+    who has not reads it as an attack.
+
+    Deduplicated on the event rather than on the callback: at a vendor reporting every
+    delivery, one alert per refused report is the noise that buries the first.
+    """
+    from app.alerting import notify
+
+    in_flight = await queries.rungs_awaiting_report(TG_GATEWAY)
+    notify("routing",
+           f"a correctly timed Telegram Gateway callback was refused on its signature. "
+           f"Two things look exactly like this from here: a forged callback, and the "
+           f"access token having been rotated while messages were still in flight. If it "
+           f"is the rotation, {in_flight} message(s) bought on this rung are still "
+           f"awaiting a report, the callback is the only path a refund ever takes, and "
+           f"every one of those refunds is lost — recorded spend will stand above the "
+           f"money actually spent until they age out",
+           dedup_extra="tg_callback_signature")

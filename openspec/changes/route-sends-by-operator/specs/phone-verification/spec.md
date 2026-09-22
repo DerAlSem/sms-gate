@@ -476,7 +476,23 @@ the previous credential is honoured for a grace period, or the loss is merely ma
 the owner's to decide — but it SHALL NOT be left unsaid, because the day it happens the
 refusals look exactly like an attack and the missing refunds look like nothing at all.
 
-[partly backed · the door is `handle_callback` in `app/verification/tg_callback.py` over `callback_verifies` in `app/verification/tg_gateway.py`, guarded by `tests/test_tg_callback.py`: all three endings of this requirement are driven with a real HMAC rather than a stubbed check, and each rejection is asserted to leave both the verification's status and the carrying rung's recorded outcome untouched **and** to be counted. Seven mutations bite — the count dropped, the timestamp window dropped, the signature not compared, the accepted branch not recording, a stale callback recording the rung anyway, and the window narrowed to one direction. Two of those were live holes found by biting a suite that was already green: a rejected callback could write the rung, and a timestamp arbitrarily far in the **future** was accepted, which is a replay window with no far edge. 🔴 **The vendor reference half is unchanged and still unbacked by any observation** — no callback has ever arrived, because no request has yet been made that had one to report. Reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. ⚠️ **Both rejection kinds are counted under one key** (`signature`), so a run of clock skew is indistinguishable from a run of bad signatures — the module's own docstring says the kinds are counted apart because they mean different things, and here they are not. The requirement does not demand the split; naming it rather than taking it is deliberate. **Owner's**]
+[partly backed · the door is `handle_callback` in `app/verification/tg_callback.py` over `callback_verifies` in `app/verification/tg_gateway.py`, guarded by `tests/test_tg_callback.py`: all three endings of this requirement are driven with a real HMAC rather than a stubbed check, and each rejection is asserted to leave both the verification's status and the carrying rung's recorded outcome untouched **and** to be counted. Seven mutations bite — the count dropped, the timestamp window dropped, the signature not compared, the accepted branch not recording, a stale callback recording the rung anyway, and the window narrowed to one direction. Two of those were live holes found by biting a suite that was already green: a rejected callback could write the rung, and a timestamp arbitrarily far in the **future** was accepted, which is a replay window with no far edge. 🔴 **The vendor reference half is unchanged and still unbacked by any observation** — no callback has ever arrived, because no request has yet been made that had one to report. Reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. 🟢 **The owner settled the rotation on 22.09.2026: the loss is made visible, not softened.** No
+previous credential is honoured for any grace period, so the signature check is not weakened by a
+second, and the cheap half was taken at the same time. `tg_gateway.callback_refusal` now answers
+*which* half refused — `stale` or `signature` — and `tg_callback.rejections` counts them apart, so
+a run of clock skew, a run of forgeries and a credential rotation stop being one number. A
+refusal on the **signature** raises one deduplicated alert naming both readings and carrying the
+count of rungs still awaiting a report (`queries.rungs_awaiting_report`), which is exactly the
+set of messages whose refunds a rotation drops. Guarded by `tests/test_tg_callback.py`;
+`bite-rotation-is-not-an-attack.sh` turns eight red.
+
+🔴 **Two of those eight were holes in the guards written the same hour, and both were found by
+the bite rather than by review.** The *order* of the two checks was unasserted: verified
+signature-first, anything outside the window that is also badly signed counts as a credential
+problem — which hands anyone who can reach this public door the credential alarm as a tool, by
+posting stale garbage. The window is what already made that traffic harmless. And the count in
+the alert was asserted only as "a number": it took a stand holding a rung that had already
+reported and a rung that was never bought to assert that neither is counted as being at risk]
 
 #### Scenario: A callback that does not verify
 - **WHEN** a callback arrives whose signature does not verify
@@ -782,13 +798,30 @@ one: a third paid vendor is added, its adapter works, and nobody notices that it
 watched by nothing until the day it empties.
 
 🔴 **Being unwatched SHALL be answerable without an event, and SHALL be said where the floor's
-own alerts are said.** Today it is reported on the arrival of a balance — that is, only once
-the rung is already carrying traffic — so the rung nobody has used yet, which is exactly the
-one the norm was written about, says nothing at all; and it is said into the log, while the
-floor it belongs to wakes the operator. A warning read only by somebody who already suspects
-something does not guard against nobody noticing: that is the failure restated, not prevented.
-The two halves of one mechanism SHALL NOT differ in loudness, and the quiet half is the one
-that reports a guard that is dead rather than a balance that is low.
+own alerts are said.** Reported on the arrival of a balance — that is, only once the rung is
+already carrying traffic — the rung nobody has used yet, which is exactly the one the norm was
+written about, says nothing at all; and said into the log, while the floor it belongs to wakes
+the operator, it is a warning read only by somebody who already suspects something, which does
+not guard against nobody noticing. That is the failure restated, not prevented. The two halves
+of one mechanism SHALL NOT differ in loudness, and the quiet half is the one that reports a
+guard that is dead rather than a balance that is low.
+
+**A rung this gateway holds no credential for is outside that report.** It is never offered —
+the registry refuses it at the probe and the carrier map leaves it out — so it spends nothing
+and its missing floor costs nothing; reporting it on every start would teach an operator to
+ignore the channel that also carries "this vendor is running out". The same argument the
+refusal report makes for leaving `*` and `?` out of its own.
+
+[backed since 22.09.2026 · the owner's decision of that day is the channel: a check at startup
+**and** `notify`. `balance.report_unwatched_rungs` is awaited in `app/main.py`'s lifespan before
+anything can be verified, and both unwatched branches of `balance.observe` now wake the operator
+through `notify` rather than `logger.warning`. Guarded by `tests/test_balance_floor.py`, where
+the startup half is asserted **as an AST** — an `await` of that name inside `lifespan` and before
+the `yield` — because `assert "<name>" in source` goes green on an import line, and a check that
+runs after the yield runs at shutdown. `bite-nobody-is-watching.sh` turns seven red: no check at
+startup at all, the check moved past the `yield`, either unwatched branch dropped back into the
+log, and the two controls that a rung with a floor and a rung with no credential are **not**
+reported]
 
 🔴 **The vendor-side balance is the only ceiling that applies to a stolen credential, and it
 SHALL be held deliberately small.** This is the owner's decision of 22.09.2026, and it is a norm

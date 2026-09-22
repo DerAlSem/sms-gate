@@ -1384,14 +1384,24 @@ rather than on code.
       `bite-the-number-normalised-when-saved.sh`, five mutations, no survivors.
       Suite 1315 green on the same six inherited failures.
 
-- [ ] 4.65 "Nobody is watching this vendor's balance" is answerable without an event, and said as loudly as the floor
+- [x] 4.65 "Nobody is watching this vendor's balance" is answerable without an event, and said as loudly as the floor
       Both unwatched states in `balance.observe` exit through `logger.warning`; the floor they
       belong to wakes the operator through `notify`. Worse, `observe` runs only when a balance has
       arrived — that is, only once the rung is already carrying — so the rung nobody has used yet,
       which is the case the norm was written about, says nothing at all. **Owner's call which
       channel**: a row beside the rung in the console, a check at startup, or `notify`.
+      **Решение владельца 22.09.2026: проверка на старте И `notify`. Построено в тот же
+      день.** `balance.report_unwatched_rungs` ждётся в lifespan `app/main.py` прежде, чем
+      что-либо можно верифицировать, и обе «не следит никто» ветви `observe` теперь будят
+      оператора вместо лога. Рунг без учётных данных из доклада исключён: он не
+      предлагается вовсе и не тратит ничего, а доклад о нём на каждом старте учит
+      игнорировать канал — тот же довод, которым отчёт об отказах исключает `*` и `?`.
+      🔴 Стартовая половина охраняется **через AST**, а не грепом: `assert "<имя>" in
+      source` зеленеет от строки импорта, а вызов после `yield` — это проверка на
+      выключении. Сторож требует `await` этого имени внутри `lifespan` и ДО `yield`.
+      `bite-nobody-is-watching.sh`, семь мутаций, выживших нет.
 
-- [ ] 4.66 What a credential rotation costs is stated — and the owner decides whether it is softened
+- [x] 4.66 What a credential rotation costs is stated — and the owner decides whether it is softened
       A rotation takes effect with no restart, so messages already bought keep reporting, signed
       with the key just replaced; every one is rejected. The callback is the **only** path a
       refund ever takes, so a rotation silently drops the refunds for messages in flight and
@@ -1401,6 +1411,22 @@ rather than on code.
       (which weakens the signature check, deliberately), or the loss is only made visible. The
       cheap half is separable and already named by the spec as unmet: clock skew and bad
       signatures are counted under one key, so a rotation looks exactly like an attack.
+      **Решение владельца 22.09.2026: потерю сделать ВИДИМОЙ, не смягчать.** Прежний ключ
+      не честится ни секунды — проверка подписи не ослаблена ничем. Взята и дешёвая
+      половина: `tg_gateway.callback_refusal` отвечает, КОТОРАЯ половина отказала (`stale`
+      или `signature`), счётчик считает их порознь, и подписный отказ поднимает один
+      дедуплицированный алерт, называющий оба прочтения и несущий число рунгов, ещё
+      ждущих отчёта (`queries.rungs_awaiting_report`), — ровно те сообщения, чьи возвраты
+      ротация роняет.
+      🔴 **Две из восьми мутаций нашли дыры в сторожах, написанных в тот же час.** Порядок
+      двух проверок не был утверждён ничем: при проверке подписи ПЕРВОЙ всё, что вне окна
+      и вдобавок плохо подписано, считается проблемой учётных данных — то есть всякий, кто
+      дотягивается до этой публичной двери, получает кредитный алерт как инструмент,
+      послав просроченный мусор. Окно — это ровно то, что уже сделало такой трафик
+      безвредным. И число в алерте утверждалось только как «число»: понадобился стенд с
+      уже отчитавшимся рунгом и с рунгом, который никогда не покупали, чтобы утвердить,
+      что ни тот, ни другой в риск не засчитываются.
+      `bite-rotation-is-not-an-attack.sh`, восемь мутаций, выживших нет.
 
 ## 5. Verify against the real thing
 
