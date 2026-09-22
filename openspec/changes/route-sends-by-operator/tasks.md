@@ -69,11 +69,13 @@ funded balance.
       **charge**: the 0,80 ₽ list price is neither confirmed nor refuted, and at zero
       cost `balance` before and after a charge are indistinguishable, so the "balance
       before the charge" reading above cannot be checked on these samples either.
-      🟢 There is also `getBalance`, returning `rub_balance` — the balance *remaining* —
-      with no `cost` field in its documented response, unlike `checkPhone`, which has
-      one. So uCaller's balance looks pollable for free, which is the opposite of
-      Telegram Gateway's. That is an inference from an absence, not a statement; one call
-      against the funded account settles it.
+      🟢 **`getBalance` called 22.09.2026** — `rub_balance: 1000.00`, tariff `uni`
+      («Единый»), the same number `getInfo` reports as `balance`, and the account stood at
+      1000,00 ₽ after it. So uCaller's balance is pollable where Telegram Gateway's is
+      not, and the inference from the missing `cost` field is not contradicted. ⚠️ It is
+      still not *proved* free — a charge would only show on the next reading — and the two
+      balances cannot be told apart on this account at all, because `getInfo.balance` is
+      documented as the balance before the charge and there has not been a charge.
 - [x] 1.5a Owner: open **gateway.telegram.org**, "Log in to Start", confirm in Telegram, then copy the token from `gateway.telegram.org/account/api`. 🔴 **This is a different door from the one that is shut:** the Gateway needs no `my.telegram.org` and no `api_id`/`api_hash` — those are the user-account route's, and their refusal on 18.09.2026 does not reach here. Costs nothing and unblocks 1.5 by itself
 - [x] 1.5 **Prove the Gateway rung end to end for nothing, before any balance exists.** Free testing is tied to the login: *"you'll be able to send free verification messages to the Telegram account tied to the number you used to log in"* — so the owner logs in with the number the probe will target. Send a code we generated to it, with an explicit `ttl`, and watch the whole mechanism: the code we supplied arrives unchanged, the `delivery_status` moves, the callback is signed, `revokeVerificationMessage` withdraws it. **Done 18.09.2026 and it proved more than expected.** Our code arrives unchanged, delivery is `sent`→`delivered` in one second and `read` at 71 s, `request_cost` is 0 on an account whose `remaining_balance` is 0 — so the whole mechanism runs before any Fragment top-up. 🔴 **Revocation, however, is observably inert:** `ok/true` twice, message still on screen both times, `delivery_status` never `revoked`. Findings and their limits are in `captures/README.md`. Proves our half of the rung and nothing about a customer's reachability, which is 1.7
 - [ ] 1.6 Capture the live `checkSendAbility`, `sendVerificationMessage` and callback payloads verbatim into the change folder, including the callback headers. The reference gives field names; the sample gives what is actually populated, and the signature cannot be verified against a document. **Half done 18.09.2026 — `captures/` holds `sendVerificationMessage`, `checkVerificationStatus` and `revokeVerificationMessage` with their notes. 🟢 **`checkSendAbility` arrived 20.09.2026 with task 1.7** — `probe-1.7-check-able.json` and `probe-1.7-check-declined.json`, both halves of it. Still missing: the callback — ⚠️ **which was said to ride with 1.9 for want of a public HTTPS address, and that was wrong: `sms.deralsem.ru` answers publicly from edge and reaches this house over the live `wg-burns` tunnel, so the callback can be captured as soon as there is a request to report on**.** Not tickable until both arrive
@@ -354,6 +356,20 @@ rather than on code.
       the owner may overturn it.
 - [ ] 4.12 Test: a second request for the same number inside the vendor's per-number window is refused by us with a wait reason, and no vendor call is placed
 - [ ] 4.13 Test: a repeat inside the free window uses `initRepeat` and keeps the same code; a retried vendor call carrying the same idempotency key does not place a second call
+      🔴 **The first half may have no subject. Measured 22.09.2026: `initRepeat` over GET
+      answered `405`,** where the same GET form worked for `getService`, `initCall`,
+      `getInfo` and `getBalance` in the same series. Two readings and the measurement does
+      not separate them — GET is not taken by this method and the reference's GET example
+      is wrong, or the method itself is unavailable to this service or tariff, which the
+      reference hints at by marking every free-repeat field `deprecate` while `/limits/`
+      still promises two repeats and `getInfo` still fills them in (`repeatable: true`,
+      `repeat_times: 2`). The separating probe is the same call as POST with
+      `{"uid":…}`, plus a re-read of `getInfo` so the `405` cannot be blamed on an expired
+      window — which the vendor codes `11`, and a spent limit `12`, neither of which we
+      saw. ⚠️ **If the method is dead this task is void rather than unwritten**, and that
+      is the owner's call. Detail in `captures/ucaller-samples-1.3.md`.
+      The second half — idempotency via `unique` — is untouched by this: `unique` has
+      never been passed in any capture.
 - [x] 4.14 Test: a vendor authentication failure or an insufficient balance alerts the operator and reroutes nothing over the modem
       `tests/test_vendor_failure_spares_the_modem.py`, five mutations in
       `bite-modem.sh`. 🔴 **The handoff's premise was wrong and measuring it is what
