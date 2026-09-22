@@ -109,7 +109,13 @@ def _new_code(taken: set[str]) -> str:
     """
     for _ in range(100):
         code = f"{secrets.randbelow(10000):04d}"
-        if code not in taken:
+        # `0000` is four digits and outside uCaller's range, which the vendor states as
+        # 0001–9999 while explaining why `code` is a string. Minted, it would be a
+        # verification the `flash_call` rung could not carry at all — one in ten thousand,
+        # advancing to another rung without anybody being told, which is the invisible
+        # failure this change exists to remove. Redrawn rather than the draw narrowed, so
+        # that the digits a draw produces are the digits themselves.
+        if code != "0000" and code not in taken:
             return code
     raise HTTPException(
         status_code=503,

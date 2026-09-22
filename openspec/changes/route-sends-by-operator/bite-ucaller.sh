@@ -1,8 +1,10 @@
 #!/bin/bash
 # Укус сторожей записи uCaller. Мутация ломает охраняемое — сторож обязан покраснеть.
 set -u
-REPO=/Users/deralsem/dev/sms-gate/.claude/worktrees/tg-gateway-rung
-SCRATCH=/private/tmp/claude-501/-Users-deralsem-dev-sms-gate--claude-worktrees-tg-gateway-rung/17f53812-5020-4884-9fbe-60767f9f7a4e/scratchpad
+REPO=$(cd "$(dirname "$0")/../../.." && pwd)
+# mktemp, а не путь сессии: прежний здесь носил скрэтчпад сессии, которой уже нет, и
+# `cp` в несуществующий каталог молча уносил с собой restore — мутация оставалась в дереве.
+SCRATCH=$(mktemp -d)
 PY=$REPO/../../../venv/bin/python
 TESTS="tests/test_ucaller_credentials.py tests/test_vendor_credentials.py"
 UC=$REPO/app/verification/ucaller.py
@@ -18,6 +20,7 @@ run() {
 }
 
 restore() { cp "$SCRATCH/ucaller.py.orig" "$UC"; cp "$SCRATCH/settings_store.py.orig" "$SS"; }
+trap 'restore; rm -rf "$SCRATCH"' EXIT
 
 echo "== 0. ИСХОДНОЕ обязано быть зелёным"
 run
