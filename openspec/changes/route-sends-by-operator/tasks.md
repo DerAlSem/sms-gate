@@ -705,7 +705,7 @@ rather than on code.
       person's five attempts at a barrier they are standing at. Paired with the positive
       control that the owner's own three calls answer, without which the negative passes
       on a door that refuses everybody.
-- [ ] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
+- [x] 4.21 Test: a blocked number is refused a verification, and a call that fails to connect does not advance that number's permanent-failure count
       **The first half is built and bites** (21.09.2026,
       `tests/test_verification_api.py`). It was not, despite a test named for it: the
       guard asserted the 422 and the word `blacklist` and nothing about "without opening
@@ -716,8 +716,23 @@ rather than on code.
       is a live code in the store for a number the gateway has decided not to write to,
       and `open_codes_for` counts it against every later request for that number. Both
       halves are asserted now, with a positive control on the same door.
-      **The second half stays open and is 1.1's**: it is about a *call* that fails to
-      connect, and there is no call to place until the uCaller account exists.
+      **The second half closed 22.09.2026**, once there was a call to fail.
+      `tests/test_a_failed_call_is_not_a_bad_number.py`: `record_permanent_fail` has one
+      caller in the application — the modem's delivery-report path — and both of the call
+      rung's failing endings are **driven** against a live database rather than read,
+      because an absence reads as satisfied in code that never runs the path. The carrier's
+      not-connected branch and `resolve_outstanding`, which is the ending a later change
+      forgets: by the time it runs it is already failing the verification and recording the
+      cost, which is exactly the shape "and mark the number bad" gets added to.
+      Mutations inverted to match — they write in what must not be there —
+      `bite-call-is-not-a-bad-number.sh`, six bites.
+      ⚠️ Two neighbours left standing and named rather than quietly built: the
+      requirement's **normalisation** scenario has no guard at this door (the validator is
+      the send's own and `tests/test_phone.py` covers the function, but nothing drives an
+      unnormalised number through `POST /verifications`); and the blacklist is checked at
+      `POST /verifications` and **not** at `POST /verifications/{id}/route`, so a number
+      blocked inside an open verification's window still reaches the paid ladder. Neither
+      is 4.21's text.
 - [x] 4.22 Test: the code appears in no API response, no alert and no log line, and stops being readable once the verification is terminal
       The response half is enumerated **from the router**, not from a list kept in the
       test: a census of surfaces is never complete and goes stale in silence, and the next

@@ -880,7 +880,31 @@ A failed call SHALL NOT count toward the destination's permanent-failure thresho
 route does not share the modem's evidence about a number, and a number the modem has been
 failing to reach is exactly the number this route exists to serve.
 
-[unbacked · gates live in the handlers today: app/api/router.py:21, app/api/schemas.py:19-22]
+[backed for the blacklist and for the call · the blacklist is checked in
+`app/api/router.py` **before anything is created**, guarded by
+`tests/test_verification_api.py` with a positive control on the same door. That ordering is
+measured rather than reasoned about: moving the check to *after* `create_verification` — so
+that a blocked number is refused having had a row opened, a live code minted and every probe
+spent — left the **whole suite** green, because the guard that existed asserted the 422 and
+the word `blacklist` and nothing about having opened nothing.
+
+**The call half is backed since 22.09.2026, task 4.21, and could not be asked before it:**
+it is about a *call* that fails to connect, and until the account and the adapter existed
+there was no call to fail. `record_permanent_fail` has exactly one caller in the application
+— the modem's delivery-report path — and `tests/test_a_failed_call_is_not_a_bad_number.py`
+drives both of the call rung's failing endings against a live database and asserts the count
+does not move: the carrier's own not-connected branch, and `resolve_outstanding`, which
+reaches the same ending a minute later for the rung the ladder stopped waiting on. The
+property is an **absence**, so the mutations are inverted — they write in what must not be
+there: `bite-call-is-not-a-bad-number.sh` turns six red, the count advanced from either
+ending, the count touched at all on a call that *did* connect, a block lifted by a failed
+call, and the two controls that the counter is alive and that the threshold still blocks.
+
+⚠️ **Normalisation is not backed at this door.** `VerificationCreateRequest.phone` runs the
+same `validate_and_normalize` validator `SmsSendRequest.phone` runs and `tests/test_phone.py`
+guards the function itself — but nothing drives an unnormalised number through
+`POST /verifications` and checks that the operator was looked up on the normalised one, which
+is the half this requirement argues for and the half that silently takes the default route]
 
 #### Scenario: A blocked number is asked to verify
 - **WHEN** a verification is requested for a number the gateway holds blocked
