@@ -78,7 +78,22 @@ keyed on, so field and sentence cannot disagree) and both response sites in
 `bite-the-number-as-data.sh` — four mutations: the field assembled and dropped at the door, the
 number returned on every rung, the field disagreeing with the prose, and the default removed.
 The contract carries it in `docs/verification-api.md`. The rest of this requirement — the shape
-of the door itself — is backed by the same file and by `tests/test_verification_api.py`]
+of the door itself — is backed by the same file and by `tests/test_verification_api.py`.
+
+**The normalisation of the gateway's own number is backed since 22.09.2026, task 4.64.**
+`gateway_msisdn` is a validated setting **type** (`msisdn`) rather than a free string, on the
+precedent of `callbackbase` in this same change, so a second door that saves settings cannot be
+a door that forgot it: a national spelling is rewritten to E.164 on the way in and a non-number
+is refused at the save. Blank still saves, because blank is the shipped state of an estate with
+no number and the rungs are then simply not offered. Guarded by
+`tests/test_the_gateways_own_number_is_normalised_when_saved.py`, which asks both the setting
+and the real door. `bite-the-number-normalised-when-saved.sh` turns five red: the type back to a
+free string (the defect as found), validated but not rewritten — the form of evidence this
+change has repeatedly found worthless — rewritten but not refused, the control that blank stays
+savable, and 🔴 **the check moved to the use instead of the save**. That last one was expected to
+leave the door green and did not, which is the finding: the field is normalised while the
+sentence beside it is still built from the same raw value, so the fix at the use produces exactly
+what this requirement forbids in its own paragraph — a field that disagrees with its sentence]
 
 #### Scenario: The gateway's own number is saved in a national spelling
 - **WHEN** the gateway's number is saved written the way a person ordinarily writes it

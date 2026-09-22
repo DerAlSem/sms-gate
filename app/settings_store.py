@@ -16,7 +16,7 @@ class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
                        # | "oproutes" | "templates" | "region" | "delays"
-                       # | "callbackbase"
+                       # | "callbackbase" | "msisdn"
     default: object
     section: str
     is_secret: bool
@@ -147,8 +147,17 @@ SETTINGS_SPEC: list[Spec] = [
     # The number a subscriber calls or texts. The gateway does not otherwise hold its own
     # MSISDN anywhere, and both rungs this change adds have to tell the person where to
     # reach it — blank means neither rung can be offered, which is the honest answer.
-    Spec("gateway_msisdn", "str", "", "Verification", False,
-         "The gateway's own number, as the subscriber must dial or text it"),
+    # 🔴 A validated type rather than a free string, and for the reason `callbackbase` is
+    # one: the value goes out to applications as **data** — `RouteOffer.number` exists
+    # precisely so a consumer can build a `tel:` on it without reading our English prose —
+    # so a national spelling kept as it was typed puts our data entry onto their screen.
+    # The failure is mute: the subscriber dials nothing, the window closes, and the
+    # verification reports `expired`, indistinguishable from a person who never called.
+    # Blank still saves, because blank is the honest state of an unconfigured estate and
+    # the rungs are then simply not offered.
+    Spec("gateway_msisdn", "msisdn", "", "Verification", False,
+         "The gateway's own number, as the subscriber must dial or text it "
+         "(stored normalised; a national spelling is rewritten, a non-number refused)"),
     Spec("verification_max_attempts", "posint", 5, "Verification", False,
          "Wrong codes tolerated before a verification stops accepting any"),
     # The Telegram Gateway rung's access token. Secret on the same terms as
@@ -448,6 +457,16 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
         from app.verification import tg_callback
         tg_callback.validate_base(raw)
         return
+    if type_ == "msisdn":
+        # Blank is the shipped state and refusing it would make an unconfigured estate
+        # unsavable; anything else is held to exactly what a subscriber's number is held
+        # to, which is the whole of the norm — "the same normalised form the gateway
+        # requires of a subscriber's number".
+        if raw.strip() == "":
+            return
+        from app.phone import validate_and_normalize
+        validate_and_normalize(raw, store.phone_region)
+        return
     if type_ == "delays":
         for part in raw.split(","):
             text = part.strip()
@@ -496,6 +515,14 @@ def normalize_raw(type_: str, raw: str) -> str:
     if type_ == "callbackbase":
         from app.verification import tg_callback
         return tg_callback.normalize_base(raw)
+    if type_ == "msisdn":
+        if raw.strip() == "":
+            return ""
+        from app.phone import validate_and_normalize
+        try:
+            return validate_and_normalize(raw, store.phone_region)
+        except ValueError:
+            return raw                          # validate_raw reports it
     if type_ != "routes" or raw.strip() == "":
         return raw
     try:

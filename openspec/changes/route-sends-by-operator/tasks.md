@@ -1309,7 +1309,7 @@ rather than on code.
       got less" is satisfied by flooring everything at `0.1`, which breaks the rung outright —
       a one-inequality guard would have been a hole facing the other way. Suite 1305 green.
 
-- [ ] 4.64 The gateway's own number is normalised, or refused, when it is saved
+- [x] 4.64 The gateway's own number is normalised, or refused, when it is saved
       `Spec("gateway_msisdn", "str", …)` has no validator, and the value goes out to applications
       as **data** in `RouteOffer.number` — the field exists precisely so a consumer can build a
       `tel:` on it without reading our prose. A national spelling is how a person ordinarily
@@ -1317,6 +1317,23 @@ rather than on code.
       mute: the subscriber dials nothing, the window closes, and the verification reports
       `expired`, indistinguishable from a person who never called. The precedent is in this same
       change — `callbackbase` is a validated setting type, added for the identical reason.
+      **Built 22.09.2026**, and the precedent held: `gateway_msisdn` is now the setting type
+      `msisdn`, normalised and validated in `normalize_raw`/`validate_raw` exactly where
+      `callbackbase` is. It reuses `app.phone.validate_and_normalize` against
+      `store.phone_region` — the same call the public send door makes on a subscriber's
+      number, which is literally what the norm asks for. Blank still saves: blank is the
+      shipped state of an estate with no number, and refusing it would make that estate
+      unsavable. No new setting key, so the census guard
+      `test_spec_has_all_soft_keys` is untouched.
+      🔴 **The instructive mutation is the fifth, and it refuted my own prediction.** Moving
+      the check to the *use* (normalising inside `routes._number_for`) was expected to leave
+      the door test green and only the setting tests red. It left the door test RED too: the
+      field gets normalised while the sentence beside it is still composed from the same raw
+      value, so the door-side fix produces the one thing this requirement forbids by name — a
+      field that disagrees with its sentence. Checking at the save is not merely earlier, it
+      is the only place the two can agree.
+      `bite-the-number-normalised-when-saved.sh`, five mutations, no survivors.
+      Suite 1315 green on the same six inherited failures.
 
 - [ ] 4.65 "Nobody is watching this vendor's balance" is answerable without an event, and said as loudly as the floor
       Both unwatched states in `balance.observe` exit through `logger.warning`; the floor they
