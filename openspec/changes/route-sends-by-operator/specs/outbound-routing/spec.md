@@ -189,10 +189,28 @@ afterwards, and placed after, it is read by nobody. The gateway SHALL NOT read a
 credential from the environment at send time. Owner's decision of 18.09.2026, confirming what
 the code had already shown on 11.09.2026.
 
-There are two vendors behind the ladder and therefore two credentials: uCaller's, a single
-bearer string carrying both an API key and a service id, and Telegram Gateway's bearer token.
-They SHALL be separate settings. A route whose credential is absent SHALL NOT be attempted and
-SHALL NOT be called unauthenticated to find out.
+There are two vendors behind the ladder and therefore two credentials: uCaller's and Telegram
+Gateway's. They SHALL be separate settings, and a route whose credential is absent SHALL NOT be
+attempted and SHALL NOT be called unauthenticated to find out.
+
+**uCaller's credential is a pair, and SHALL be stored as two settings rather than as the joined
+bearer.** The vendor takes the same two values — a per-service secret key and a service id —
+three interchangeable ways: as `key` and `service_id` query parameters on a GET, as the same
+two fields in a JSON body, or as the header `Authorization: Bearer <key>.<service_id>`. The
+bearer is therefore a *derived* form of the pair, and the cabinet hands the two values over
+separately. The gateway SHALL assemble the header itself from the two settings, and SHALL treat
+either half missing as no credential at all.
+
+This replaces an earlier reading of "a single bearer string carrying both an API key and a
+service id" — correct about the header form and wrong about what to store. A joined value puts
+the separator in the operator's hands, and a bearer whose dot is missing or doubled is
+**indistinguishable from a configured one** on the settings page, which reports only whether a
+row is blank; it announces itself as the vendor's `401` on the first live call, and on this
+rung a live call is one somebody paid for. Two rows are each pasted verbatim, and a missing
+half reports itself as unset.
+
+[backed · vendor reference read by layers 22.09.2026 and captured verbatim in
+`captures/ucaller-reference-2026-09-22.md`, which supersedes the 08.09.2026 reading]
 
 A rung skipped for a missing credential SHALL raise an operator alert on the configuration the
 gateway ships with, and the ladder SHALL then advance past it as it would past a decline. This
@@ -214,7 +232,9 @@ rather than by deciding anything.
 
 🔴 **The boundary has two surfaces and the obvious census sees one.** "Never in the environment" is a claim about every line in `app/`, so the readers are enumerated off the syntax tree — and that census reports a single sanctioned reader while `app/config.py` reads `.env` on every start through `BaseSettings(env_file=".env")`, with no `os.environ` anywhere in it for a census to find. A vendor credential declared there is the defect in its purest form: read from `.env` at every start, absent from the settings page, unchangeable without a restart. Both surfaces are asserted, the second as a whitelist of one — `admin_password` is the console's own door, kept in `.env` deliberately so that a bad settings write cannot lock an operator out of the page they would fix it from, and that is a gateway credential rather than a vendor's.
 
-Still unbacked: uCaller has no credential at all (task 1.1), and every rung-skipping clause below, which needs the door]
+uCaller's half now has a home: `ucaller_key` (secret, and covered by the guard above through the shape of its name) and `ucaller_service_id`, declared 22.09.2026, with the bearer assembled in `app/verification/ucaller.py` from both halves or from neither. Guarded by `tests/test_ucaller_credentials.py` and eight mutations in `bite-ucaller.sh` — the dot dropped, the halves swapped, one half accepted as a whole credential, the paste left unstripped, the reader taking the key twice, the secret declared not secret, the row shipped with a value, and the second half never declared. ⚠️ **Nothing in production reads the bearer yet**: the settings page reads the rows, but the vendor is called by nobody until the adapter lands (task 4.17), and `flash_call` has no probe registered and is therefore never offered.
+
+Still unbacked: every rung-skipping clause below, which needs the door]
 
 #### Scenario: A credential placed in the environment after the first run
 - **WHEN** a vendor credential is written to `.env` for a key that already has a row in `settings`
@@ -223,6 +243,10 @@ Still unbacked: uCaller has no credential at all (task 1.1), and every rung-skip
 #### Scenario: A secret is not rendered
 - **WHEN** an operator opens the settings page
 - **THEN** it says whether each vendor credential is configured, and shows neither value
+
+#### Scenario: Half of uCaller's credential
+- **WHEN** one of the two settings holding uCaller's key and service id is blank
+- **THEN** the rung has no credential, and nothing is sent to the vendor to find out
 
 #### Scenario: A rung with no credential
 - **WHEN** the first rung of a ladder has no credential configured

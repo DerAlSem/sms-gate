@@ -189,6 +189,33 @@ SETTINGS_SPEC: list[Spec] = [
     # made and present as a gateway that answers 404 to everyone.
     Spec("verification_retention_days", "posint", 30, "Verification", False,
          "Delete finished verifications after N days"),
+    # uCaller's credential, and it is **two** rows rather than one. The vendor takes the
+    # same pair three interchangeable ways — `?key=&service_id=` on a GET, the two fields
+    # in a JSON body, or the header `Authorization: Bearer <key>.<service_id>` — and the
+    # cabinet hands the two values over separately, under "Мои сервисы". Reference read
+    # 22.09.2026; captured in the change's
+    # `captures/ucaller-reference-2026-09-22.md`.
+    #
+    # 🔴 The joined bearer was the spec's reading until that read, and storing it would
+    # have put the dot in the owner's hands. A bearer whose separator is missing or
+    # doubled is indistinguishable from a configured one on this page — it says "задано"
+    # about any row that is not blank — and announces itself as the vendor's `401` on the
+    # first live call, which on this rung is a call somebody paid for. Two rows are each
+    # pasted verbatim, and a missing half reads as "не задано", which is what it is.
+    #
+    # Blank by default, for the reason `tg_gateway_token` is: blank is the honest state of
+    # an unconfigured estate, and a rung with no credential is never offered rather than
+    # attempted and refused at the vendor.
+    Spec("ucaller_key", "str", "", "Verification", True,
+         "uCaller service secret key, from the cabinet under Мои сервисы "
+         "(blank = the flash_call rung is never offered)"),
+    # Held as a string although the vendor's own `getService` reports it as a number: a
+    # blank string is how this gateway spells "not configured", and a wrong id is refused
+    # by the vendor either way. `getService` is the free way to check the pair — it needs
+    # no phone number and no money, and names the service on success.
+    Spec("ucaller_service_id", "str", "", "Verification", False,
+         "uCaller service id, the second half of the credential above "
+         "(blank = the flash_call rung is never offered)"),
     # The vendor's numbers, not ours, and therefore settings: uCaller allows four
     # authorisations per number per minute with at least fifteen seconds between them and
     # thirty per number per day, and a number that exceeds them is blocked **for ten

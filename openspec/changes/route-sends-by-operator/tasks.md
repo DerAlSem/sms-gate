@@ -13,15 +13,41 @@ funded balance.
       sibling. The entry is 2.3's — a secret in `settings`, never `.env`, because
       `seed_from_env` copies a variable only into a key with no row and is therefore
       already spent from the second start onwards.
-      🔴 **The credential's shape is a wire-contract question, not a guess.** The spec
-      says "a single bearer string carrying both an API key and a service id" — a reading
-      of the reference, taken 08.09.2026. Whether that is one field or two is what the
-      reference has to answer before the entry is declared, or the console will hold a
-      shape the vendor does not take. The external-contract gate applies: reference or
-      captured sample first.
+      🟢 **The home exists as of 22.09.2026 — task 4.17d.** The reference was read by
+      layers and the answer is **two** values, not one: `ucaller_key` (secret) and
+      `ucaller_service_id`. The owner pastes each verbatim into the settings page; the
+      gateway joins them into `Authorization: Bearer <key>.<service_id>` itself.
+      🔴 **The earlier reading — "a single bearer string carrying both an API key and a
+      service id", 08.09.2026 — was right about the header and wrong about what to
+      store.** The vendor takes the pair three interchangeable ways and its cabinet hands
+      the two values over separately, so a joined value would have put the dot in the
+      owner's hands — and a bearer whose dot is missing or doubled looks *configured* on
+      the settings page and arrives as a `401` on the first paid call. Reference captured
+      verbatim in `captures/ucaller-reference-2026-09-22.md`.
 - [ ] 1.2 Place one `initCall` to `+79851600019` (the operator-confirmed МегаФон number the owner released for probes) and confirm the phone actually rings and shows a number whose last four digits match the `code` we passed. **If it does not ring, the `flash_call` rung is void** — and that is now survivable rather than fatal, provided 1.5 and 1.7 show the Gateway rung carrying it
 - [ ] 1.3 Capture the live responses of `initCall` and `getInfo` verbatim into the change folder — the contract so far comes from the vendor's reference only, and no parser is written against a reference when a sample is one call away
+      🟢 **This is free and does not wait on 1.2.** The reference publishes test numbers:
+      `79000000001` always succeeds, `79000000002` always fails as unreachable, and "все
+      тестовые авторизации не будут тарифицироваться" — so both wire shapes, including
+      `call_status: 1` and `call_status: 0`, can be captured against the live API for
+      nothing as soon as the credential is in `settings`. Read 22.09.2026;
+      `captures/ucaller-reference-2026-09-22.md` §8.
+      ⚠️ What a test capture cannot show is a *populated* one: `phone_info` may be empty,
+      a free authorisation presumably costs 0, and a parser written only against test
+      answers has never seen a charge. Capture a real one too when 1.2 happens, and label
+      which is which.
 - [ ] 1.4 Confirm from the captured `getInfo` what `cost` and `balance` actually are for our account, and whether the 0,80 ₽ list price is what we are charged
+      ⚠️ **The reference sharpens the question, 22.09.2026.** `getInfo`'s `balance` is
+      documented as "Состояние баланса **до списания** этой операции" — the balance
+      before this call was charged, so read as the current balance it is high by exactly
+      `cost`, and a floor held against it fires one verification late. And `cost`'s type
+      column says `bool` while its example carries `0.3`, which is a vendor typo worth
+      not writing a parser to.
+      🟢 There is also `getBalance`, returning `rub_balance` — the balance *remaining* —
+      with no `cost` field in its documented response, unlike `checkPhone`, which has
+      one. So uCaller's balance looks pollable for free, which is the opposite of
+      Telegram Gateway's. That is an inference from an absence, not a statement; one call
+      against the funded account settles it.
 - [x] 1.5a Owner: open **gateway.telegram.org**, "Log in to Start", confirm in Telegram, then copy the token from `gateway.telegram.org/account/api`. 🔴 **This is a different door from the one that is shut:** the Gateway needs no `my.telegram.org` and no `api_id`/`api_hash` — those are the user-account route's, and their refusal on 18.09.2026 does not reach here. Costs nothing and unblocks 1.5 by itself
 - [x] 1.5 **Prove the Gateway rung end to end for nothing, before any balance exists.** Free testing is tied to the login: *"you'll be able to send free verification messages to the Telegram account tied to the number you used to log in"* — so the owner logs in with the number the probe will target. Send a code we generated to it, with an explicit `ttl`, and watch the whole mechanism: the code we supplied arrives unchanged, the `delivery_status` moves, the callback is signed, `revokeVerificationMessage` withdraws it. **Done 18.09.2026 and it proved more than expected.** Our code arrives unchanged, delivery is `sent`→`delivered` in one second and `read` at 71 s, `request_cost` is 0 on an account whose `remaining_balance` is 0 — so the whole mechanism runs before any Fragment top-up. 🔴 **Revocation, however, is observably inert:** `ok/true` twice, message still on screen both times, `delivery_status` never `revoked`. Findings and their limits are in `captures/README.md`. Proves our half of the rung and nothing about a customer's reachability, which is 1.7
 - [ ] 1.6 Capture the live `checkSendAbility`, `sendVerificationMessage` and callback payloads verbatim into the change folder, including the callback headers. The reference gives field names; the sample gives what is actually populated, and the signature cannot be verified against a document. **Half done 18.09.2026 — `captures/` holds `sendVerificationMessage`, `checkVerificationStatus` and `revokeVerificationMessage` with their notes. 🟢 **`checkSendAbility` arrived 20.09.2026 with task 1.7** — `probe-1.7-check-able.json` and `probe-1.7-check-declined.json`, both halves of it. Still missing: the callback — ⚠️ **which was said to ride with 1.9 for want of a public HTTPS address, and that was wrong: `sms.deralsem.ru` answers publicly from edge and reaches this house over the live `wg-burns` tunnel, so the callback can be captured as soon as there is a request to report on**.** Not tickable until both arrive
@@ -435,6 +461,32 @@ rather than on code.
       is what that entry is for. Nine mutations bite, none survive.
       **What this does not do is 4.47** — the template refusal at accept, which only
       becomes answerable now that the rung can be chosen.
+- [x] 4.17d Declare uCaller's credential in `settings` and assemble its bearer — the half of 4.17 the reference alone settles, so that the owner's key has somewhere to go before any sample exists
+      Split out of 4.17 on 22.09.2026 for the same reason 4.17b was: the rest of 4.17 is
+      a parser and waits on samples (1.3), while *how the vendor is authenticated* is
+      answered by the reference and by nothing else. The owner had the key in his hands
+      and no row to put it in.
+      Reference read by layers and captured verbatim —
+      `captures/ucaller-reference-2026-09-22.md`, which supersedes the 08.09.2026
+      reading. `ucaller_key` (secret) and `ucaller_service_id` in `app/settings_store.py`;
+      `app/verification/ucaller.py` joins them into
+      `Authorization: Bearer <key>.<service_id>` or returns nothing at all.
+      🔴 **Two rows rather than the joined bearer, and that is a failure mode rather than
+      a preference.** The settings page says "задано" about any row that is not blank, so
+      a bearer with a missing or doubled dot is indistinguishable from a working one
+      there and announces itself as the vendor's `401` on the first *paid* call. Two rows
+      are each pasted verbatim, and a missing half reads as "не задано".
+      Six guards in `tests/test_ucaller_credentials.py`, eight mutations in
+      `bite-ucaller.sh`, no survivors: the dot dropped, the halves swapped, one half
+      accepted as a whole credential, the paste left unstripped, the reader taking the
+      key twice, the secret declared not secret, the row shipped with a value, and the
+      second half never declared. The page was rendered in both locales — the secret is a
+      `password` field with no `value` attribute, the service id a plain field showing
+      its value.
+      ⚠️ **Declared is not called.** The settings page reads the rows; the vendor is
+      called by nothing until 4.17 lands the adapter, and `flash_call` has no probe
+      registered and is therefore never offered. Said out loud in the module and in the
+      spec rather than left to be discovered.
 - [x] 4.18 Implement the per-operator count of refusals, reachable from the admin console — the rule outlives the outage that justified it, and nothing else will say so
       Built 20.09.2026 as `app/verification/refusals.py` plus the table
       `route_refusals`: a row per refusal, not a running total, because the
