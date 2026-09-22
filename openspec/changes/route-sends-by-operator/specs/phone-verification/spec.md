@@ -1184,6 +1184,25 @@ until a deadline, and the application learns nothing until then. It also closes 
 other direction: the live rule that every status writer notifies would otherwise push a raw
 message id to an application that only ever asked for a verification.
 
+**The rung SHALL be honoured for the whole life of the message, and not only at the moment it
+was placed.** The ladder reads the rule when it places; the sender reads it again when it
+sends; and between those two reads lie a queue, a retry backoff and — after a restart — the
+resume path. An operator moved wholly onto the paid rungs during an outage is exactly the
+change an owner makes inside that window, and every code already queued for them then belongs
+to an operator the rule routes to `flash_call`. The sender SHALL carry it regardless. Refusing
+it there would fail a code for a rule that changed after the person was told to expect it —
+naming a paid rung in the reason, on a message the modem was perfectly able to carry, and
+spending the verification's one placement to say so. Ordinary text for that operator SHALL
+still be refused, which is what makes this a carve-out for the ladder's decision rather than a
+hole in the rule.
+
+This is also **the only state in which task 4.1's first half is reachable at all.** At
+placement it cannot be built: `sms_carrier` is the only thing that creates a
+verification-owned message, it runs only where `ladder.walk` walks to `sms_out`, and
+`placement.ladder_from` walks `sms_out` only where the rule named it or the consumer chose it
+— so a guard written against placement is green and empty. Reached through time, the answer is
+the opposite of what that task predicted, by the owner's decision of 21.09.2026.
+
 [backed · evidence: app/verification/sms_carrier.py (the rung itself — it composes from
 the application's template, creates the message with `verification_id` set, and hands it
 to the sender) · app/db/migrate.py (`messages.verification_id`, additive and NULL for
@@ -1192,7 +1211,12 @@ every existing row) · app/modem/delivery_dispatch.py
 all eight of the sender's status writers pass through) · app/modem/manager.py (the sender
 does not re-read the rule for a message the ladder placed) · tests/
 test_the_modem_rung_carries_a_code.py and test_a_verification_owns_its_message.py,
-sixteen mutations bitten, none surviving ·
+sixteen mutations bitten, none surviving · the rule re-pointed **after** placement is
+guarded since 22.09.2026 (task 4.1) with its own positive control, and
+`bite-rule-repointed-after-placement.sh` turns four more red — the carve-out absent, the
+carve-out widened to everything, the sender walking past the rule's first rung, and the
+carve-out narrowed to "the rule still names the modem somewhere", which leaves 4.17b's own
+guard green and reddens only the new one ·
 app/verification/probes.py (`_sms_out_probe`, so the rung can be chosen — the owner's
 decision of 21.09.2026) · conf: high]
 
@@ -1203,3 +1227,7 @@ decision of 21.09.2026) · conf: high]
 #### Scenario: A verification's message does not notify as a message
 - **WHEN** the status of a message belonging to a verification changes
 - **THEN** no message-status push is sent for it; the verification's own notification carries the outcome
+
+#### Scenario: The rule moves out from under a code already placed
+- **WHEN** the routing rule is re-pointed away from the modem after the ladder placed a verification's message on it
+- **THEN** the sender carries that message regardless, while ordinary text for the same operator is still refused

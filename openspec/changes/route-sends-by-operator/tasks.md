@@ -189,16 +189,32 @@ rather than on code.
       the same rule is still refused.
       **What is left of this task is its first half** — that a verification for an
       operator the rule routes to `flash_call` is not picked up by the modem sender —
-      and it is **unreachable by construction**, measured 21.09.2026 rather than read:
-      the only thing that creates a verification-owned message is `sms_carrier`, which
-      runs only where `ladder.walk` walks to `sms_out`; and `placement.ladder_from`
-      returns either the rule's own list from the chosen rung onwards or the chosen rung
-      **alone**, so `sms_out` is walked only where the rule names it. There is therefore
-      no state in which a verification's message exists for an operator the rule routes
-      to `flash_call`, and a guard written today would be green and empty. It becomes
-      reachable if the rule may change *between* placement and sending — the sender
-      honours the ladder's choice from the row and does not re-read the rule — and that
-      is the case worth writing when it is worth writing one.
+      and at **placement** it is unreachable by construction, measured 21.09.2026 and
+      re-checked 22.09.2026 against the same three files: `sms_carrier` is the only thing
+      that creates a verification-owned message, it runs only where `ladder.walk` walks to
+      `sms_out`, and `placement.ladder_from` returns either the rule's own list from the
+      chosen rung onwards or the chosen rung **alone**. A guard written against placement
+      is green and empty.
+      🔴 **The one state that does reach it was written 22.09.2026, and the answer in it
+      is the opposite of what this task predicted.** The state is *time*: the ladder reads
+      the rule when it places and the sender reads it again when it sends, and between
+      those two reads lie a queue, a retry backoff and the restart resume path. An
+      operator moved wholly onto the paid rungs during an outage is exactly the change
+      made inside that window, and every code already queued for them then belongs to an
+      operator the rule routes to `flash_call`. The sender carries it — the owner's
+      decision of 21.09.2026, task 4.17b — because refusing it would fail a code for a
+      rule that changed after the person was told to expect it, and spend the
+      verification's one placement to say so.
+      Built and bitten: `test_a_rule_re_pointed_after_placement_does_not_strand_the_code`
+      in `tests/test_the_modem_rung_carries_a_code.py`, with the positive control that
+      ordinary text on that same re-pointed rule is still refused, and four mutations in
+      `bite-rule-repointed-after-placement.sh` — one of which leaves 4.17b's own guard
+      green and reddens only this one, which is what earns it its place. The norm and its
+      scenario are now in the spec rather than only in this note.
+      ⚠️ **The task's first half as literally written therefore cannot be satisfied**, and
+      not for want of work: the behaviour it asks for was decided against, by name, on
+      21.09.2026. **Striking it is the owner's** — a refusal is recorded by the owner
+      before archiving, not by the session that found it. Nothing is blocked by it.
 - [x] 4.2 Test (positive control): a plain send to any operator not in the rule still goes over the modem, unchanged
       Taken **in the same file and the same session as 4.6**, not after it: three times
       on this change a guard has stood green over a place nothing could reach, and the

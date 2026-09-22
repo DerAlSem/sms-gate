@@ -43,7 +43,7 @@ from app.db.migrate import run_migrations
 from app.modem import manager as manager_mod
 from app.settings_store import store
 from app.verification import ladder, placement, rule, sms_carrier
-from app.verification.routes import SMS_OUT, TG_GATEWAY
+from app.verification.routes import FLASH_CALL, SMS_OUT, TG_GATEWAY
 
 PHONE = "+79851600019"
 OPERATOR = "МегаФон"
@@ -280,3 +280,84 @@ def test_the_ownership_is_read_from_the_database_rather_than_the_queued_item():
 
     assert _run(body) is False, \
         "after a restart the sender refuses the code it had already been asked to carry"
+
+
+# --- the rule re-pointed between placement and sending (task 4.1) ---------------------
+
+def _the_modem_not_named_at_all():
+    """The operator's traffic taken off the modem entirely, both rungs paid."""
+    return json.dumps(
+        [{"operator": OPERATOR, "routes": [TG_GATEWAY, FLASH_CALL]},
+         {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
+         {"operator": rule.UNKNOWN, "routes": [SMS_OUT]}], ensure_ascii=False)
+
+
+def test_a_rule_re_pointed_after_placement_does_not_strand_the_code():
+    """🔴 Task 4.1's first half, in the one state that can actually reach it.
+
+    The task asks that a verification for an operator the rule routes to `flash_call` is
+    not picked up by the modem sender, and at **placement** that state cannot be built:
+    `sms_carrier` is the only thing that creates a verification-owned message, it runs
+    only where `ladder.walk` walks to `sms_out`, and `placement.ladder_from` walks
+    `sms_out` only where the rule named it or the consumer chose it. A guard written
+    against placement is green and empty.
+
+    It becomes reachable through **time**. The ladder reads the rule when it places; the
+    sender reads it again when it sends, and between those two reads is a queue, a retry
+    backoff and — after a restart — the resume path. An operator moved wholly onto the
+    paid rungs during an outage is precisely the change an owner makes in that window,
+    and every code already queued for them is then a message whose operator the rule now
+    routes to `flash_call`.
+
+    And the answer there is the **opposite** of what 4.1 predicted, by the owner's
+    decision of 21.09.2026 (task 4.17b): the ladder already chose this rung for this
+    verification, the person is already being told to expect a text, and the placement
+    has already been spent. Re-deciding it here would fail the code for a rule that
+    changed after it was sent — naming a paid rung in the reason, on a message the modem
+    was perfectly able to carry.
+    """
+    modem = _Modem()
+
+    async def body():
+        # Placed while the rule still named the modem, behind the paid rung.
+        await store.set_many({rule.KEY: _the_modem_behind_the_paid_rung()})
+        await _carry(modem)
+        message_id = modem.queued[0]["message_id"]
+
+        # And the rule moves out from under it, as it does during an outage.
+        await store.set_many({rule.KEY: _the_modem_not_named_at_all()})
+        refused = await _refused(message_id)
+        row = await queries.get_message_any(message_id)
+        return refused, row["status"]
+
+    refused, status = _run(body)
+
+    assert refused is False, (
+        "a rule re-pointed after the ladder placed the code stranded it at the sender: "
+        "the person is waiting for a text the gateway decided to send and then refused")
+    assert status == "pending", status
+
+
+def test_an_ordinary_message_is_refused_by_that_same_re_pointed_rule():
+    """The positive control for the test above, and it is a different refusal from the
+    one beside it: there the rule still named the modem, second. Here it does not name
+    the modem at all, and the rung it names cannot carry arbitrary text — so a carve-out
+    that leaked would be handing free text to the modem for an operator whose traffic has
+    been taken off it completely."""
+    async def body():
+        await store.set_many({rule.KEY: _the_modem_not_named_at_all()})
+        message_id = await queries.create_message("app1", PHONE, "an ordinary message")
+        refused = await _refused(message_id)
+        row = await queries.get_message_any(message_id)
+        db = await get_db()
+        async with db.execute(
+                "SELECT error FROM messages WHERE id = ?", (message_id,)) as cur:
+            error = (await cur.fetchone())[0]
+        return refused, row["status"], error
+
+    refused, status, error = _run(body)
+
+    assert refused is True, \
+        "free text went to the modem for an operator the rule has taken off it entirely"
+    assert status == "failed", status
+    assert TG_GATEWAY in (error or ""), error
