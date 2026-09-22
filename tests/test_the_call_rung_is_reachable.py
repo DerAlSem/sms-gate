@@ -331,3 +331,90 @@ def test_a_request_after_the_window_has_passed_is_called(client, vendor):
     assert r.status_code == 200, r.text
     assert len(calls["initCall"]) == 2, \
         "the gap had passed and the second call was still not placed"
+
+
+# --- a number the gateway has decided not to touch ------------------------------------
+
+def _block(phone=PHONE):
+    async def go():
+        await queries.block_phone(phone)
+    asyncio.run(go())
+
+
+def test_a_number_blocked_after_the_verification_opened_reaches_no_vendor(client, vendor):
+    """🔴 The window is real and it is five minutes wide.
+
+    `POST /verifications` refuses a blocked number before it opens anything, and that is
+    guarded. What it cannot cover is the number blocked *afterwards* — by a delivery report
+    crossing `blacklist_threshold` on another message, or by an operator's hand — because
+    the verification is already open and the selection door never asks again. Inside that
+    window the ladder places a **paid call** to a number this gateway has decided not to
+    contact at all, and the money is gone before anybody notices.
+
+    Asserted on the vendor not being reached rather than on the answer: the whole point is
+    that nothing is placed.
+    """
+    calls, _ = vendor
+    vid = _open(client)["id"]
+    _block()
+
+    r = _select(client, vid)
+    assert r.status_code == 422, r.text
+    assert "blacklist" in str(r.json()["detail"]).lower(), r.text
+    assert calls["initCall"] == [], (
+        "a paid call was placed to a number the gateway holds blocked")
+    assert _rungs(vid) == [], \
+        "a refusal of ours was recorded as something a vendor did"
+    assert _row(vid)["status"] == "failed", \
+        "a route was claimed, nothing was placed, and the verification was left pending"
+
+
+def test_the_block_is_asked_on_the_cheap_rung_too_and_not_only_on_the_call(client, vendor):
+    """The gate belongs to the ladder, not to the rung that happens to cost the most. A
+    blocked number selecting Telegram must not reach that vendor either — a confirmed
+    `checkSendAbility` is billed, so this rung spends too."""
+    calls, _ = vendor
+    vid = _open(client)["id"]
+    _block()
+
+    r = _select(client, vid, route=TG_GATEWAY)
+    assert r.status_code == 422, r.text
+    assert calls["checked"] == [], "a blocked number was offered to the Telegram vendor"
+    assert calls["initCall"] == []
+
+
+def test_an_unblocked_number_on_the_same_door_is_still_called(client, vendor):
+    """The positive control. Without it the two guards above pass against a door that
+    refuses every selection — a gateway that verifies nobody."""
+    calls, _ = vendor
+    vid = _open(client)["id"]
+    r = _select(client, vid)
+    assert r.status_code == 200, r.text
+    assert len(calls["initCall"]) == 1
+
+
+def test_the_block_is_a_gate_of_the_ladder_rather_than_a_check_at_one_door(client):
+    """🔴 The guards above pass just as well against a check written into
+    `select_verification_route`, and that is the defect this one exists to catch.
+
+    A check at a door is a census of doors, and a census is never complete: it goes stale in
+    silence the moment somebody adds the next way into the paid ladder. The invariant belongs
+    on the boundary instead — `gates.for_paid_ladder` is the list every walk must pass, and
+    it exists precisely so that a door added later cannot be a door that forgot one.
+
+    So this asks the question without naming which gate answers it: assemble the real list,
+    run it against a blocked number, and require that **something** in it refuses. Move the
+    check out to the door and this goes red while the door-level guards stay green.
+    """
+    from app.verification import gates
+
+    async def go():
+        await queries.block_phone(PHONE)
+        refusals = [await gate() for gate in gates.for_paid_ladder("app1", PHONE)]
+        return [r for r in refusals if r]
+
+    refused = asyncio.run(go())
+    assert refused, (
+        "no gate of the paid ladder refuses a blocked number; the block is being asked at "
+        "a door rather than on the boundary, and the next door will not ask it")
+    assert any("blacklist" in r.lower() for r in refused), refused

@@ -917,6 +917,25 @@ A failed call SHALL NOT count toward the destination's permanent-failure thresho
 route does not share the modem's evidence about a number, and a number the modem has been
 failing to reach is exactly the number this route exists to serve.
 
+🔴 **The blacklist SHALL also be asked on the boundary of the paid ladder, and not only at the
+door that opens a verification.** A number can be blocked while a verification for it is
+already open — by a delivery report crossing the threshold on another message, or by an
+operator's hand — and a door that asked once at acceptance never asks again. That window is as
+wide as the verification's own deadline, and inside it the ladder places a paid call to
+somebody this gateway has decided not to contact at all.
+
+**It SHALL be a gate of the ladder rather than a check written into each door.** The invariant
+belongs on the boundary where state changes irreversibly — the moment before anything is
+contacted — and a list of doors is a census: never complete, and stale in silence the day the
+next way into the paid ladder is added. The gate list exists so that a door added later cannot
+be a door that forgot one, and this is asked first in it, ahead of the entitlement: an
+application that may not spend is a configuration and a ceiling reached is a busy day, while a
+blocked number is a decision already taken, at any price, for every application.
+
+A refusal here SHALL end the verification with that reason, like any other gate's: the route
+was claimed before the walk, so a door that merely answered and left the verification open
+would leave a route claimed with nothing placed.
+
 [backed for the blacklist and for the call · the blacklist is checked in
 `app/api/router.py` **before anything is created**, guarded by
 `tests/test_verification_api.py` with a positive control on the same door. That ordering is

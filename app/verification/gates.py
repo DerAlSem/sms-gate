@@ -5,7 +5,15 @@ each of them decides is its own. They answer with the reason they refuse, or wit
 empty string, because a refusal here is not an exception and emphatically not a vendor
 failure: nothing was placed, nothing was charged, and nothing is owed a retry.
 
-Two questions live here, and keeping them apart is the point:
+Three questions live here, and keeping them apart is the point:
+
+**Has this gateway decided not to contact this number at all?** The blacklist, which is the
+one state that shuts every route to a person at once. It is asked here rather than only at
+the door that opens a verification, because a number can be blocked **while a verification is
+already open** — by a delivery report crossing the threshold on another message, or by an
+operator's hand — and the selection door never asks again. That window is as wide as the
+verification's own deadline, and inside it the ladder places a paid call to somebody this
+gateway has decided not to write to.
 
 **May this application spend at all?** An entitlement recorded against the application,
 off until an operator says otherwise. It is deliberately *not* part of the routing rule:
@@ -34,6 +42,35 @@ from app.settings_store import store
 from app.verification import limits
 
 logger = logging.getLogger(__name__)
+
+
+def blacklist_gate(phone: str):
+    """A gate that refuses a number this gateway holds blocked.
+
+    Placed **in the gate list** rather than at the selection door, and that is the whole of
+    the design: the invariant belongs on the boundary where state changes irreversibly —
+    the moment before anything is contacted — and not on a census of the doors that reach
+    it. A census is never complete and goes stale in silence, while `for_paid_ladder` exists
+    precisely so that a door added later cannot be a door that forgot one.
+
+    First in the order, ahead of the entitlement, because it is the strongest of the three
+    statements and the one about the person rather than about us: an application that may
+    not spend is a configuration, a ceiling reached is a busy day, and a blocked number is a
+    decision already taken not to contact this human being at all.
+
+    It reads the same `bad_numbers` state the modem sender reads before a retry and the door
+    reads before opening a verification — one fact, asked wherever spending is about to
+    happen, rather than three copies of it.
+    """
+    async def gate() -> str:
+        if await queries.is_phone_blocked(phone):
+            logger.info("%s is held blocked and a paid rung was about to be walked for it",
+                        phone)
+            return (f"blacklist: {phone} is held blocked by this gateway and no route "
+                    f"carries traffic to it")
+        return ""
+
+    return gate
 
 
 def entitlement_gate(app_id: str):
@@ -116,11 +153,14 @@ def for_paid_ladder(app_id: str, phone: str):
     that forgot one. The order is cheapest-question-first and it decides only which reason
     a refused caller is given: entitlement is a fact about the application and never
     changes under load; the ceiling is about this gateway as a whole; the per-number
-    limits are about this one subscriber. All three read the database and none of them
-    contacts a vendor.
+    limits are about this one subscriber. The blacklist comes before all of them because it
+    is the one that is not about degree at all — a number held blocked is not being carried
+    by anything, at any price, for any application. All four read the database and none of
+    them contacts a vendor.
 
     ⚠️ A list with a default would be a caller that spends money by forgetting, and the
     forgetting is invisible at the call site — which is why `ladder.walk` takes `gates`
     as a required parameter and why this exists to fill it.
     """
-    return (entitlement_gate(app_id), ceiling_gate(), limits.per_number_gate(phone))
+    return (blacklist_gate(phone), entitlement_gate(app_id), ceiling_gate(),
+            limits.per_number_gate(phone))
