@@ -1235,6 +1235,24 @@ rather than on code.
       now says the mutations were *reasoned*, not run — so what remains here is the work, not the
       honesty: write them, or strike the reasoning and let the named `tests/…` file stand alone.
       Three of the eight requirements written after the 11.09 circle rest on one of these.
+      **В работе с 22.09.2026. `bite-code.py` написан и прогнан — 19 мутаций, выживших нет**,
+      против `tests/test_the_code_and_who_may_spend_it.py`; это самый крупный из
+      одиннадцати и единственный, на который ссылались ЧЕТЫРЕ требования сразу. Он нашёл
+      две настоящие дыры, а не подтвердил готовое:
+      🔴 подтверждающий апдейт по `app_id` был не охранён — через дверь предъявляется
+      только НЕВЕРНЫЙ код, поэтому `code = ?` держит апдейт независимо от владения, а
+      собственное чтение двери отвечает 404 раньше матчера: два фильтра перед тем самым,
+      который проверяли. Матчер теперь спрашивается напрямую, чужим `app_id` и ВЕРНЫМ
+      кодом, с контролем от владельца;
+      🔴 концовка ПОДМЕТАНИЯ не охранялась: `code = NULL` из `expire_due_verifications`
+      снимался молча. Спрятал её счёт по ПИСАТЕЛЯМ вместо концовок — `check_verification`
+      держит две из них, поэтому «все три» покрывали подтверждённую и исчерпавшую, а
+      подметённую нет. Это концовка человека, которому так и не позвонили, — самая частая
+      из четырёх и та, за которой никто не возвращается.
+      Осталось десять: `bite-carrier.sh`, `bite-credentials.sh`, `bite-ladder.sh`,
+      `bite-lookup.sh`, `bite-modem.sh`, `bite-refusals.sh`, `bite-rule.sh`,
+      `bite-template.sh`, `bite-verif-view.sh`, `bite-withhold.sh`.
+      Набор 1317 зелёных при тех же шести унаследованных падениях.
 
 - [x] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
       **This is the finding both critics reached independently, and it makes the capability

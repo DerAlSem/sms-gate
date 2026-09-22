@@ -384,6 +384,45 @@ def test_a_stranger_cannot_read_check_or_spend_a_verification_by_id(client):
     assert mine.json()["status"] == "pending"
 
 
+def test_a_stranger_who_knows_the_code_confirms_nothing():
+    """🔴 Written 22.09.2026 because `bite-code.py` found the hole: widening `app_id` on
+    the **confirming update** turned nothing red.
+
+    The guard above offers only a wrong code, so `code = ?` refuses the update whatever
+    the ownership says, and the door's own prior read answers 404 before the matcher is
+    reached — two filters standing in front of the one this asserts. Asked of the matcher
+    directly for that reason: the claim is that *every* conditional update in
+    `check_verification` is scoped, not that some door in front of it happens to be.
+
+    Reachable: a code is shown to a person, and a person can be induced to read it out.
+    Ownership is what keeps the verification that code belongs to out of another
+    application's hands.
+    """
+    async def body():
+        vid = await _open(code="1234")
+        stranger = await queries.check_verification(vid, "app2", code="1234",
+                                                    max_attempts=LIMIT)
+        row = await queries.get_verification(vid, "app1")
+        return stranger, row["status"], row["code"], row["attempts"]
+
+    outcome, status, code, attempts = _run(body)
+    assert outcome == "not_found", f"a stranger's check answered {outcome!r}"
+    assert (status, code) == ("pending", "1234"), \
+        "a stranger with the right code confirmed somebody else's verification"
+    assert attempts == 0, "a stranger's check spent the owner's attempt"
+
+
+def test_the_owner_with_the_right_code_does_confirm():
+    """The control on the test above: the same call from the owning application confirms,
+    so the guard is about ownership and not about a matcher that refuses everyone."""
+    async def body():
+        vid = await _open(code="1234")
+        return await queries.check_verification(vid, "app1", code="1234",
+                                                max_attempts=LIMIT)
+
+    assert _run(body) == "confirmed"
+
+
 def test_the_owner_of_the_verification_can_do_all_three(client):
     """The positive control the negative guard needs: the same three calls, from the token
     that opened it, all answer."""
@@ -556,13 +595,21 @@ def test_an_alerting_rung_failure_names_the_vendor_and_not_the_code(monkeypatch,
 
 
 def test_every_terminal_ending_takes_the_secret_with_it():
-    """All three endings in one run, because the claim is about the set rather than about
+    """All four endings in one run, because the claim is about the set rather than about
     any one of them: a verification stops holding a usable secret the moment it stops
     being confirmable, whichever way it stopped.
 
     The rung-failure ending is the one the inherited guards miss — confirmation and
     exhaustion were both covered and this one was not, though it is the ending every
     walked ladder arrives at when nothing carried the code.
+
+    🔴 **The sweep was the fourth and it was missing until 22.09.2026**, found by
+    `bite-code.py`: dropping `code = NULL` from `expire_due_verifications` turned nothing
+    red. Counting endings by *writer* is what hid it — `check_verification` holds two of
+    them, so "all three writers" and "all three endings" are different sets and the prose
+    that named three meant the first. It is also the ending that happens to **the person
+    who never got the call**, which is the commonest of the four and the one nobody comes
+    back to.
     """
     async def body():
         confirmed = await _open(code="1111")
@@ -577,6 +624,10 @@ def test_every_terminal_ending_takes_the_secret_with_it():
         by_its_rung = await _open(code="3333")
         ended = await queries.fail_verification(by_its_rung, reason="route_unavailable")
 
+        # The sweep's own ending: opened already past its deadline, then swept.
+        await _open(code="4444", ttl=-1)
+        await queries.expire_due_verifications()
+
         db = await get_db()
         async with db.execute(
             "SELECT id, status, code FROM verifications ORDER BY id"
@@ -585,7 +636,8 @@ def test_every_terminal_ending_takes_the_secret_with_it():
 
     ended, rows = _run(body)
     assert ended is True
-    assert rows == [("confirmed", None), ("failed", None), ("failed", None)], rows
+    assert rows == [("confirmed", None), ("failed", None), ("failed", None),
+                    ("expired", None)], rows
 
 
 def test_the_rung_row_is_written_through_the_same_border(): 

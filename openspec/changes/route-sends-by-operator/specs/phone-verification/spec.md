@@ -146,7 +146,10 @@ than a decision. That case is governed below.
 [backed · the refusal is `VerificationCreateRequest.refuse_a_supplied_code` in
 `app/api/schemas.py`, which rejects before a row exists; the distinct-code half is
 `_new_code(await queries.open_codes_for(phone))` in `app/api/router.py`. Guarded by
-`tests/test_the_code_and_who_may_spend_it.py` and four mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**.
+`tests/test_the_code_and_who_may_spend_it.py`, and **`bite-code.py` exists and runs since
+22.09.2026** (task 4.60): its first four turn red here — the supplied code accepted, the code
+minted without asking what is live, the live set read and then ignored, and the control that a
+code live on *another* number is not this number's business.
 🔴 **The distinct-code half was unguarded until 21.09.2026** — the inherited guard asserted
 what `open_codes_for` reports and never that the second code differs, so `_new_code(set())`
 left the suite green. A guard written the obvious way would have been little better: with ten
@@ -220,7 +223,10 @@ double-taps `Confirm` as a matter of course.
 
 [partly backed · the matcher is `queries.check_verification` in `app/db/queries.py`, both
 halves single conditional updates. Guarded by `tests/test_the_code_and_who_may_spend_it.py`
-and six mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**. **The vendor-facing scenarios — the `ttl` handed to
+and six of `bite-code.py`'s mutations, run since 22.09.2026: each of the three conditions on
+the confirming update deleted in turn, the code itself dropped from it so that any answer
+confirms, the wrong answer costing no attempt, and the order of the two last words reversed so
+that a verification out of both time and attempts reports the newer one. **The vendor-facing scenarios — the `ttl` handed to
 `tg_gateway` and the vendor's own code-checking endpoint — are backed elsewhere and not
 here.**
 
@@ -921,7 +927,16 @@ nowhere else, together with the orphans a database written by the old code alrea
 `check_verification` are scoped by `app_id`, so a stranger's call is answered as a missing
 verification and spends nothing. Guarded by `tests/test_the_code_and_who_may_spend_it.py` over
 all three verbs with a **valid** token of another application, paired with the positive control
-that the owner's own three calls answer, and by two mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**. **The
+that the owner's own three calls answer, and by two of `bite-code.py`'s mutations — the read
+unscoped, and the **confirming update** unscoped.
+
+🔴 **The second of those found a hole rather than confirming a guard, on 22.09.2026.** Widening
+`app_id` on the confirming update turned nothing red: the guard through the door offers only a
+*wrong* code, so `code = ?` refuses the update whatever the ownership says, and the door's own
+prior read answers 404 before the matcher is reached — two filters standing in front of the one
+being asserted. The matcher is now asked **directly**, with a stranger's `app_id` and the
+**right** code, paired with the control that the owner's identical call confirms. The state is
+reachable: a code is shown to a person, and a person can be induced to read it out. **The
 secret-destruction half is backed** by the same file, over all three terminal endings in one
 run rather than one of them: the rung-failure ending is the one the inherited guards missed,
 though it is where every walked ladder arrives when nothing carried the code]
@@ -966,8 +981,16 @@ covered by the guard that exists rather than by one nobody wrote. `RouteSelectRe
 single sanctioned exception and it belongs to a **rung**. The destruction half is `code = NULL`
 on all three terminal endings, in `check_verification`, `fail_verification` and
 `expire_due_verifications`. Guarded by `tests/test_the_code_and_who_may_spend_it.py` and seven
-mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**, driven over a path where the code genuinely travelled to the
-vendor.
+of `bite-code.py`'s mutations, run since 22.09.2026 and driven over a path where the code
+genuinely travelled to the vendor.
+
+🔴 **The sweep's ending was unguarded until that run, and the way it hid is worth more than the
+fix.** Dropping `code = NULL` from `expire_due_verifications` turned nothing red. The guard said
+"all three terminal endings" and held three — but counting by *writer* and counting by *ending*
+are different sets, because `check_verification` holds two of them, so the confirmed and the
+exhausted endings were both covered and the sweep's was not. It is also the ending of **the
+person who never got the call**, which is the commonest of the four and the one nobody comes
+back to. The guard now drives four.
 
 🔴 **A field-shaped guard cannot hold this requirement, and task 4.22a is what it cost.**
 `reason` is free text on both the verification and its rungs, it is filled from a vendor's
