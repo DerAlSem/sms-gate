@@ -491,10 +491,23 @@ live sample shows either vendor enforcing anything]
 
 ### Requirement: A repeat uses the vendor's free repeat, and a retried request does not buy a second call
 
-When a person did not get the call and asks again within the vendor's repeat window, the
-gateway SHALL use the vendor's repeat of the existing verification rather than opening a new
-one. uCaller allows two repeats per verification at no charge, no sooner than sixty seconds
-after the original.
+🔴 **The vendor's free repeat is unavailable to this account, and that is measured rather
+than assumed.** On 22.09.2026 `initRepeat` answered `405 Method Not Allowed` to a call made
+in the same breath as a `getInfo` reporting `repeatable: true` and `repeat_times: 2`, on both
+documented call forms, sixty-five seconds after the original — so it is not the window, not
+the HTTP method, and not the allowance, none of which the vendor signalled with the codes it
+reserves for them (`11`, `12`). Why is not visible from outside: tariff, a cabinet setting,
+or a mechanism the vendor is retiring.
+
+**So the operative path is the one below: a repeat request SHALL open a new, paid
+verification whose code differs, SHALL close the previous one, and SHALL tell the application
+that the identifier changed.** The gateway SHALL NOT call `initRepeat` while it answers `405`,
+and SHALL NOT present a repeat to the application as free.
+
+Should the method become available, the gateway SHALL use the vendor's repeat of the existing
+verification rather than opening a new one — uCaller documents two repeats per verification at
+no charge, no sooner than sixty seconds after the original — and SHALL still withhold it until
+the sample condition below is met.
 
 Every call to the vendor SHALL carry an idempotency key unique to the **attempt** — the
 original call and each repeat being separate attempts — so that a retry of our own HTTP
@@ -538,8 +551,12 @@ same authorisation returned `repeatable: false` and **no `repeat_times` at all**
 treats `repeat_times` as present because `repeatable` once was `true` breaks on an ordinary
 expiry rather than on a vendor fault. Both captures are kept side by side]
 
-#### Scenario: The person asks for the call again
-- **WHEN** a repeat is requested more than sixty seconds after the original and within the free allowance
+#### Scenario: The person asks for the call again while the vendor refuses to repeat
+- **WHEN** a repeat is requested and the vendor's `initRepeat` is unavailable
+- **THEN** a new paid verification with a different code is opened, the previous one is closed, the application is told the identifier changed, and the repeat is never presented as free
+
+#### Scenario: The person asks for the call again once the vendor allows it
+- **WHEN** a repeat is requested more than sixty seconds after the original, within the free allowance, and the vendor's repeat is available and established to call from the same number
 - **THEN** the vendor's repeat is used, the code stays the same, and nothing is charged
 
 #### Scenario: Our own request is retried after a timeout

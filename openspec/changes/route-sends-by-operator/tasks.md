@@ -359,21 +359,30 @@ rather than on code.
       🔴 **The first half may have no subject. Measured 22.09.2026: `initRepeat` over GET
       answered `405`,** where the same GET form worked for `getService`, `initCall`,
       `getInfo` and `getBalance` in the same series. Two readings and the measurement does
-      not separate them. 🔴 **The first — "GET is not taken" — has since
-      been tested and is dead: POST with `{"uid":…}` and
-      `Content-Type: application/json`, the reference's own form, answered `405` too.**
-      What remains is that the method is unavailable to this service or tariff, which the
-      reference hints at by marking every free-repeat field `deprecate` while `/limits/`
-      still promises two repeats. Weighing in: an expired window is coded `11` and a spent
-      allowance `12`, and neither was ever returned — including on a call made while
-      `getInfo` still said `repeatable: true`. Weighing against: minutes passed between
-      that reading and that call, so nobody saw the window open in the same second as the
-      refusal. The separating probe is a fresh `initCall` on a test number followed
-      immediately by `getInfo` and `initRepeat` back to back — free, and conclusive either
-      way. ⚠️ **If the method is dead this task is void rather than unwritten**, and that
-      is the owner's call. Detail in `captures/ucaller-samples-1.3.md`.
+      not separate them. **Both have since been tested, and the answer is
+      settled: the method is unavailable to this account.** POST with `{"uid":…}` and
+      `Content-Type: application/json` — the reference's own form — answered `405` too;
+      and on 22.09.2026 at 08:01 a fresh authorisation was raised on the test number,
+      left for sixty-five seconds, and then `getInfo` and `initRepeat` were called **in
+      one command, back to back**: the vendor reported `repeatable: true` and
+      `repeat_times: 2`, and refused `405` in the same breath. So it is not the window,
+      not the HTTP method, and not the allowance — the vendor codes those `11` and `12`
+      and returned neither, ever. Why is invisible from outside: tariff, a cabinet
+      setting, or a mechanism being retired. Captures: `uc-1.3-getInfo-window-open.json`
+      beside `uc-1.3-initRepeat-405.json`. ⚠️ **The first half of this task is therefore void rather than unwritten, and
+      striking it is the owner's to do** — a refusal is recorded by the owner before
+      archiving, not by the session that found it. The spec has been brought in line
+      meanwhile: the free repeat is written as unavailable, the operative path is a new
+      paid verification with a changed identifier, and the gateway is forbidden to call
+      `initRepeat` while it answers `405` or to present a repeat as free. Nothing is
+      blocked by this — the safe path was already the one the requirement mandated for
+      want of a sample. The only avenue left is the vendor's cabinet or support, which is
+      the owner's too. Detail in `captures/ucaller-samples-1.3.md`.
       The second half — idempotency via `unique` — is untouched by this: `unique` has
       never been passed in any capture.
+      🟢 **The second half is now the whole of this task**, and it is buildable: `unique`
+      is a UUID v4 we generate and send, and nothing about it depends on the vendor's
+      repeat.
       ⚠️ **And `getInfo` is not stable for one `ucaller_id`:** the same authorisation read
       minutes later came back `repeatable: false` with **no `repeat_times` field at all**
       (`captures/uc-1.3-getInfo-unreachable-later.json` beside the first). A reader that
