@@ -900,10 +900,10 @@ screen that helpfully prints what was originally charged restores the asterisk i
 
 [partly backed · the console half is `queries.verifications_for_phone` and
 `queries.rungs_for_verifications`, rendered under the conversation in the expanded row of
-`/admin/messages`; guarded by `tests/test_admin_verifications.py` and five mutations reasoned
-for `bite-verif-view.sh` — **a script never written, see task 4.60** — the query starring its columns, the number ceasing to filter, no rung
-reaching the page, the block never populated, and the row losing the anchor the guard finds it
-by. `verifications_for_phone` lists its columns rather than starring them, and that is the
+`/admin/messages`; guarded by `tests/test_admin_verifications.py` and by **`bite-verif-view.sh`, written and run
+22.09.2026** (task 4.60), five red: the query starring its columns, the number ceasing to
+filter, no rung reaching the page, the block never populated, and the row losing the anchor the
+guard finds it by. `verifications_for_phone` lists its columns rather than starring them, and that is the
 guarantee rather than a style: the code must reach no screen. The storage itself is
 `verify-by-inbound-contact`'s.
 

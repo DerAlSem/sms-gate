@@ -56,8 +56,9 @@ per rung with its own route, vendor reference and cost. **The message half arriv
 written by `ModemManager._refuse` and by the passing branch of
 `_refuse_what_the_rule_routes_elsewhere` — that is, by the sender, before it hands
 anything to the modem, and on both outcomes. Guarded by
-`tests/test_send_path_operator_lookup.py` and two mutations reasoned for `bite-lookup.sh` — **a script never written, see task 4.60**
-(the decision not recorded on the passing branch, and not on the refusing one).
+`tests/test_send_path_operator_lookup.py`, and **`bite-lookup.sh` exists and runs since
+22.09.2026** (task 4.60): both red — the decision not recorded on the passing branch, and not
+on the refusing one.
 🔴 **Still unbacked: "SHALL NOT be carried by a route other than the one recorded" is not
 enforced for a message** — the column records what was decided, and nothing reads it back
 to check what carried it. Reading it back needs a second route to carry a message at all,
@@ -226,7 +227,7 @@ rung leaves nothing to advance to, and the quiet answer — sending it over the 
 silent fallback this capability forbids everywhere else, reached here by exhausting a list
 rather than by deciding anything.
 
-[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by four mutations reasoned for `bite-credentials.sh` — **a script never written, see task 4.60** — the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute, and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
+[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by **`bite-credentials.sh`, written and run 22.09.2026** (task 4.60), four red across the three layers a secret can leak through: the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute — `type="password"` hides characters from a glance and nothing from the page source — and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
 
 **The environment half is backed** by `tests/test_credentials_do_not_live_in_the_environment.py` and seven mutations: precedence asserted at the `Authorization` header that leaves for the vendor rather than at the store attribute, paired with the control that a key with no row *is* seeded, and with the blank row — the state every estate ships in, written by the first start, so that from the second start `.env` has already lost even where nobody configured anything.
 

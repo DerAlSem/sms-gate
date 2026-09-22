@@ -1264,8 +1264,11 @@ rather than on code.
       перецелить: «снять словарь отказов абонента» не делает отказ отказом НАМ — он
       проваливается в `unclassified`, который модем не удерживает. Различает не
       отсутствие ветви, а её исход, поэтому мутация теперь возвращает `REFUSED` всему.
-      Осталось шесть: `bite-credentials.sh`, `bite-lookup.sh`, `bite-refusals.sh`,
-      `bite-rule.sh`, `bite-template.sh`, `bite-verif-view.sh`.
+      **`bite-lookup.sh` (два), `bite-credentials.sh` (четыре) и `bite-verif-view.sh`
+      (пять) написаны и прогнаны 22.09.2026** — все одиннадцать красные, перенаправлять
+      не пришлось ничего.
+      Осталось три: `bite-refusals.sh` (тринадцать), `bite-rule.sh` (восемь),
+      `bite-template.sh` (девять).
       Набор 1317 зелёных при тех же шести унаследованных падениях.
 
 - [x] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
