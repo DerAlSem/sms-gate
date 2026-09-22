@@ -11,9 +11,22 @@ able to ask for a number to be verified without knowing, or caring, which route 
 ### Requirement: A verification request names only the number, and the gateway answers with the method
 
 `POST /verifications` SHALL accept the number to be verified and nothing else that decides
-how. The gateway SHALL choose the method from the routing rule, SHALL return that choice in
-the same response together with the verification's id, and SHALL NOT accept a request it
-already knows it cannot fulfil in order to fail it afterwards.
+how. The gateway SHALL answer with the verification's id and with the rungs that can prove,
+at that moment, that they can carry this number — cheapest first — and SHALL NOT accept a
+request it already knows it cannot fulfil in order to fail it afterwards. The method is
+**chosen from what is offered**, at `POST /verifications/{id}/route`, and that door answers
+with what became of the choice.
+
+🔴 **The door is two-step, and this paragraph said one-step until 22.09.2026 (task 6.12).**
+Two requirements of this same delta contradicted each other and the code followed the later
+one: "Selecting a rung the gateway places walks the ladder inside that selection" is written
+around a separate act of selection — offered, selected, recorded, walked — and cannot exist
+under a door that chooses the method itself. The contract has carried four doors since it was
+written (`docs/verification-api.md`), and an application written against the older paragraph
+would send `POST /verifications`, read a 200, look for a method that is not there, and wait
+for a call nobody placed. The single-step form is the one that had to go: the ladder is the
+thing this change is about, and a ladder walked without the consumer choosing where it starts
+places a paid route nobody picked.
 
 The response SHALL describe what the person must do — expect a message in Telegram, or expect a
 call and read its last four digits, or expect an SMS — and SHALL NOT expose which SIM, modem or
@@ -25,9 +38,12 @@ somewhere, or to address the gateway, SHALL carry what they need to do that and 
 about the estate. "Open Telegram" is the address; which Gateway account paid for it is the
 identity. The reserve path `verify-by-inbound-contact` is the same case in the other direction —
 it must name the number the subscriber texts — and this capability SHALL remain the single
-owner of `POST /verifications`, `POST /verifications/{id}/check` and
-`GET /verifications/{id}`, a method being a variant within it rather than a capability of its
-own.
+owner of `POST /verifications`, `POST /verifications/{id}/route`,
+`POST /verifications/{id}/check` and `GET /verifications/{id}`, a method being a variant
+within it rather than a capability of its own. The selection door was missing from this list
+until 22.09.2026 (task 6.12) while being required by another requirement of the same delta,
+carried by the contract and mounted in the router: a list of doors is a claim about the code
+like any other.
 
 Because the paid route is a ladder, the method named in the response is the rung that actually
 accepted the verification, not the first rung attempted. An application told to expect a
@@ -80,17 +96,24 @@ number returned on every rung, the field disagreeing with the prose, and the def
 The contract carries it in `docs/verification-api.md`. The rest of this requirement — the shape
 of the door itself — is backed by the same file and by `tests/test_verification_api.py`.
 
-**The normalisation of the gateway's own number is backed since 22.09.2026, task 4.64.**
-`gateway_msisdn` is a validated setting **type** (`msisdn`) rather than a free string, on the
-precedent of `callbackbase` in this same change, so a second door that saves settings cannot be
-a door that forgot it: a national spelling is rewritten to E.164 on the way in and a non-number
+**The normalisation of the gateway's own number is backed since 22.09.2026, tasks 4.64 and
+6.3.** `gateway_msisdn` is a validated setting **type** (`msisdn`) rather than a free string, on
+the precedent of `callbackbase` in this same change, so that a second door saving settings
+cannot be a door that forgot it — and 🔴 **one was, for as long as this annotation had claimed
+it could not be**: `seed_from_env` wrote the value of an environment variable raw, past both
+`normalize_raw` and `validate_raw`. It is the door a fresh estate goes through, and
+`gateway_msisdn` is a key this change invented, so the first deployment on any live estate
+lands in that branch and no other. It now runs the same pair; a value that does not validate is
+not stored at all, the shipped default stays in force, and the next start complains again
+rather than being silenced by a row nobody typed. A type is: a national spelling is rewritten to E.164 on the way in and a non-number
 is refused at the save. Blank still saves, because blank is the shipped state of an estate with
 no number and the rungs are then simply not offered. Guarded by
 `tests/test_the_gateways_own_number_is_normalised_when_saved.py`, which asks both the setting
-and the real door. `bite-the-number-normalised-when-saved.sh` turns five red: the type back to a
+and the real door. `bite-the-number-normalised-when-saved.sh` turns **eight** red: the type back to a
 free string (the defect as found), validated but not rewritten — the form of evidence this
 change has repeatedly found worthless — rewritten but not refused, the control that blank stays
-savable, and 🔴 **the check moved to the use instead of the save**. That last one was expected to
+savable, 🔴 **the check moved to the use instead of the save**, and three more since 22.09.2026
+for the second door (task 6.3). That last one was expected to
 leave the door green and did not, which is the finding: the field is normalised while the
 sentence beside it is still built from the same raw value, so the fix at the use produces exactly
 what this requirement forbids in its own paragraph — a field that disagrees with its sentence]
@@ -104,12 +127,12 @@ what this requirement forbids in its own paragraph — a field that disagrees wi
 - **THEN** the answer carries that number as its own field as well as inside the instruction, and carries none on the rungs where the gateway acts
 
 #### Scenario: A number on an operator routed to the call
-- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, flash_call]` and the Gateway declines the subscriber
-- **THEN** the response carries the verification id and names the call method, and the call is placed
+- **WHEN** a verification is requested for a МегаФон number while the rule routes МегаФон to `[tg_gateway, flash_call]`, and the consumer then selects the Telegram rung for a subscriber the Gateway declines
+- **THEN** the creation carries the verification id and the rungs on offer, and the selection answers naming the call method, the call having been placed inside it
 
 #### Scenario: The rung that accepted is the method reported
-- **WHEN** the same request is made for a subscriber the Gateway confirms
-- **THEN** the response names the Telegram method rather than the call, and no call is placed
+- **WHEN** the same selection is made for a subscriber the Gateway confirms
+- **THEN** the selection answers naming the Telegram method rather than the call, and no call is placed
 
 #### Scenario: A number on an operator routed to the modem
 - **WHEN** a verification is requested for a number on any other operator
@@ -423,7 +446,7 @@ rates is comparing two different measurements.
 
 🔴 **Two different fields say `expired`, they mean different things, and one of them is about money.** Settled 20.09.2026 by re-reading the vendor's reference against the sample. `DeliveryStatus.status` carries `sent`, `delivered`, `read`, `expired` and `revoked`; `VerificationStatus.status` carries `code_valid`, `code_invalid`, `code_max_attempts_exceeded` and `expired`. So the scenario below is watching the right field for what it claims — **delivery** expiry, which is the one the refund is tied to — and the sample's `verification_status: expired` beside a `delivery_status` of `delivered` is coherent rather than contradictory: the message arrived, and the revocation closed the code window.
 
-The gateway SHALL therefore never record or act on a bare `expired`: every reading of that word SHALL name which of the two fields it came from. Delivery expiry means the fee comes back and nothing reached the subscriber; verification expiry means the code window is shut and says nothing about money or delivery. A ledger that confused them would refund a verification that was delivered, or charge for one that never arrived.
+The gateway SHALL therefore never record or act on a bare `expired`: every reading of that word SHALL name which of the two fields it came from. **Backed in code since 22.09.2026 (task 6.7):** the vendor's delivery expiry is recorded on the rung as `delivery_expired` (`_outcome_word` in `app/verification/tg_callback.py`, every other word of the vendor's going in as its own), and the gateway's own window writes `reason = 'window_expired'` while the verification's **status** stays `expired`, that being the field the word belongs to. Until then both were bare, and the console printed them on one line — `v.status`, `v.reason` and `r.outcome` all reading `expired` — out of two unrelated facts. Bitten by `bite-expiry-names-its-field.sh`, three red, the third being the control that renaming everything loses `delivered`, `read` and `revoked`. Delivery expiry means the fee comes back and nothing reached the subscriber; verification expiry means the code window is shut and says nothing about money or delivery. A ledger that confused them would refund a verification that was delivered, or charge for one that never arrived.
 
 #### Scenario: The message is delivered
 - **WHEN** the vendor reports `delivery_status.status` of `delivered`
@@ -750,7 +773,9 @@ and `status`, which is the whole of the older contract, acted on it. The subject
 `verification_id` and `id` is absent. The guard compares a **real** message push against a real
 verification push rather than against a remembered description of the message body, and asserts
 the verification's number appears in exactly one field; five mutations bite, including one that
-moves the message contract underneath it. Measured on a file-backed database: message 1 and
+moves the message contract underneath it — `bite-the-push-is-not-a-message.sh`, **written and
+run 22.09.2026** (task 6.14: until then nothing ran them, `bite-late-call-outcome.sh` driving
+the same file of tests but about a late call outcome). Measured on a file-backed database: message 1 and
 verification 1 collide from the first row of each table]
 
 #### Scenario: The outcome is pushed
@@ -883,6 +908,24 @@ verification, and if it is not counted it appears as a balance that drifts for n
 - **WHEN** an ability check does not answer within the bound
 - **THEN** it is counted as possibly-charged spend attributable to no verification, and the count is readable beside the attributed spend
 
+[backed since 22.09.2026 · tasks 6.9 and 6.10, and found as an absence rather than as a
+defect: `SUM(cost)` appeared nowhere in `app/`, and the three scenarios below had nothing
+behind them. `queries.verification_spend(period)` answers per paid route with four numbers —
+attempts, spend, refunds, and **possibly-charged as a count and never a sum**, because an
+ability check that did not answer inside the bound has no figure to add, only a number of times
+it happened; folded into the spend it would be a guess, and left out altogether it is the
+balance that drifts for no reason. `queries.verification_spend_by_app(period)` answers who
+spent it, from the application recorded on each verification. Both are rendered at
+`/admin/stats`, under the same period control as every other counter, because "readable" is a
+screen and not a query; the month is this estate's rolling thirty days, for the reason
+`app/periods.py` gives. Refunds need no subtraction here — `record_rung_delivery` already
+lowered the refunded row to zero — and free rungs are absent rather than listed at zero, a row
+of zeros under the modem inviting the question of which vendor it is with. Guarded by
+`tests/test_what_verifications_cost_is_answerable.py` and by
+`bite-what-verifications-cost.sh`, five red, one of which found the guard's own hole: the page
+prints the same figure twice, once per route and once per application, so an assertion written
+on the number stayed green with the per-route table wired to an empty list]
+
 #### Scenario: A month's spend is answerable
 - **WHEN** an operator asks what the call route cost last month
 - **THEN** the answer comes from recorded per-verification costs, not from the vendor's invoice
@@ -1008,14 +1051,27 @@ the call ever reaching the person — which is the whole guarantee, gone. The ga
 live paths that would carry it out: notifications relay message text to Telegram, and the
 admin console renders it.
 
-[backed · the response half is enumerated from the router rather than from a list — every
-response model on a `/verifications` path, so that the next door added to this capability is
-covered by the guard that exists rather than by one nobody wrote. `RouteSelectResponse` is the
+[backed · the response half is enumerated from the router rather than from a list — **every
+response model on it**, so that the next door added to this capability is covered by the guard
+that exists rather than by one nobody wrote.
+
+🔴 **It read "every response model on a `/verifications` path" until 22.09.2026, and the door
+that leaked was the one that prefix excluded** (task 6.1). The `sms_out` rung composes the code
+into a real `messages` row owned by the same application, and `GET /sms/{id}` answered it back
+with the text in it: reproduced end to end by the conformance sweep — an application opened a
+verification, walked the ids next to its own last send, read the code out of the response and
+confirmed the verification with it, the message never having reached the person. The unit of
+counting was the defect: the norm counts **API responses**, the guard counted paths under one
+prefix. The border is now in `queries.get_message`, the single place a `messages` row leaves to
+the owning application — `verification_id IS NULL`, and the door answers 404 rather than a
+stripped text, because the code is destroyed at every terminal ending while the digits in the
+text live for ever. `RouteSelectResponse` is the
 single sanctioned exception and it belongs to a **rung**. The destruction half is `code = NULL`
 on all three terminal endings, in `check_verification`, `fail_verification` and
-`expire_due_verifications`. Guarded by `tests/test_the_code_and_who_may_spend_it.py` and seven
+`expire_due_verifications`. Guarded by `tests/test_the_code_and_who_may_spend_it.py` and nine
 of `bite-code.py`'s mutations, run since 22.09.2026 and driven over a path where the code
-genuinely travelled to the vendor.
+genuinely travelled to the vendor; the last two are the message door — opened to every message,
+and closed to all of them as the control.
 
 🔴 **The sweep's ending was unguarded until that run, and the way it hid is worth more than the
 fix.** Dropping `code = NULL` from `expire_due_verifications` turned nothing red. The guard said
@@ -1327,9 +1383,28 @@ in `HANDOFF.md` — a file-backed database with real migrations driven through t
 41 claims provoked rather than read. **Twenty mutations bite**, among them the four an
 implementation naturally writes: the claim winning over the rung that carried, the bound
 hardcoded instead of read, the gates handed in empty, and the ladder started at the top of
-the rule. 🔴 **The second rung is `flash_call` and nothing carries it** (task 4.17, blocked on
-1.1), so today a declined subscriber ends in the loud-skip path rather than in a call; that
-path is itself guarded, at the door and one layer down]
+the rule.
+
+🔴 **The first sentence of this requirement was broken by the one reader of the rule that had
+no `except`** (task 6.2, 22.09.2026). `placement.ladder_from` let `UnreadableRule` out of the
+door: the selection answered **500**, and the verification stayed `pending` with its route
+claimed and no rungs — offered, selected, recorded and left unplaced, which is what the first
+line forbids by name. Both other readers of the rule refuse instead (the sender and the probe),
+and so does this one now: the refusal travels the channel a gate's refusal travels, a 422 and
+an ending on the verification. Reading the unreadable as an *empty* rule is refused here for
+the reason they give — a diverted operator's traffic would go straight back to the route that
+is rejecting it, and here that route is a paid one. Bitten by
+`bite-the-rule-at-the-selection.sh`, three red. ✅ **The second rung is `flash_call` and it is carried** — tasks 4.17 and 1.1 are both
+closed, `app/verification/flash_carrier.py` carries it and `app/verification/placement.py`
+puts it in the carrier map whenever a uCaller bearer is configured.
+
+🔴 **This annotation said the opposite until 22.09.2026, and the correction is the dangerous
+one of the five in task 6.11.** It promised that a subscriber the Gateway declines ends in a
+loud skip; on an estate with a uCaller key that subscriber is **called, and the call is paid
+for**. An annotation is a claim about the code like any other, and "nothing carries it yet" is
+the shape that expires without a sound: the wiring that refutes it turns nothing red. The
+loud-skip path is still there and still guarded — it is what an estate with no uCaller key
+gets — but it is no longer what this rung does]
 
 #### Scenario: The rung the consumer chose is actually placed
 - **WHEN** a consumer selects the Telegram rung for a subscriber the Gateway will confirm

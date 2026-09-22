@@ -1548,7 +1548,7 @@ rather than on code.
       положительный контроль «оператор всё-таки записан до ответа»), укус `bite-lookup.sh`
       вырос с двух мутаций до **пяти**. Набор: 1320 зелёных.
 
-- [ ] 6.5 A paid ability check can be confirmed, charged and then abandoned unsent
+- [x] 6.5 A paid ability check can be confirmed, charged and then abandoned unsent
       Сужено злым проходом: сценарий воспроизведён (плата `0.01` записана,
       `sendVerificationMessage` не вызван), но три из четырёх заявленных триггеров
       недостижимы — истечение отрезано порогом `TTL_MIN=30 s` (`tg_carrier.py:91-98`),
@@ -1567,6 +1567,10 @@ rather than on code.
       подтверждённой проверкой способности и отправкой, — законное основание не
       отправлять; плата записана честно (`cost` и `vendor_ref` на строке рунга), вред
       наносит себе владелец токена, и человек не теряет ничего.
+      **Исполнено 22.09.2026 в общем заходе по спеке:** исключение названо в
+      `outbound-routing/spec.md` прямо под SHALL'ом, с обоими доводами (код обнулён на
+      терминальном окончании; повторный `request_id` запрещён абзацем выше) и с замером
+      достижимой ветви.
 
 - [x] 6.6 The status-writer census counts function names, not status writes
       Прогнано поверх копии `queries.py` со вторым `UPDATE … status='rejected'` внутри
@@ -1668,7 +1672,7 @@ rather than on code.
       Девять сторожей (`tests/test_what_verifications_cost_is_answerable.py`), новый укус
       `bite-what-verifications-cost.sh` — пять мутаций, все красные. Набор: 1336 зелёных.
 
-- [ ] 6.11 Five annotations claim «nothing in production calls this yet», and production does
+- [x] 6.11 Five annotations claim «nothing in production calls this yet», and production does
       Аннотация — такое же утверждение о коде, как SHALL, и эти пять устарели вслед за
       появлением `placement.place`. Поимённо: `outbound-routing/spec.md:607`
       («the gate has no production caller» — а он `router.py:274,304` → `placement.py:168`
@@ -1685,8 +1689,16 @@ rather than on code.
       `:555`, а докстринг `placement.py:88-92` говорит обратное аннотации).
       🔴 Последняя опаснее прочих: на установке с ключом uCaller отклонённый Gateway-ом
       абонент получает платный звонок, а спека обещает громкий пропуск. Лечится спекой.
+      **Сделано 22.09.2026 в общем заходе по спеке.** Все пять переписаны фактом, а не
+      снятием: гейт достижим через `placement`, `ladder.walk` и `refusals.record` имеют
+      боевых вызывателей, бирер читают проба и сборка носителей, рунг-пропускающие
+      клаузы обоснованы кодом (неподкреплённым осталось ЧИСЛО, а не путь), и последняя —
+      `flash_call` несётся, а не пропускается громко.
+      🔴 Урок записан в самих аннотациях: «в продакшне этого никто не зовёт» —
+      утверждение САМОУСТАРЕВАЮЩЕЕ: его опровергает любая следующая проводка, и ничто об
+      этом не краснеет. Поэтому пять правок — не опечатки, а класс.
 
-- [ ] 6.12 The verification capability describes three doors and the contract carries four
+- [x] 6.12 The verification capability describes three doors and the contract carries four
       Требование 11-121 говорит, что шлюз отвечает МЕТОДОМ, а `POST /verifications`
       возвращает список предложений и не ставит ничего: метод называется только в
       `POST /verifications/{id}/route`. Противоречие настоящее, и неправа СПЕКА —
@@ -1695,6 +1707,12 @@ rather than on code.
       контракт `docs/verification-api.md:17-30` несёт четыре двери. Устарели вступительный
       абзац требования, два его сценария и перечень владения `spec.md:26-29`.
       Лечится спекой.
+      **Сделано 22.09.2026 в общем заходе по спеке.** Вступительный абзац переписан на
+      двухшаговую дверь (создание отдаёт id и предложенные рунги; метод выбирается на
+      `POST /verifications/{id}/route`, и та дверь отвечает, что из выбора вышло), два
+      сценария переписаны под неё, а перечень владения дополнен четвёртой дверью — она
+      требовалась другим требованием ТОЙ ЖЕ дельты, несётся контрактом и смонтирована в
+      роутере, а в перечне её не было: список дверей — такое же утверждение о коде.
 
 - [x] 6.13 The annotation promises seven mutations that do not exist
       `outbound-routing/spec.md:181-262` обещает «seven mutations» за средовую половину

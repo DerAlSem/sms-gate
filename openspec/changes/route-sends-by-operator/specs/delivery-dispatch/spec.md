@@ -89,6 +89,21 @@ belonging to a verification, which notify as verifications instead.
 Every code path that writes a verification's state SHALL likewise trigger a notification, and
 the same enumerating test SHALL cover those paths and fail when one of them does not.
 
+[backed since 22.09.2026 · task 6.6, and this requirement carried **no annotation at all**
+until then, which asserts backing without reservation and is the same target as a `[backed]`
+one. The message census is `tests/test_delivery_hooks.py` and the verification census
+`tests/test_verification_outcome_reaches_the_app.py`, both taken off the syntax tree rather
+than off the text.
+
+🔴 **The message census counted function names until 22.09.2026, and the requirement counts
+code paths.** A second `UPDATE messages SET status = 'rejected'` added *inside* an already
+registered writer went through green: no new name appeared, and the status nobody declared was
+read by nobody. It now compares name → the **set of statuses each one writes**, parsed from the
+`SET` half alone, because two of these writers select the rows to sweep by the status they are
+already in and a condition is the opposite of a write. Bitten by `bite-status-writers.sh`,
+three red — and the bite was written before the fix, which is how the hole was seen rather than
+argued: the mutation ran green against the old census]
+
 #### Scenario: A new status writer is added without a notification
 - **WHEN** a code path that sets `messages.status` is added with no delivery dispatch
 - **THEN** the test suite fails

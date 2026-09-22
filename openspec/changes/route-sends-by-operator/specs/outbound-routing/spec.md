@@ -232,13 +232,13 @@ rather than by deciding anything.
 
 [partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by **`bite-credentials.sh`, written and run 22.09.2026** (task 4.60), four red across the three layers a secret can leak through: the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute — `type="password"` hides characters from a glance and nothing from the page source — and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
 
-**The environment half is backed** by `tests/test_credentials_do_not_live_in_the_environment.py` and seven mutations: precedence asserted at the `Authorization` header that leaves for the vendor rather than at the store attribute, paired with the control that a key with no row *is* seeded, and with the blank row — the state every estate ships in, written by the first start, so that from the second start `.env` has already lost even where nobody configured anything.
+**The environment half is backed** by `tests/test_credentials_do_not_live_in_the_environment.py` and by **`bite-credentials-not-in-the-environment.sh`, written and run 22.09.2026** (task 6.13 — until then the seven mutations named here were run by nothing, the second time in this change that a reference to a bite was a claim about the code nobody checked). Seven, split across the two environment surfaces because they break differently — `os.environ` in `app/`, and `BaseSettings(env_file=".env")` in `app/config.py`, where pydantic does the reading and there is no `os.environ` for a census to find: precedence asserted at the `Authorization` header that leaves for the vendor rather than at the store attribute, paired with the control that a key with no row *is* seeded, and with the blank row — the state every estate ships in, written by the first start, so that from the second start `.env` has already lost even where nobody configured anything.
 
 🔴 **The boundary has two surfaces and the obvious census sees one.** "Never in the environment" is a claim about every line in `app/`, so the readers are enumerated off the syntax tree — and that census reports a single sanctioned reader while `app/config.py` reads `.env` on every start through `BaseSettings(env_file=".env")`, with no `os.environ` anywhere in it for a census to find. A vendor credential declared there is the defect in its purest form: read from `.env` at every start, absent from the settings page, unchangeable without a restart. Both surfaces are asserted, the second as a whitelist of one — `admin_password` is the console's own door, kept in `.env` deliberately so that a bad settings write cannot lock an operator out of the page they would fix it from, and that is a gateway credential rather than a vendor's.
 
-uCaller's half now has a home: `ucaller_key` (secret, and covered by the guard above through the shape of its name) and `ucaller_service_id`, declared 22.09.2026, with the bearer assembled in `app/verification/ucaller.py` from both halves or from neither. Guarded by `tests/test_ucaller_credentials.py` and eight mutations in `bite-ucaller.sh` — the dot dropped, the halves swapped, one half accepted as a whole credential, the paste left unstripped, the reader taking the key twice, the secret declared not secret, the row shipped with a value, and the second half never declared. ⚠️ **Nothing in production reads the bearer yet**: the settings page reads the rows, but the vendor is called by nobody until the adapter lands (task 4.17), and `flash_call` has no probe registered and is therefore never offered.
+uCaller's half now has a home: `ucaller_key` (secret, and covered by the guard above through the shape of its name) and `ucaller_service_id`, declared 22.09.2026, with the bearer assembled in `app/verification/ucaller.py` from both halves or from neither. Guarded by `tests/test_ucaller_credentials.py` and eight mutations in `bite-ucaller.sh` — the dot dropped, the halves swapped, one half accepted as a whole credential, the paste left unstripped, the reader taking the key twice, the secret declared not secret, the row shipped with a value, and the second half never declared. ✅ **Production reads the bearer, since 22.09.2026** (task 6.11): task 4.17 landed and 1.1 with it. `ucaller.configured_bearer()` is read by `app/verification/probes.py`, which registers a `flash_call` probe, and by `app/verification/placement.py`, which builds the carrier from it; the adapter is `app/verification/ucaller.py`, and this change bites it in `bite-flash-call.sh`.
 
-Still unbacked: every rung-skipping clause below, which needs the door]
+The rung-skipping clauses below are backed too: the skip and its alert are in `app/verification/ladder.py`, the ladder that advances past a rung with no carrier is the same file, and the setting that says which rungs exist is `app/settings_store.py`. What is still unbacked here is **a number**, not a path: no uCaller charge has been observed, every captured authorisation being a free test one]
 
 #### Scenario: A credential placed in the environment after the first run
 - **WHEN** a vendor credential is written to `.env` for a key that already has a row in `settings`
@@ -330,10 +330,24 @@ Nothing SHALL be failed when the bound expires or the lookup raises. The unknown
 entry answers, whatever it is configured to be, and the item is recorded as having been
 routed without a known operator so the case stays countable.
 
-[normative · evidence: app/lookup/operator.py:23-45 · app/api/router.py:36 (`record_operator`
-spawned, not awaited) · app/modem/manager.py (`_operator_for`, bounded by
-`operator_lookup_bound`) · app/db/migrate.py (`messages.routed_route`,
-`messages.routed_operator`) · tests/test_send_path_operator_lookup.py · conf: high]
+[normative · evidence: `app/lookup/operator.py` — `resolve_within_bound`, which **is** this
+requirement in one function: the cached operator used as it stands however stale, the bound
+spent only where there is no operator at all, and nothing ever failed for want of one. Both
+callers ask it: the sender through `ModemManager._operator_for`, and `POST /verifications`,
+which owes the synchronous resolve because its answer names a method. 🔴 **The door had its own
+unconditional `record_operator` until 22.09.2026** (task 6.4): a row 400 days old held the
+request for 3.01 seconds, and the budget being spent was `voxlink_timeout` — the patience of
+one HTTP call — rather than the routing bound. Two callers that must decide alike are one
+function, or they are one function and a copy that falls behind. `POST /sms/send` still spawns
+the lookup without awaiting it, which is the other half of the same decision.
+
+The countable half is `messages.routed_route` / `messages.routed_operator` for what the modem
+sends, and — since 22.09.2026, task 6.8 — `verifications.routed_operator` for what a ladder
+carries: a verification borne by `tg_gateway` or `flash_call` creates no `messages` row at all,
+so on the paid rungs the case this clause exists for was recorded by nothing. It is written
+once per walk and **before** the refusals, and the unknown case is the word `?` rather than a
+NULL, because a NULL cannot tell "routed for nobody" from "written before the column existed".
+· tests/test_send_path_operator_lookup.py · tests/test_ladder_walk.py · conf: high]
 
 #### Scenario: A first-time number whose lookup has not resolved
 - **WHEN** a message is addressed to a number with no row in `number_operators`
@@ -461,6 +475,18 @@ Two consequences follow, and both are normative:
 2. **A confirmed ability check SHALL be followed by exactly one `sendVerificationMessage`
    carrying its `request_id`.** It SHALL NOT be abandoned, and SHALL NOT be repeated with the
    same `request_id`, which the vendor answers with an error rather than a second message.
+
+   **One exception, and it is named rather than discovered (task 6.5, 22.09.2026): a
+   verification that ended between the confirmed check and the send SHALL NOT be sent.** The
+   code it would carry no longer exists — it is destroyed at every terminal ending — so the
+   send would either have to resurrect a secret this capability spends its whole length
+   destroying, or tell a person to type back a code for a verification that is already over.
+   The fee is recorded against the rung with its `request_id` and counted as spend that bought
+   nothing; it is not refundable, because the refund is tied to non-delivery within a `ttl` and
+   a `ttl` only starts when a message is sent. Measured 22.09.2026: the only reachable way in
+   is the owning application exhausting its own attempts through `POST /verifications/{id}/check`
+   inside the vendor's ~250 ms window — self-inflicted, by the holder of the token, and costing
+   the person at the barrier nothing, because their verification had already ended.
 
 An ability check that does not answer within the bound SHALL be recorded as **possibly
 charged** and counted separately from both outcomes. A confirmation we never saw is a fee that
@@ -604,7 +630,7 @@ changeable without a restart, by the same means as the rule.
 **Owner's decision of 18.09.2026.** It was raised by the critic round of 11.09.2026 as a
 finding left for the owner rather than written as a norm; it is now written as one.
 
-[backed · `apps.may_spend`, added by `app/db/migrate.py` as an `ALTER` so that its default reaches the rows already there; the gate is `gates.entitlement_gate` in `app/verification/gates.py`, read per call so that no restart is needed; operated at `POST /admin/apps/entitlement`. Guarded by `tests/test_paid_entitlement.py` and `tests/test_admin_apps.py`, including a test that builds the table in its pre-change shape, populates it and then migrates. ⚠️ **Implemented is not reachable**: the gate has no production caller, because the door that walks the paid ladder belongs to `verify-by-inbound-contact` and does not exist yet]
+[backed · `apps.may_spend`, added by `app/db/migrate.py` as an `ALTER` so that its default reaches the rows already there; the gate is `gates.entitlement_gate` in `app/verification/gates.py`, read per call so that no restart is needed; operated at `POST /admin/apps/entitlement`. Guarded by `tests/test_paid_entitlement.py` and `tests/test_admin_apps.py`, including a test that builds the table in its pre-change shape, populates it and then migrates. ✅ **Reachable since 22.09.2026** (task 6.11): the door that walks the paid ladder is in this change after all — `POST /verifications/{id}/route` in `app/api/router.py` calls `placement.place`, which asks `gates.for_paid_ladder`, which is where `entitlement_gate` stands. The router is mounted in `app/main.py`. The claim it replaces — "the gate has no production caller" — was true when written and expired the day the door landed, silently: **a statement that nothing calls something is refuted by the next wiring and nothing goes red**, which is the whole of why it is worth re-reading annotations against the code]
 
 #### Scenario: An application without the entitlement
 - **WHEN** an application whose entitlement is off requests a verification for an operator routed to a paid ladder
@@ -745,10 +771,10 @@ application or the route dropped from the row, an unresolved operator left unnam
 hung on `notify_send_errors` — off on a stock install, and every install with this defect is a
 stock install — deduplicated per item and then per operator alone, a changed entry not
 restarting its review period, a dropped entry still watched, the period hard-coded, the report
-firing every tick, and `*`/`?` pulled into it. ⚠️ **Counted is
-not produced:** the only caller today is `ladder.walk`, which has no production caller of its
-own — the send-path refusal that produces the measured seventy a month is task 4.6 and calls
-`refusals.record` the same way]
+firing every tick, and `*`/`?` pulled into it. ✅ **Counted is produced, since 22.09.2026** (task 6.11): both halves of the old warning are
+false now. `ladder.walk` is called in production by `app/verification/placement.py`, reached
+from the selection door; and `refusals.record` has a second caller of its own — the send path
+in `app/modem/manager.py`, which is the one that produces the measured seventy a month]
 
 The count SHALL be answerable per application as well as per operator: it decides whether to
 call the developer of a particular application or to drop the rule, and "seventy refusals"
