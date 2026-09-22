@@ -1259,9 +1259,13 @@ rather than on code.
       ⚠️ скрипт, гонявший только «свой» файл тестов, объявил выжившей мутацию «понёс и
       упал — лестница едет дальше», хотя сторож на неё есть — в СОСЕДНЕМ файле. Оба
       скрипта теперь гоняют оба файла: свойство лежит поперёк границы.
-      Осталось восемь: `bite-credentials.sh`, `bite-lookup.sh`, `bite-modem.sh`,
-      `bite-refusals.sh`, `bite-rule.sh`, `bite-template.sh`, `bite-verif-view.sh`,
-      `bite-withhold.sh`.
+      **`bite-modem.sh` (пять) и `bite-withhold.sh` (шесть) написаны и прогнаны
+      22.09.2026** — все одиннадцать красные. ⚠️ Контроль `bite-modem.sh` пришлось
+      перецелить: «снять словарь отказов абонента» не делает отказ отказом НАМ — он
+      проваливается в `unclassified`, который модем не удерживает. Различает не
+      отсутствие ветви, а её исход, поэтому мутация теперь возвращает `REFUSED` всему.
+      Осталось шесть: `bite-credentials.sh`, `bite-lookup.sh`, `bite-refusals.sh`,
+      `bite-rule.sh`, `bite-template.sh`, `bite-verif-view.sh`.
       Набор 1317 зелёных при тех же шести унаследованных падениях.
 
 - [x] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
