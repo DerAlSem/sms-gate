@@ -587,18 +587,86 @@ than questions:
 4. **Whether spending on a paid route is an entitlement of the application** — yes, and off by
    default, including for a newly issued token.
 
-**What remains open, and both are new rather than carried over:**
+**Nothing remains open. Both questions this chapter carried are answered:**
 
-1. **Whether a Gateway message that was accepted and then not delivered within its `ttl`
-   escalates to a call.** The spec's default is that it does not: the fee is refunded and the
-   verification fails with that reason. The argument for escalating is that the refund makes it
-   nearly free, and it is a real argument — which is why this is an open question and not an
-   omission. Nothing may be built as escalation until it is decided.
+1. ~~**Whether a Gateway message that was accepted and then not delivered within its `ttl`
+   escalates to a call.**~~ ✅ **Decided by the owner 22.09.2026: it does not.** The spec's
+   default becomes a decision. The argument for escalating was real — the refund makes the
+   attempt nearly free and the person is still at the barrier — and it loses on two counts: it
+   is the automatic escalation into a paid channel this change refuses everywhere else, reached
+   from the other side; and by the time the `ttl` has run out the person has already waited out
+   that window, so a call afterwards is no longer the same attempt to log in. A fresh
+   verification is the honest shape and it already works. See "Struck by the owner" below.
 2. ~~**Which word survives for the flash-call route.**~~ ✅ **Decided by the owner 18.09.2026:**
    one flat field, names disambiguated — `flash_call` (the vendor dials), `call_in` (the
    subscriber calls our SIM), `sms_out` (our SIM sends), `sms_in` (the subscriber texts us),
    `tg_gateway`, `tg_user`, `max_user`, `app_bot`. `call` is retired outright and `modem` is
    retired in favour of `sms_out`. Applied throughout this change.
+
+## Struck by the owner, 22.09.2026
+
+A refusal is recorded by the owner before archiving, never by the session that found it. Four
+tasks were put to the owner with their measurements and their costs, and struck. Their bodies
+are kept here rather than deleted: the measurement behind each is what makes the refusal
+reviewable, and a task that vanishes takes its evidence with it.
+
+### 1.10 — the size of the Gateway balance
+
+> - [ ] 1.10 **Now that 1.9 has left the IP restriction off, the balance is the only cap there is — keep it deliberately small.** A leaked Gateway token is spend authority at the vendor, and this change's spend ceiling does **not** protect it: the ceiling bounds what *our gateway* asks for, while a stolen token is spent without touching our gateway at all. The vendor-side balance is the only cap that applies, so it is the cap — a top-up sized to weeks, not to years
+
+**Struck as an action of the owner's, and the reasoning is now a norm** (`phone-verification`)
+rather than a task: the vendor-side balance is the only ceiling that applies to a stolen token,
+because this gateway's own spend ceiling bounds what *this gateway* asks for and a stolen token
+is spent without touching it at all. So the balance is held at weeks rather than years. There is
+nothing for the code to do, and a norm outlives the change while a task does not.
+
+Deliberately **not** paired with an alert on the balance falling: Telegram Gateway's
+`remaining_balance` is readable only inside the answer to a billed `checkSendAbility`, so a
+stolen token drains the account between our readings — and on a quiet gateway there are no
+readings at all.
+
+### 1.11 — what the subscriber sees on the Gateway rung
+
+> - [ ] 1.11 **Settle what the subscriber actually sees on this rung, and whether we can change any of it.** The probe's message arrived from "Verification Codes" reading *"Your code is 1173"* — no branding of ours, and in English. `sendVerificationMessage` accepts no body, so the wording is not ours to set; the one documented lever is `sender_username`, a verified channel, and it was not tried. ⚠️ **Whether the text is always English or follows the recipient's Telegram language is NOT established** and must not be assumed either way. This matters beyond taste: the spec forbids the gateway inventing default wording on the modem route precisely because a code signed by something a person does not recognise reads as fraud — and on this rung we inherit exactly that, with no template to fix it. It is also half of what task 3.1 has to describe to the parking developer 🟡 **Half settled 21.09.2026 by the vendor's reference, and it moved the lever out of the gateway's hands.** `sender_username` is *"Username of the Telegram channel from which the code will be sent. The specified channel, if any, must be verified and owned by the same account who owns the Gateway API token."* So it is not a display name of our choosing: it costs a **verified channel** under the account that holds the token, which is the owner's to obtain and not a setting to flip. The setting now exists and reaches the vendor (`tg_gateway_sender_username`, blank by default, 4.57), so the moment a channel exists this is one save away. What the vendor answers to a channel that does not meet its condition is **not measured** — every probe of it is a paid message to a real person. The language question is untouched and still must not be assumed either way
+
+**Struck, and what is known and what is not are both now norms.** The wording and the language
+of that message are the vendor's and not ours; the single lever is `sender_username`, which
+costs a **verified channel** owned by the account that holds the token, and the setting for it
+already exists and reaches the vendor (`tg_gateway_sender_username`, blank by default). So
+obtaining the channel is one save away at any later moment and blocks nothing.
+
+🔴 **The language question is recorded as unestablished and is not to be assumed in either
+direction.** It is not known whether the text is always English or follows the recipient's
+Telegram language, every probe of it is a paid message to a real person, and it will be observed
+for free the first time a Gateway verification runs in production (task 5.5).
+
+### 2.6 — escalating an undelivered Gateway message to a call
+
+> - [ ] 2.6 **Owner: whether a Gateway message that was accepted and then not delivered within its `ttl` escalates to a call.** The spec's default is that it does not — the fee is refunded and the verification fails with that reason — and nothing may be built as escalation until this is answered. The argument for escalating is real: the refund makes the attempt nearly free, and the person is still standing at the barrier. The argument against is that it is the automatic escalation into a paid channel this change otherwise refuses, arrived at from the other side
+
+**Answered: it does not escalate**, which was the spec's default, and it is now a decision
+rather than a default. The argument for escalating was real — the refund makes the attempt
+nearly free and the person is still at the barrier — and two things settle it against.
+
+It is the automatic escalation into a paid channel that this change refuses everywhere else,
+arrived at from the other side. And the `ttl` is not seconds: by the time a Gateway message has
+failed to be delivered within its window, the person has already waited out that window, and a
+call arriving afterwards is no longer the same attempt to log in. A fresh verification is the
+honest shape for it, and it already works.
+
+### 2.8 — permission to measure Telegram reachability across our numbers
+
+> - [ ] 2.8 **Owner: permission to measure what share of our numbers is reachable in Telegram.** It needs no message sent and costs nothing for an unreachable number, but it means running live customer numbers through a vendor. It is the measurement that decides whether the cheap rung is worth its check: a base with little Telegram is a ladder that pays to be declined before calling anyway
+## 3. Agree the contract with the parking developer
+
+**Refused: the measurement is not to be run.** It would mean passing live customer numbers to a
+third-party vendor, which is a disclosure of personal data, and the decision is the owner's
+alone. The ladder does not need it: a subscriber unreachable in Telegram costs nothing and is
+carried to the call rung, which is the behaviour the ladder was built for.
+
+What stays unmeasured is therefore named rather than quietly assumed: **how much latency and how
+many requests are spent on a rung that mostly declines.** That is a cost of the refusal, and it
+is accepted.
 
 ## Status
 

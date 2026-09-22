@@ -547,6 +547,21 @@ request (a timeout, a restart mid-flight) cannot place and pay for a second call
 legitimate repeat remains possible. A key unique to the verification cannot do both jobs at
 once: deduplicating our retry by it would also deduplicate the repeat.
 
+⚠️ **The vendor's own answer to a deduplicated call SHALL NOT be acted on until it has been
+observed.** `initCall` returns `exists` only where `unique` was passed, `unique` has been
+passed in no capture taken so far, and the external-contract gate binds assertions as firmly as
+parsers: the field may be read into the adapter's result on the strength of the reference, and
+nothing may branch on it on the strength of a guess.
+
+**It is also unreachable today, and that is the more useful half of the statement.** Nothing in
+this gateway retries `initCall`: a carrier is called once per rung row, the ladder does not
+re-enter a rung, and no restart path replays one. So a reader for `exists` would be a guard
+that is green because its branch cannot be entered — the shape this change has already paid for
+three times. When the path is built, or when a paid probe produces the first sample carrying the
+field, the norm to write is that a deduplicated call SHALL NOT be recorded as a fresh attempt:
+it was neither placed nor charged a second time, and counting it would spend both ceilings twice
+for one authorisation.
+
 Cost is not the only reason. A second call for the same verification carries a *different*
 last four digits, and the person is then reading digits from one call while the gateway
 expects the other. It follows that a repeat SHALL be offered only once it is established from
@@ -666,6 +681,17 @@ that it should, and a floor that never fires is indistinguishable from a vendor 
 runs out — the same silence, from opposite causes. The failure this guards is the ordinary
 one: a third paid vendor is added, its adapter works, and nobody notices that its balance is
 watched by nothing until the day it empties.
+
+🔴 **The vendor-side balance is the only ceiling that applies to a stolen credential, and it
+SHALL be held deliberately small.** This is the owner's decision of 22.09.2026, and it is a norm
+rather than an operational habit because the reasoning is invisible from the code: this
+gateway's spend ceiling bounds what *this gateway* asks for, and a leaked token is spend
+authority **at the vendor** — exercised without any request passing through here, so neither the
+ceiling, nor the per-number limits, nor the entitlement is consulted at all. A balance sized to
+years is therefore the size of the loss; a balance sized to weeks is the size of the loss. The
+gateway SHALL NOT compensate for this with a balance alarm on the Telegram rung: the balance
+there is readable only inside a billed confirming check, so a stolen token drains the account
+between our readings, and on a rung nobody is verifying on there are no readings at all.
 
 🔴 **A refund is tied to non-delivery and to nothing else, which makes it unobservable on
 demand.** The vendor is explicit both ways: *"If a message is not delivered within the
@@ -1087,6 +1113,22 @@ decision taken silently on behalf of applications that do not share a voice: `sp
 `SokolParking: ####` and nothing else — 446 of 448 messages since 01.08 — while the others are
 free text under other names. A person reading a code signed by something they do not recognise
 treats it as the fraud it resembles.
+
+🔴 **On the `tg_gateway` rung that argument is inherited and cannot be answered, and the spec
+SHALL say so rather than imply otherwise.** `sendVerificationMessage` accepts no body: the
+subscriber is shown the vendor's own wording from the vendor's own sender — observed
+18.09.2026 as *"Your code is 1173"* from "Verification Codes", with no branding of ours. The
+one documented lever is `sender_username`, and it is not a display name of our choosing: the
+vendor requires *a verified channel owned by the same account that owns the Gateway API token*.
+The setting exists and reaches the vendor (`tg_gateway_sender_username`, blank by default), so
+obtaining such a channel is one save away and is the owner's to obtain; until then the rung
+carries an unbranded code and this is accepted rather than unnoticed.
+
+⚠️ **Whether that text is always English or follows the recipient's Telegram language is NOT
+established, and SHALL NOT be assumed in either direction.** Every probe of it is a paid
+message to a real person, so it is observed for free at the first production verification on
+this rung and not before. The gateway SHALL NOT describe the rung to an application as
+carrying wording in the person's language while this is unknown.
 
 Refusing at accept rather than at compose matters for money as much as for tidiness: by compose
 time the request has passed the entitlement and the ceiling, and on a ladder it may already have
