@@ -15,7 +15,7 @@ from app.settings_store import store
 from app.verification.probes import build_probes
 from app.verification import rule
 from app.verification.routes import (
-    CALL_IN, SMS_IN, SMS_OUT, TG_GATEWAY, Proof,
+    CALL_IN, FLASH_CALL, SMS_IN, SMS_OUT, TG_GATEWAY, Proof,
 )
 
 PHONE = "+79261234888"
@@ -63,6 +63,11 @@ def _run(body):
 
 
 def _probe(name, modem=None, ims_proof=None, **kw):
+    """The credentials default here and nowhere else: a test about `call_in` should not
+    have to name the two vendors, while a *builder* of the live ladder must name them —
+    which is why `build_probes` itself has no default for either."""
+    kw.setdefault("tg_token", "")
+    kw.setdefault("ucaller_bearer", "")
     return build_probes(modem or FakeModem(), ims_proof=ims_proof, **kw)[name]
 
 
@@ -400,3 +405,78 @@ def test_the_rung_is_absent_from_both_ladders_when_no_token_is_configured():
     from_api, from_modem = _run(body)
     assert TG_GATEWAY not in from_api
     assert TG_GATEWAY not in from_modem
+
+
+# --- 7.1 — and the credential has to survive the same trip ------------------------------
+#
+# The guard above was written for `tg_token` alone, and the rung it does not name is the
+# one that broke. `ucaller_bearer` has the same blank default and the same two builders,
+# and on 22.09.2026 the modem manager's builder was passing neither it nor anything in its
+# place: live, at 22:06:30 and 22:07:30 MSK, the sweep read `no uCaller credential is held`
+# against a credential that had been in `settings` since 21:01 and ended a verification
+# whose call was already placed and already paid for.
+#
+# So the shape is the same shape, deliberately: whoever adds the next parameter to
+# `build_probes` should find the pattern here rather than the omission.
+
+def test_the_ladder_built_for_an_api_request_carries_the_configured_credential():
+    from types import SimpleNamespace
+
+    import app.api.router as router
+
+    async def body():
+        await store.set_many({"ucaller_key": "SECRET", "ucaller_service_id": "1692"})
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
+            modem=FakeModem(), ims_proof=None)))
+        registry = router._registry(request)
+        return {offer.route for offer in await registry.offer(PHONE)}
+
+    assert FLASH_CALL in _run(body)
+
+
+def test_the_ladder_built_by_the_modem_manager_carries_the_configured_credential():
+    """The half that was missing. The manager's ladder is not the door's second opinion —
+    it is what the sweep re-proves an *open* verification against, so a rung this builder
+    cannot offer is a verification this builder kills."""
+    from app.modem.manager import ModemManager
+
+    async def body():
+        await store.set_many({"ucaller_key": "SECRET", "ucaller_service_id": "1692"})
+        registry = ModemManager._verification_registry(FakeModem())
+        return {offer.route for offer in await registry.offer(PHONE)}
+
+    assert FLASH_CALL in _run(body)
+
+
+def test_the_call_rung_is_absent_from_both_ladders_when_no_credential_is_configured():
+    """The pair, on the same terms as the token's: without it both tests above pass
+    against a gateway that offers the vendor's rung with no credential at all."""
+    from types import SimpleNamespace
+
+    import app.api.router as router
+    from app.modem.manager import ModemManager
+
+    async def body():
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
+            modem=FakeModem(), ims_proof=None)))
+        from_api = {o.route for o in await router._registry(request).offer(PHONE)}
+        from_modem = {o.route for o in
+                      await ModemManager._verification_registry(FakeModem()).offer(PHONE)}
+        return from_api, from_modem
+
+    from_api, from_modem = _run(body)
+    assert FLASH_CALL not in from_api
+    assert FLASH_CALL not in from_modem
+
+
+def test_a_ladder_built_without_the_credentials_fails_on_the_signature():
+    """The half the behavioural pair above cannot cover: a *third* builder, written next
+    year. The pair names the two that exist today, and a census of builders is exactly the
+    thing that stops being true silently — so the two parameters whose absence revokes a
+    rung carry no default, and a caller that omits one never reaches a probe."""
+    import pytest
+
+    with pytest.raises(TypeError, match="ucaller_bearer"):
+        build_probes(FakeModem(), tg_token="")
+    with pytest.raises(TypeError, match="tg_token"):
+        build_probes(FakeModem(), ucaller_bearer="")

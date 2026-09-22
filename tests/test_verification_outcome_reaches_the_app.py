@@ -25,7 +25,7 @@ from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification.dispatch import announce_verification_outcomes
-from app.verification.routes import CALL_IN, SMS_IN
+from app.verification.routes import CALL_IN, FLASH_CALL, SMS_IN
 
 PHONE = "+79261234888"
 
@@ -434,6 +434,59 @@ def _ims_holds():
     async def proof():
         return Proof(holds=True)
     return proof
+
+
+# --- 7.1 — the sweep against a rung whose precondition is a credential -------------------
+
+def test_a_call_verification_survives_the_sweep_while_the_credential_is_held(pushed):
+    """Measured live on 22.09.2026: the sweep ended two `flash_call` verifications a
+    minute after they opened, reading `no uCaller credential is held` against a credential
+    that had been in `settings` for an hour. The call was already placed and already paid
+    for, and the person's phone was still ringing when the application was told the route
+    had died.
+
+    The positive control above uses `call_in`, whose precondition is the modem, so it says
+    nothing about a rung proved from the settings. This is the same assertion for the only
+    rung the gateway pays a vendor to ring."""
+    import app.modem.manager as manager_mod
+
+    class LiveRoute:
+        caller_id_subscribed = True
+        in_service = True
+
+    async def body():
+        await store.set_many({"ucaller_key": "SECRET", "ucaller_service_id": "1692"})
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = LiveRoute()
+        m._reader_link = LiveRoute()
+        vid = await _open(FLASH_CALL)
+        await m.verification_step()
+        row = await queries.get_verification(vid, "app1")
+        return row["status"], row["reason"]
+
+    status, reason = _run(body)
+    assert status == "pending", (
+        f"the sweep ended a paid call the credential still supports: {reason}")
+    assert pushed == []
+
+
+def test_a_call_verification_is_ended_by_the_sweep_once_the_credential_is_gone(pushed):
+    """The pair. Without it the test above passes against a sweep that ends nothing."""
+    import app.modem.manager as manager_mod
+
+    class LiveRoute:
+        caller_id_subscribed = True
+        in_service = True
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = LiveRoute()
+        m._reader_link = LiveRoute()
+        vid = await _open(FLASH_CALL)
+        await m.verification_step()
+        return (await queries.get_verification(vid, "app1"))["status"]
+
+    assert _run(body) == "failed"
 
 
 # --- 4.15 — the two pushes travel the same route and must not be read as each other ------

@@ -49,8 +49,8 @@ from app.verification.routes import (
 
 
 def build_probes(
-    modem, *, ims_proof=None, excluding: int | None = None,
-    tg_token: str = "", tg_reachability=None, ucaller_bearer: str = "",
+    modem, *, tg_token: str, ucaller_bearer: str,
+    ims_proof=None, excluding: int | None = None, tg_reachability=None,
 ) -> dict:
     """The probes the gateway can actually run today, ready for the registry.
 
@@ -65,10 +65,25 @@ def build_probes(
     is set when a rung is re-proved *under* an open verification, and left unset when the
     question is "can a new one be carried".
 
-    `tg_token` is passed rather than read from the settings here so that a caller that
-    forgets it leaves the rung unoffered — the failing direction — instead of a probe
-    silently reaching for global state. `tg_reachability` is the seam onto
-    `carry-telegram-on-any-uplink`, on the same terms as `ims_proof`.
+    `tg_token` and `ucaller_bearer` are passed rather than read from the settings here, so
+    that a probe never silently reaches for global state — and they carry **no default**,
+    so a builder that forgets one fails on the signature rather than on a rung.
+
+    🔴 **The default they used to carry cost a live verification on 22.09.2026.** The
+    argument for it was that a forgotten credential leaves the rung unoffered, which is the
+    failing direction and therefore safe. It is safe at the door, where an unoffered rung
+    is one the caller never chose. It is not safe in `ModemManager._verification_registry`,
+    which builds this same set to re-prove the rung of an **already open** verification:
+    there an unoffered rung is a verification the sweep ends, and the manager's builder was
+    passing `tg_token` and nothing else. Live, at 22:06:30 and 22:07:30 MSK, two
+    `flash_call` verifications were ended a minute after opening with `no uCaller
+    credential is held`, against a credential that had been in `settings` since 21:01, with
+    the call placed, paid for and still ringing. A blank default is only the safe direction
+    for the reader that treats "not offered" as "not chosen"; this set has two readers and
+    the other one reads it as "revoked".
+
+    `tg_reachability` is the seam onto `carry-telegram-on-any-uplink`, on the same terms as
+    `ims_proof`: absent, it is not consulted, and neither of them is a credential.
     """
     return {
         CALL_IN: _call_in_probe(modem, ims_proof, excluding),

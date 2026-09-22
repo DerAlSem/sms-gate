@@ -18,7 +18,7 @@ from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANS
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
-from app.verification import refusals, routes, rule
+from app.verification import refusals, routes, rule, ucaller
 from app.lookup.operator import cached_operator, resolve_within_bound
 from app.verification.dispatch import announce_verification_outcomes
 from app.verification.probes import build_probes
@@ -1729,7 +1729,8 @@ class ModemManager:
         return routes.Registry(
             probes=build_probes(self, ims_proof=getattr(self, "ims_proof", None),
                                 excluding=excluding,
-                                tg_token=store.tg_gateway_token),
+                                tg_token=store.tg_gateway_token,
+                                ucaller_bearer=ucaller.configured_bearer() or ""),
             order=[name.strip()
                    for name in store.verification_route_order.split(",")
                    if name.strip()],
