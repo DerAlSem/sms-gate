@@ -500,11 +500,25 @@ and not an omission.
 
 [backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running. The driver itself —
 `app/verification/ladder.py` and `app/verification/tg_carrier.py` — is guarded by
-`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`; seventeen mutations reasoned
-for `bite-ladder.sh` and `bite-carrier.sh` — **neither script was ever written, see task
-4.60** — each of which *would* turn a guard red: gates that do not run first, silence
-recorded as a decline, a bound handed to each rung again, a hard-coded order, a fee recorded
-only after the send, and a failed send advancing the ladder. **Reasoned, not run**]
+`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`. **`bite-ladder.sh` (nine)
+and `bite-carrier.sh` (eight) exist and run since 22.09.2026**, task 4.60, and between them turn
+all seventeen red: gates that do not run first and a gate's refusal ignored, the order held in
+the code as "Telegram first", silence recorded as a decline, the bound handed to each rung
+again, the rung's row not saying it is in flight, a rung that carried and then failed advancing,
+the verification named after the first rung tried, the last rung's silence failing the
+verification instead of leaving it in flight — and on the carrier, the rung bought below the
+vendor's `ttl` floor, that refusal counted against the subscriber, the fee recorded only after
+the send, a constant `ttl` handed to the vendor, a failed send advancing, the outcome map
+collapsing a refusal of *us* into a decline, both loud refusals passing silently, and the
+control that a carrier which never carries is caught.
+
+⚠️ **Two of the seventeen had to be re-aimed, and both lessons generalise.** Mutating the
+*value* of an outcome constant (`REFUSED = "declined"`) proves nothing: the guard compares the
+outcome against that same constant, so the mutation is the identity on the test's own data. The
+place that distinguishes a refusal of us from a decline is the carrier's `_OUTCOME` map, and
+that is where the mutation now lives. And a script that ran only its own file's tests reported
+"carried and then failed advances the ladder" as a survivor, because the guard for it lives in
+the *other* file — so both scripts run both files, since the property crosses the boundary]
 
 #### Scenario: The subscriber is not reachable in Telegram
 - **WHEN** `checkSendAbility` answers `ok: false` with `PHONE_NUMBER_NOT_AVAILABLE`
