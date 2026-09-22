@@ -230,7 +230,30 @@ SHALL adopt the reported code or fail the verification with that reason, and SHA
 against digits the vendor never dialled — that failure is indistinguishable, from the outside,
 from every subscriber suddenly typing the wrong code, and every instance of it is paid for.
 
-[unbacked · vendor reference, uCaller `getInfo`, read 08.09.2026 — no live sample captured]
+**The vendor's refusal is told apart by the presence of an `error`, and SHALL NOT be told
+apart by `status` alone.** Measured 22.09.2026: `initCall` for an unreachable subscriber
+answers `status: false` carrying no `error` and no numeric error code, and carrying instead
+the ordinary payload — an allocated `ucaller_id`, the masked number, and **our own code as a
+string under the same `code` key the error envelope uses for its number**. So a reading of
+"not `status` → `code` is the error" returns the verification code as an error code, and a
+reading of "not `status` → nothing was created" discards an authorisation that exists, is
+queryable, costs money on a real number and carries two free repeats.
+
+The gateway SHALL therefore treat an answer as a refusal only when it carries `error`, SHALL
+record the `ucaller_id` of any answer that carries one whatever `status` says, and SHALL parse
+both envelope shapes. ⚠️ The observation is from the vendor's **test** number, which it serves
+as a simulation; whether a live failure to connect answers in the same shape is not
+established, which is why both shapes are required rather than the observed one.
+
+[backed · live samples 22.09.2026, both outcomes, in `captures/uc-1.3-*.json` with their
+findings in `captures/ucaller-samples-1.3.md`; the vendor reference of 08.09.2026 re-read by
+layers on 22.09.2026 and captured in `captures/ucaller-reference-2026-09-22.md`.
+**Still unbacked: the `-1` bound.** `call_status: -1` was not observed once — both outcomes
+arrived already resolved — so how long the gateway waits for it rests on the reference alone]
+
+#### Scenario: The vendor refuses without saying so in `status`
+- **WHEN** `initCall` answers `status: false` with no `error` and an allocated `ucaller_id`
+- **THEN** the authorisation is treated as placed and followed up by its id, and the `code` field is read as the verification code rather than as an error code
 
 #### Scenario: The call is placed
 - **WHEN** the vendor reports `call_status: 1`

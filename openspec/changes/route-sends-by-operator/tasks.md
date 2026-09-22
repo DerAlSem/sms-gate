@@ -25,8 +25,27 @@ funded balance.
       the settings page and arrives as a `401` on the first paid call. Reference captured
       verbatim in `captures/ucaller-reference-2026-09-22.md`.
 - [ ] 1.2 Place one `initCall` to `+79851600019` (the operator-confirmed МегаФон number the owner released for probes) and confirm the phone actually rings and shows a number whose last four digits match the `code` we passed. **If it does not ring, the `flash_call` rung is void** — and that is now survivable rather than fatal, provided 1.5 and 1.7 show the Gateway rung carrying it
-- [ ] 1.3 Capture the live responses of `initCall` and `getInfo` verbatim into the change folder — the contract so far comes from the vendor's reference only, and no parser is written against a reference when a sample is one call away
-      🟢 **This is free and does not wait on 1.2.** The reference publishes test numbers:
+      ⚠️ **Narrowed by 1.3, not replaced by it.** The wire shapes are captured and the
+      parser no longer waits on this. What only a live call can still answer: does a real
+      handset ring, do the last four digits match the `code` we passed, what a charge
+      actually costs (1.4), and whether a live failure to connect answers in the same
+      shape the test number did. It remains the owner's call and it remains paid.
+- [x] 1.3 Capture the live responses of `initCall` and `getInfo` verbatim into the change folder — the contract so far comes from the vendor's reference only, and no parser is written against a reference when a sample is one call away
+      🟢 **Done 22.09.2026, both outcomes, for nothing.** Five answers in
+      `captures/uc-1.3-*.json`, findings in `captures/ucaller-samples-1.3.md`: the
+      credential self-test, `initCall`/`getInfo` for the reachable test number
+      (`call_status: 1`) and for the unreachable one (`call_status: 0`).
+      🔴 **And the first sample already broke what the reference would have been parsed
+      into.** `initCall` for the unreachable number answers `status: false` with **no
+      `error` and no numeric code** — carrying instead an allocated `ucaller_id`, the
+      masked number, and our own code as a string under the very `code` key the
+      documented error envelope uses for its number. A parser reading "not `status` →
+      `code` is the error" gets `"1234"`; one reading "not `status` → nothing was
+      created" throws away an authorisation that exists and has two free repeats. The
+      norm is now in the spec: a refusal is told apart by the presence of `error`.
+      ⚠️ Not observed at all: `call_status: -1`. Both outcomes arrived already resolved,
+      so the bound on waiting for it still rests on the reference.
+      🟢 **This was free and did not wait on 1.2.** The reference publishes test numbers:
       `79000000001` always succeeds, `79000000002` always fails as unreachable, and "все
       тестовые авторизации не будут тарифицироваться" — so both wire shapes, including
       `call_status: 1` and `call_status: 0`, can be captured against the live API for
@@ -43,6 +62,13 @@ funded balance.
       `cost`, and a floor held against it fires one verification late. And `cost`'s type
       column says `bool` while its example carries `0.3`, which is a vendor typo worth
       not writing a parser to.
+      🟢 **Half measured 22.09.2026:** the account holds **1000,00 ₽**, and it is
+      identical before and after both test authorisations at `cost: 0.00` — so "test
+      calls are not charged" is now a measurement rather than a promise, and `cost` is a
+      number rather than the `bool` its type column claims. What is still unmeasured is a
+      **charge**: the 0,80 ₽ list price is neither confirmed nor refuted, and at zero
+      cost `balance` before and after a charge are indistinguishable, so the "balance
+      before the charge" reading above cannot be checked on these samples either.
       🟢 There is also `getBalance`, returning `rub_balance` — the balance *remaining* —
       with no `cost` field in its documented response, unlike `checkPhone`, which has
       one. So uCaller's balance looks pollable for free, which is the opposite of
