@@ -688,10 +688,35 @@ it.
 **Parked 11.09.2026, unparked 18.09.2026, and updated the same day** with the owner's answers to
 all four open decisions and with the ladder. The intent is the one this change was written for —
 get a code to a МегаФон subscriber without the modem — so this is an update to it and not a
-change of its own. **The critic round is not reopened**: the ceiling is one round and it was
-spent on 11.09.2026. What ran instead, before and after this update, is the mechanical pass —
-`openspec validate --strict`, `check.py`, and a diff of scenario names against the pre-update
-census of 70.
+change of its own.
+
+🔴 **A second critic round ran on 22.09.2026, by the owner's decision, and the reasoning above
+was the thing it overturned.** The sentence that stood here — "the ceiling is one round and it
+was spent on 11.09.2026" — was true of a redaction that no longer existed: between that round
+and this one the change unparked into a ladder, grew a door and a call rung, and took 66 new
+scenarios, eight new requirements and some 1561 lines of spec over 7238 lines of new code. The
+gate's rule is that the layer closes when a pass over the **final** redaction produces no
+edits, and "the spec was fresh when the round was run" is not that. The round was one, narrow,
+and a pair (`system-architect` + `gap-finder`), with its ceiling named before launch — two
+workers, about $10 — and its target the norms written after 11.09 and the code that executes
+them. It produced edits, so the premise above was wrong; it does not license a third.
+
+Seven findings, every one verified against the code rather than taken on a reviewer's word, and
+none refuted: money gates standing in front of the *free* modem ladder (found independently by
+both critics, and enough on its own to make the capability refuse every stock-settings
+verification on the day it ships); eleven bites named as the basis of a norm that exist in no
+commit on any ref; the number's paid limits read-then-acted rather than decided in one act; a
+carrier holding the ladder's bound as a duration instead of a deadline; the gateway's own number
+handed out as data without a form check; "nobody is watching this balance" said only into the
+log and only on an event; and a credential rotation silently dropping refunds in flight. One
+critic's *remedy* was wrong where its finding was right — the spec had already reasoned that
+remedy away — which is the whole reason a finding and its cure are checked separately. The
+verdicts are kept beside the spec, whole, in `critique-2026-09-22-*.md`; the resolutions are
+tasks 4.60–4.66.
+
+Also run, before the round and after the merge: `openspec validate --strict`, `check.py`, and a
+diff of scenario names against the census taken before the merge — 135 before, 140 after, none
+lost.
 
 The vendor contracts behind the two paid rungs were taken from official references and neither
 from a live sample:

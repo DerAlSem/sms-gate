@@ -1224,6 +1224,81 @@ rather than on code.
       conversion broken at the shared source. **The second is the point** — it is what a
       validator decays into, and "the validator is visible in the code" would have passed it.
 
+- [ ] 4.60 Eleven bites are named in the spec as the basis of a norm and **were never written**
+      Found by the circle of 22.09.2026 and then measured rather than eyeballed: `bite-carrier.sh`,
+      `bite-code.py`, `bite-credentials.sh`, `bite-ladder.sh`, `bite-lookup.sh`, `bite-modem.sh`,
+      `bite-refusals.sh`, `bite-rule.sh`, `bite-template.sh`, `bite-verif-view.sh` and
+      `bite-withhold.sh` exist in no commit reachable from any ref — checked one name at a time,
+      with `bite-limits.sh` as the positive control so an empty answer could not be a search that
+      never ran. This is the `bite-limits.sh` lesson eleven more times: **a reference to a bite is
+      a claim about the code like any other.** The spec is corrected already — every such sentence
+      now says the mutations were *reasoned*, not run — so what remains here is the work, not the
+      honesty: write them, or strike the reasoning and let the named `tests/…` file stand alone.
+      Three of the eight requirements written after the 11.09 circle rest on one of these.
+
+- [ ] 4.61 🔴 The ladder's gates are asked by the rungs of the walk, not by the door it came through
+      **This is the finding both critics reached independently, and it makes the capability
+      unusable on the day it ships.** `placement.place` hands `gates.for_paid_ladder` to every
+      walk, and `PLACED_HERE` includes `sms_out`; three of those four gates are about money.
+      `may_spend` ships `0` for every application (`migrate.py`) and the shipped rule sends every
+      operator it does not name to `["sms_out"]` alone — so on stock settings a modem verification
+      is refused `422` with "does not hold the entitlement to spend on a paid route", having spent
+      nothing and having had nothing to spend. Two more doors into the same hole: a busy *paid*
+      hour silences *free* modem sends through `ceiling_gate`, and one paid attempt on the number
+      eight seconds ago refuses a free one through `per_number_gate`. Fix is local — the walk's
+      rungs are already computed on the line above the gate list. **Bite must include the mutation
+      that only the new guard catches:** the suite is green on this today because the door test
+      switches `may_spend` on for the whole file and the modem test never reaches the door.
+
+- [ ] 4.62 🔴 The number's paid limits are decided and taken in one act
+      Read-then-act: `ladder.walk` runs every gate, and only afterwards writes the row recording
+      this attempt. Two verifications for one number — which this capability **explicitly
+      permits** — selecting a paid rung together both read an empty history, both pass, and both
+      reach a vendor inside the fifteen-second gap. The route claim does not close it: `select_route`
+      is keyed on `id`, and these are two ids. Cost is not the second call, it is the vendor
+      holding the number for ten hours.
+      ⚠️ **The obvious remedy is wrong and the spec already says why:** writing the `attempting`
+      row before the gate makes it a paid attempt aged zero seconds against a minimum gap of
+      fifteen, so it refuses the very selection that wrote it. The shape has to be the one this
+      capability already uses for confirming a code — a single conditional operation that decides
+      and records together.
+
+- [ ] 4.63 A carrier holds the ladder's bound as a deadline, not as a duration
+      `tg_carrier` hands the same `seconds_left` to `checkSendAbility` and again to
+      `sendVerificationMessage`; `flash_carrier`, under the same norm, takes a deadline at entry
+      and spends what is left. One rung can therefore spend the ladder's whole budget twice: the
+      door answers at about eighteen seconds against a promise of ten, and the next rung is never
+      tried because the walk finds the bound gone. The old wording — "each carrier applies it to
+      its own vendor calls" — is satisfied by exactly the wrong implementation, which is why it
+      has been rewritten. Fix is four lines, copied from the carrier that already does it right.
+
+- [ ] 4.64 The gateway's own number is normalised, or refused, when it is saved
+      `Spec("gateway_msisdn", "str", …)` has no validator, and the value goes out to applications
+      as **data** in `RouteOffer.number` — the field exists precisely so a consumer can build a
+      `tel:` on it without reading our prose. A national spelling is how a person ordinarily
+      writes it, and every other door in this estate normalises on the way in. The failure is
+      mute: the subscriber dials nothing, the window closes, and the verification reports
+      `expired`, indistinguishable from a person who never called. The precedent is in this same
+      change — `callbackbase` is a validated setting type, added for the identical reason.
+
+- [ ] 4.65 "Nobody is watching this vendor's balance" is answerable without an event, and said as loudly as the floor
+      Both unwatched states in `balance.observe` exit through `logger.warning`; the floor they
+      belong to wakes the operator through `notify`. Worse, `observe` runs only when a balance has
+      arrived — that is, only once the rung is already carrying — so the rung nobody has used yet,
+      which is the case the norm was written about, says nothing at all. **Owner's call which
+      channel**: a row beside the rung in the console, a check at startup, or `notify`.
+
+- [ ] 4.66 What a credential rotation costs is stated — and the owner decides whether it is softened
+      A rotation takes effect with no restart, so messages already bought keep reporting, signed
+      with the key just replaced; every one is rejected. The callback is the **only** path a
+      refund ever takes, so a rotation silently drops the refunds for messages in flight and
+      leaves recorded spend above money actually spent — the one direction this ledger is written
+      elsewhere to forbid. The norm now states the cost. 🔴 **Owner's decision** whether the
+      previous credential is honoured for a grace period no shorter than the message window
+      (which weakens the signature check, deliberately), or the loss is only made visible. The
+      cheap half is separable and already named by the spec as unmet: clock skew and bad
+      signatures are counted under one key, so a rotation looks exactly like an attack.
+
 ## 5. Verify against the real thing
 
 - [ ] 5.1 Run one verification end to end to `+79851600019` on the production host: the call arrives, the digits are read, `/check` confirms, and the outcome reaches the application. The modem route cannot reach that number at all today, so this is the only proof the change works

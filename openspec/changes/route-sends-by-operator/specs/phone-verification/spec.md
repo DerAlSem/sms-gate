@@ -52,6 +52,19 @@ application to send somebody to a number that is expecting nothing. It SHALL agr
 sentence beside it: a field that disagrees is worse than no field, because an application will
 trust the data.
 
+🔴 **The number handed over as data SHALL be held in the same normalised form the gateway
+requires of a subscriber's number, and SHALL be refused at the moment it is saved if it is
+not.** The whole point of the field is that an application builds on it without reading our
+prose — a `tel:` link, a line of its own text — so a number kept exactly as it was typed puts
+the gateway's own data-entry into the application's screen. A national spelling is the ordinary
+way a person writes it and is not wrong anywhere else in this estate, because every other door
+normalises on the way in; this one does not, and the failure it produces is mute: the
+subscriber dials an address that reaches nothing, the window closes, and the verification
+reports itself expired, which is indistinguishable from a person who simply never called.
+Checking it when it is saved rather than when it is used is the same reasoning already settled
+for the callback address in this change — otherwise the refusal arrives hours later, from
+somewhere else, and names the wrong thing.
+
 **It SHALL be additive**, and additive is a property of the schema rather than a claim in a
 commit message: a consumer written before the field SHALL still be able to construct and read
 the response. That is guarded against the model itself and not only through the door — the door
@@ -66,6 +79,10 @@ keyed on, so field and sentence cannot disagree) and both response sites in
 number returned on every rung, the field disagreeing with the prose, and the default removed.
 The contract carries it in `docs/verification-api.md`. The rest of this requirement — the shape
 of the door itself — is backed by the same file and by `tests/test_verification_api.py`]
+
+#### Scenario: The gateway's own number is saved in a national spelling
+- **WHEN** the gateway's number is saved written the way a person ordinarily writes it
+- **THEN** it is either normalised or refused at that moment, and never handed to an application in that shape
 
 #### Scenario: The number a rung asks the subscriber to reach is handed over as data
 - **WHEN** a verification is offered a rung on which the subscriber must call or text the gateway
@@ -114,7 +131,7 @@ than a decision. That case is governed below.
 [backed · the refusal is `VerificationCreateRequest.refuse_a_supplied_code` in
 `app/api/schemas.py`, which rejects before a row exists; the distinct-code half is
 `_new_code(await queries.open_codes_for(phone))` in `app/api/router.py`. Guarded by
-`tests/test_the_code_and_who_may_spend_it.py` and four mutations in `bite-code.py`.
+`tests/test_the_code_and_who_may_spend_it.py` and four mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**.
 🔴 **The distinct-code half was unguarded until 21.09.2026** — the inherited guard asserted
 what `open_codes_for` reports and never that the second code differs, so `_new_code(set())`
 left the suite green. A guard written the obvious way would have been little better: with ten
@@ -188,7 +205,7 @@ double-taps `Confirm` as a matter of course.
 
 [partly backed · the matcher is `queries.check_verification` in `app/db/queries.py`, both
 halves single conditional updates. Guarded by `tests/test_the_code_and_who_may_spend_it.py`
-and six mutations in `bite-code.py`. **The vendor-facing scenarios — the `ttl` handed to
+and six mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**. **The vendor-facing scenarios — the `ttl` handed to
 `tg_gateway` and the vendor's own code-checking endpoint — are backed elsewhere and not
 here.**
 
@@ -426,6 +443,17 @@ its payload is not documented, and a parser may not be written from guesses; the
 is that the Gateway's callback body, its headers and its signature scheme are all in the
 vendor's reference. A rejected callback SHALL be counted, because a run of them is either an
 attack or a rotated secret, and both need to be visible.
+
+🔴 **What a rotation costs SHALL be stated, because it is not only a run of refusals.** The
+credential is read on every call, so a rotation takes effect with no restart — and the messages
+already bought keep reporting for as long as their window lasts. Those reports are signed with
+the key that has just been replaced, so every one of them is rejected; and the callback is the
+**only** way a refund ever reaches this gateway. A rotation therefore silently drops refunds
+for messages in flight, and the error runs one way: recorded spend stays higher than the money
+actually spent, which is the one direction the ledger is elsewhere written to forbid. Whether
+the previous credential is honoured for a grace period, or the loss is merely made visible, is
+the owner's to decide — but it SHALL NOT be left unsaid, because the day it happens the
+refusals look exactly like an attack and the missing refunds look like nothing at all.
 
 [partly backed · the door is `handle_callback` in `app/verification/tg_callback.py` over `callback_verifies` in `app/verification/tg_gateway.py`, guarded by `tests/test_tg_callback.py`: all three endings of this requirement are driven with a real HMAC rather than a stubbed check, and each rejection is asserted to leave both the verification's status and the carrying rung's recorded outcome untouched **and** to be counted. Seven mutations bite — the count dropped, the timestamp window dropped, the signature not compared, the accepted branch not recording, a stale callback recording the rung anyway, and the window narrowed to one direction. Two of those were live holes found by biting a suite that was already green: a rejected callback could write the rung, and a timestamp arbitrarily far in the **future** was accepted, which is a replay window with no far edge. 🔴 **The vendor reference half is unchanged and still unbacked by any observation** — no callback has ever arrived, because no request has yet been made that had one to report. Reference: Telegram Gateway API, callback headers `X-Request-Timestamp` and `X-Request-Signature`, read 18.09.2026 and re-read 20.09.2026, which records the computation the earlier reading left as a name: `data_check_string = X-Request-Timestamp + "\n" + post_body`, `secret_key = SHA256(api_token)`, and the header is `hex(HMAC_SHA256(data_check_string, secret_key))`. ⚠️ **Both rejection kinds are counted under one key** (`signature`), so a run of clock skew is indistinguishable from a run of bad signatures — the module's own docstring says the kinds are counted apart because they mean different things, and here they are not. The requirement does not demand the split; naming it rather than taking it is deliberate. **Owner's**]
 
@@ -727,6 +755,15 @@ runs out — the same silence, from opposite causes. The failure this guards is 
 one: a third paid vendor is added, its adapter works, and nobody notices that its balance is
 watched by nothing until the day it empties.
 
+🔴 **Being unwatched SHALL be answerable without an event, and SHALL be said where the floor's
+own alerts are said.** Today it is reported on the arrival of a balance — that is, only once
+the rung is already carrying traffic — so the rung nobody has used yet, which is exactly the
+one the norm was written about, says nothing at all; and it is said into the log, while the
+floor it belongs to wakes the operator. A warning read only by somebody who already suspects
+something does not guard against nobody noticing: that is the failure restated, not prevented.
+The two halves of one mechanism SHALL NOT differ in loudness, and the quiet half is the one
+that reports a guard that is dead rather than a balance that is low.
+
 🔴 **The vendor-side balance is the only ceiling that applies to a stolen credential, and it
 SHALL be held deliberately small.** This is the owner's decision of 22.09.2026, and it is a norm
 rather than an operational habit because the reasoning is invisible from the code: this
@@ -837,8 +874,8 @@ screen that helpfully prints what was originally charged restores the asterisk i
 
 [partly backed · the console half is `queries.verifications_for_phone` and
 `queries.rungs_for_verifications`, rendered under the conversation in the expanded row of
-`/admin/messages`; guarded by `tests/test_admin_verifications.py` and five mutations in
-`bite-verif-view.sh` — the query starring its columns, the number ceasing to filter, no rung
+`/admin/messages`; guarded by `tests/test_admin_verifications.py` and five mutations reasoned
+for `bite-verif-view.sh` — **a script never written, see task 4.60** — the query starring its columns, the number ceasing to filter, no rung
 reaching the page, the block never populated, and the row losing the anchor the guard finds it
 by. `verifications_for_phone` lists its columns rather than starring them, and that is the
 guarantee rather than a style: the code must reach no screen. The storage itself is
@@ -864,7 +901,7 @@ nowhere else, together with the orphans a database written by the old code alrea
 `check_verification` are scoped by `app_id`, so a stranger's call is answered as a missing
 verification and spends nothing. Guarded by `tests/test_the_code_and_who_may_spend_it.py` over
 all three verbs with a **valid** token of another application, paired with the positive control
-that the owner's own three calls answer, and by two mutations in `bite-code.py`. **The
+that the owner's own three calls answer, and by two mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**. **The
 secret-destruction half is backed** by the same file, over all three terminal endings in one
 run rather than one of them: the rung-failure ending is the one the inherited guards missed,
 though it is where every walked ladder arrives when nothing carried the code]
@@ -909,7 +946,7 @@ covered by the guard that exists rather than by one nobody wrote. `RouteSelectRe
 single sanctioned exception and it belongs to a **rung**. The destruction half is `code = NULL`
 on all three terminal endings, in `check_verification`, `fail_verification` and
 `expire_due_verifications`. Guarded by `tests/test_the_code_and_who_may_spend_it.py` and seven
-mutations in `bite-code.py`, driven over a path where the code genuinely travelled to the
+mutations reasoned for `bite-code.py` — **a script never written, see task 4.60**, driven over a path where the code genuinely travelled to the
 vendor.
 
 🔴 **A field-shaped guard cannot hold this requirement, and task 4.22a is what it cost.**
@@ -966,6 +1003,18 @@ be a door that forgot one, and this is asked first in it, ahead of the entitleme
 application that may not spend is a configuration and a ceiling reached is a busy day, while a
 blocked number is a decision already taken, at any price, for every application.
 
+🔴 **Which gates are asked SHALL follow the rungs of the walk, not the door it came through.**
+The blacklist is about the person and SHALL be asked on every walk, at any price. The three
+that are about money — the application's entitlement to spend, this gateway's spend ceiling,
+and this number's paid-attempt limits — SHALL be asked only when the rungs remaining in the
+walk include a paid one. A walk whose only rung is the modem buys nothing, and refusing it for
+want of an entitlement to spend refuses a *free* send in the name of money that was never going
+to move. This is not a corner: `may_spend` ships off for every application and the shipped rule
+sends every operator it does not name to `sms_out` alone, so on stock settings the money gates
+stand in front of the free route and nothing else. The same error runs the other way through
+the ceiling and the per-number limits, where a busy paid hour, or one paid attempt on this
+number eight seconds ago, silences a modem send that costs nothing.
+
 A refusal here SHALL end the verification with that reason, like any other gate's: the route
 was claimed before the walk, so a door that merely answered and left the verification open
 would leave a route claimed with nothing placed.
@@ -1004,6 +1053,14 @@ worthless: it does not guard the line's removal]
 #### Scenario: A blocked number is asked to verify
 - **WHEN** a verification is requested for a number the gateway holds blocked
 - **THEN** it is refused with that reason, no verification is created and no call is placed
+
+#### Scenario: Two selections for one number arrive together
+- **WHEN** two verifications for the same number each select a paid rung at the same moment
+- **THEN** one of them is carried and the other is refused by the number's own limits, and the vendor is contacted once
+
+#### Scenario: A free walk is not asked the money questions
+- **WHEN** every rung remaining in a walk is free and the application holds no entitlement to spend
+- **THEN** the walk is not refused for the entitlement, the ceiling, or the number's paid-attempt limits, and the blacklist is still asked
 
 #### Scenario: The number arrives in a different shape
 - **WHEN** a verification is requested with a number written unnormalised
@@ -1046,6 +1103,14 @@ and the call may well have been placed and charged in the meantime.
 #### Scenario: The vendor is slow
 - **WHEN** the vendor has not answered within the configured bound
 - **THEN** the request is answered with the verification's id and method, and the verification is in flight rather than failed
+
+#### Scenario: A paid rung is configured with no floor
+- **WHEN** a paid rung is configured and no balance floor is set for it
+- **THEN** that it is unwatched is reported without waiting for the rung to carry anything, and as loudly as the floor itself would report
+
+#### Scenario: A rung that calls its vendor twice does not spend the bound twice
+- **WHEN** a rung makes a second vendor call after the first has consumed part of the ladder's bound
+- **THEN** the second call is bounded by what remains of it, and the ladder as a whole still answers within the one bound
 
 #### Scenario: A slow rung does not extend the promise
 - **WHEN** the first rung of a ladder consumes most of the bound before the second is tried
@@ -1095,8 +1160,31 @@ therefore money: it halves both ceilings for the one rung that actually spends, 
 paid attempt aged zero seconds against a minimum gap of fifteen, it refuses the very
 selection that wrote it while looking exactly like a gate doing its job.
 
+🔴 **The per-number limits SHALL be decided and taken in one act, not read and then acted
+on.** Today the gate asks what this number has already spent, and the row recording *this*
+attempt is written only after every gate has passed — so two selections for one number that
+arrive together both read an empty history, both are allowed, and both reach a vendor inside a
+gap the gateway promised would be fifteen seconds. The claim on the route does not close this:
+it is keyed on the verification, and these are two verifications, which this capability
+explicitly permits for one number. The cost is not one extra call — it is the vendor holding
+the number for ten hours, which is the outcome the whole limit exists to prevent and the one
+thing nothing we do afterwards shortens.
+
+The shape SHALL be the one this capability already uses where two requests can arrive
+together: **a single conditional operation that both decides and records**, the way confirming
+a code and consuming an attempt are each decided by one conditional update. It SHALL NOT be a
+row written earlier and then read by the same gate — that is the gateway's own bookkeeping
+counted as vendor spend, forbidden immediately above, and it would refuse the very selection
+that wrote it.
+
 **The one bound SHALL be handed to each rung as what is left of it, and each carrier SHALL
-apply it to its own vendor calls.** The ladder does not abandon a rung by force, and that is
+hold it as a deadline rather than as a duration.** A rung that calls its vendor more than once
+SHALL give the second call what is left of the bound, not the whole of what it was handed:
+handing the same number to both is how one rung spends the ladder's budget twice, and the
+phrase "applies the bound to its own vendor calls" is satisfied by exactly that wrong
+implementation — which is why it no longer says so. 🔴 The two carriers in this change already
+disagree on this point, and the disagreement is invisible to every guard that only asks whether
+the bound reached the vendor. The ladder does not abandon a rung by force, and that is
 deliberate: cancelling a carrier between a confirmed ability check and the record of its
 `request_id` would leave a fee nobody can attribute. The guarantee therefore rests on the
 carriers, and a carrier that omits the bound SHALL NOT silently fall back on a vendor
@@ -1244,10 +1332,11 @@ can.
 [partly backed · the save-time half is `app/verification/template.py`, reached as the typed
 setting `verification_templates` through `validate_raw`/`normalize_raw` in
 `app/settings_store.py` and rendered as a textarea on the settings page; guarded by
-`tests/test_verification_template.py` and by nine mutations in `bite-template.sh` — a template
+`tests/test_verification_template.py` and by nine mutations reasoned for `bite-template.sh` — **a script never written, see task 4.60** — a template
 with no placeholder, with two, with an unknown one, a blank one, one application named twice, an
 unreadable setting read as absent, a formatter interpreting the template, and each of the two
-wirings into the settings layer removed — each turning a guard red. The shipped default is
+wirings into the settings layer removed — each of which *would* turn a guard red. **Reasoned,
+not run.** The shipped default is
 **empty**, so an estate that configures nothing refuses every `sms_out`-carried code rather than
 sending wording nobody chose.
 🟢 **The refusal at accept is backed from 21.09.2026** (task 4.47): `app/verification/routes.py`

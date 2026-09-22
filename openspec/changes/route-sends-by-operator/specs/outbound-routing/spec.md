@@ -56,7 +56,7 @@ per rung with its own route, vendor reference and cost. **The message half arriv
 written by `ModemManager._refuse` and by the passing branch of
 `_refuse_what_the_rule_routes_elsewhere` — that is, by the sender, before it hands
 anything to the modem, and on both outcomes. Guarded by
-`tests/test_send_path_operator_lookup.py` and two mutations in `bite-lookup.sh`
+`tests/test_send_path_operator_lookup.py` and two mutations reasoned for `bite-lookup.sh` — **a script never written, see task 4.60**
 (the decision not recorded on the passing branch, and not on the refusing one).
 🔴 **Still unbacked: "SHALL NOT be carried by a route other than the one recorded" is not
 enforced for a message** — the column records what was decided, and nothing reads it back
@@ -141,10 +141,10 @@ Which of the two wins would otherwise be decided by the order of the list, invis
 data already holds one operator under two spellings.
 
 [backed · `app/verification/rule.py`, guarded by `tests/test_routing_rule.py`; eight mutations
-in `bite-rule.sh` — exact-string matching, a hard-coded ladder order, an accepted unknown
-route, a broken rule read as empty, an unanswerable rule guessing the modem, an accepted
-`app_id`, two spellings of one operator, and a `refuse` continuing into a ladder — each turn a
-guard red]
+reasoned for `bite-rule.sh` — **a script never written, see task 4.60** — exact-string
+matching, a hard-coded ladder order, an accepted unknown route, a broken rule read as empty,
+an unanswerable rule guessing the modem, an accepted `app_id`, two spellings of one operator,
+and a `refuse` continuing into a ladder; each *would* turn a guard red. **Reasoned, not run**]
 
 #### Scenario: An operator with a configured route
 - **WHEN** the rule routes МегаФон to `[tg_gateway, flash_call]` and a verification is requested for a МегаФон number
@@ -226,7 +226,7 @@ rung leaves nothing to advance to, and the quiet answer — sending it over the 
 silent fallback this capability forbids everywhere else, reached here by exhausting a list
 rather than by deciding anything.
 
-[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by four mutations in `bite-credentials.sh` — the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute, and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
+[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by four mutations reasoned for `bite-credentials.sh` — **a script never written, see task 4.60** — the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute, and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
 
 **The environment half is backed** by `tests/test_credentials_do_not_live_in_the_environment.py` and seven mutations: precedence asserted at the `Authorization` header that leaves for the vendor rather than at the store attribute, paired with the control that a key with no row *is* seeded, and with the blank row — the state every estate ships in, written by the first start, so that from the second start `.env` has already lost even where nobody configured anything.
 
@@ -500,10 +500,11 @@ and not an omission.
 
 [backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running. The driver itself —
 `app/verification/ladder.py` and `app/verification/tg_carrier.py` — is guarded by
-`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`; seventeen mutations in
-`bite-ladder.sh` and `bite-carrier.sh` each turn a guard red, among them gates that do not run
-first, silence recorded as a decline, a bound handed to each rung again, a hard-coded order,
-a fee recorded only after the send, and a failed send advancing the ladder]
+`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`; seventeen mutations reasoned
+for `bite-ladder.sh` and `bite-carrier.sh` — **neither script was ever written, see task
+4.60** — each of which *would* turn a guard red: gates that do not run first, silence
+recorded as a decline, a bound handed to each rung again, a hard-coded order, a fee recorded
+only after the send, and a failed send advancing the ladder. **Reasoned, not run**]
 
 #### Scenario: The subscriber is not reachable in Telegram
 - **WHEN** `checkSendAbility` answers `ok: false` with `PHONE_NUMBER_NOT_AVAILABLE`
@@ -675,7 +676,7 @@ route "the vendor is out of credit" was unambiguous; with two it is the question
 has to answer before they can act, and answering it by reading a log is the difference between
 a two-minute top-up and an outage.
 
-[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1). 🔴 **"SHALL NOT be transmitted over the other route" is guarded as the absence of *automatic* failover, and measurement is what fixed that reading** (task 4.14, `tests/test_vendor_failure_spares_the_modem.py`, five mutations in `bite-modem.sh`): driven directly, `ladder.walk` does carry a verification over an `sms_out` rung when the rule names one behind a paid rung, and that is configuration with an operator's name on it rather than a fallback. What the gateway guarantees, and what is now guarded, is that the rungs attempted are exactly `rule.route_for`'s answer — nothing is appended when a vendor refuses us for credentials or for want of credit, and when every rung the rule named has refused, the verification fails rather than finding its way onto the modem. 🟢 **The owner settled on 20.09.2026 that a rule naming `sms_out` behind a paid rung is not honoured on a refusal of *us*, and that is now implemented** (task 4.14a, `ladder._MODEM_ROUTES` and the withholding branch of `ladder.walk`, `WITHHELD` recorded as the rung's outcome). Guarded by the same file and by six further mutations in `bite-withhold.sh`, among them the norm reaching too far — withholding the modem after a decline of the *subscriber* turns the positive control red, which is what keeps the rule narrow enough to leave a working modem working]
+[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1). 🔴 **"SHALL NOT be transmitted over the other route" is guarded as the absence of *automatic* failover, and measurement is what fixed that reading** (task 4.14, `tests/test_vendor_failure_spares_the_modem.py`, five mutations reasoned for `bite-modem.sh` — **a script never written, see task 4.60**): driven directly, `ladder.walk` does carry a verification over an `sms_out` rung when the rule names one behind a paid rung, and that is configuration with an operator's name on it rather than a fallback. What the gateway guarantees, and what is now guarded, is that the rungs attempted are exactly `rule.route_for`'s answer — nothing is appended when a vendor refuses us for credentials or for want of credit, and when every rung the rule named has refused, the verification fails rather than finding its way onto the modem. 🟢 **The owner settled on 20.09.2026 that a rule naming `sms_out` behind a paid rung is not honoured on a refusal of *us*, and that is now implemented** (task 4.14a, `ladder._MODEM_ROUTES` and the withholding branch of `ladder.walk`, `WITHHELD` recorded as the rung's outcome). Guarded by the same file and by six further mutations reasoned for `bite-withhold.sh` — **a script never written, see task 4.60**, among them the norm reaching too far — withholding the modem after a decline of the *subscriber* turns the positive control red, which is what keeps the rule narrow enough to leave a working modem working]
 
 #### Scenario: The vendor rejects our credentials
 - **WHEN** a vendor answers with an authentication error
@@ -711,7 +712,7 @@ is reviewed and a rule that is forgotten.
 [backed · `app/verification/refusals.py`, counting rows of `route_refusals` grouped on the
 folded operator name (`rule.fold` — NFKC + casefold, in Python, never in SQL), reachable at
 `/admin/stats` beside the message counters and under the same period control. Guarded by
-`tests/test_route_refusals.py` and by thirteen mutations in `bite-refusals.sh`. ⚠️ **Counted is
+`tests/test_route_refusals.py` and by thirteen mutations reasoned for `bite-refusals.sh` — **a script never written, see task 4.60**. ⚠️ **Counted is
 not produced:** the only caller today is `ladder.walk`, which has no production caller of its
 own — the send-path refusal that produces the measured seventy a month is task 4.6 and calls
 `refusals.record` the same way]
