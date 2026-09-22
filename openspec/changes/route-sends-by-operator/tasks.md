@@ -1437,3 +1437,143 @@ rather than on code.
 - [ ] 5.5 Run one verification end to end over the **Gateway rung** on the production host, to a number reachable in Telegram that the owner has released for probes: the message arrives, the code is ours, `/check` confirms, the signed callback is accepted, and the outcome reaches the application. Until this runs, the cheap rung is proved only off the production host
 - [ ] 5.6 Watch one verification **cross the rungs** in production — a МегаФон number the Gateway declines, followed by a call — and confirm the two rungs are recorded as two attempts of one verification, with two vendor identifiers and one code. This is the only proof that the ladder is a ladder rather than two routes that happen to be configured together
 - [ ] 5.7 Confirm on stock settings that an unconfigured rung is loud: with the Gateway credential absent, a paid verification alerts and completes by call. **This is the failure mode that costs money quietly**, and the only one in the change where a configuration gap does
+
+## 6. Findings of the conformance sweep, 22.09.2026
+
+Шесть чекеров прочитали двадцать требований, утверждавших «код это делает» (шестнадцать
+`[backed]` и четыре без аннотации вовсе): **256 backed, 14 contradicted, 4 unbacked**.
+Злой проход по выжившим убил одну находку и сузил две; ложных убийств нет.
+Вердикты — `sweep-2026-09-22-*.md` рядом с этим файлом.
+
+Убито: «исключение собственного хода из лимитов противоречит счёту по рунгам» — исключение
+написано SHALL'ом той же дельты (`spec.md:1276`), и два платных рунга идут к РАЗНЫМ
+вендорам, так что ни один не видит двух авторизаций.
+
+- [ ] 6.1 🔴 The owning application reads its own verification code out of `GET /sms/{id}`
+      Воспроизведено сквозным прогоном: `select` → `GET /sms/1` отдал
+      `'SokolParking: 3164 is your code'` → `POST /check` вернул `confirmed`. На рунге
+      `sms_out` код живёт в `messages.text` (`sms_carrier.py:79-81`), а дверь сообщения
+      отдаёт `text` владельцу (`router.py:72-80`). Требование «The code never appears
+      outside the matcher» этим нарушено, и нарушено в пользу того, кто код заказал:
+      приложение закрывает верификацию само, не дождавшись человека. Сторож
+      `tests/test_the_code_and_who_may_spend_it.py:484` двери не видит — он перечисляет
+      пути по префиксу `startswith("/verifications")` и ищет поле `code`, а течёт `text`.
+      Лечится кодом: не отдавать `text` сообщения, несущего `verification_id`, и
+      перечислять двери по моделям, а не по префиксу пути.
+
+- [ ] 6.2 An unreadable routing rule leaves a verification offered, recorded and unplaced
+      Воспроизведено: нечитаемый `operator_routes` → `POST /verifications/{id}/route`
+      отвечает `500`, верификация остаётся `pending` с `route='tg_gateway'` и пустым
+      `rungs` — то есть ровно тем состоянием, которое SHALL 1217 запрещает первой фразой.
+      `placement.py:137` зовёт `rule.route_for` без `except UnreadableRule`, тогда как
+      оба других читателя правила её ловят (`manager.py:695`, `probes.py:157`).
+      Лечится кодом.
+
+- [ ] 6.3 `seed_from_env` writes settings past the typed validation that the doors rely on
+      Корень предыдущей задачи и ещё одной: `settings_store.py:658-675` пишет значения из
+      окружения сырыми, не зовя ни `normalize_raw`, ни `validate_raw`. Тем же прогоном
+      `GATEWAY_MSISDN="8 (926) 123-45-67"` доехал до приложения в `RouteOffer.number`, а
+      `OPERATOR_ROUTES="{not a list"` лёг в `settings` и стал предусловием 6.2.
+      Норма «нормализован или отказан в момент сохранения» держится у одной двери и не
+      держится у второй — притом что аннотация требования утверждает, что «вторая дверь
+      не может забыть». Лечится кодом.
+
+- [ ] 6.4 The verification door blocks on refreshing a stale operator row
+      Замер: протухшая, но присутствующая строка (`МТС`, −400 дней при TTL 7 дней)
+      держит `POST /verifications` 3.01 секунды. `router.py:182` зовёт `record_operator`
+      безусловно, а `lookup/operator.py:35-40` пропускает только свежую строку и уходит в
+      `voxlink.lookup`; бюджетом оказывается `voxlink_timeout`, а не `operator_lookup_bound`.
+      Против «Nothing SHALL be delayed … or stale» и «The bound SHALL be spent only where
+      the cache holds no operator at all». В отправителе (`manager.py:605-608`) сделано
+      правильно — дверь отстала от него. Лечится кодом.
+
+- [ ] 6.5 A paid ability check can be confirmed, charged and then abandoned unsent
+      Сужено злым проходом: сценарий воспроизведён (плата `0.01` записана,
+      `sendVerificationMessage` не вызван), но три из четырёх заявленных триггеров
+      недостижимы — истечение отрезано порогом `TTL_MIN=30 s` (`tg_carrier.py:91-98`),
+      «отмены» в коде нет вовсе, подтверждение чужим рунгом закрыто запросами. Остаётся
+      исчерпание попыток через `/check` внутри ~250-мс окна вендора, наносимое владельцем
+      токена самому себе. Норма (`outbound-routing/spec.md:461-463`) исключения не знает.
+      Лечится спекой (назвать исключение) или кодом (повторная отправка тем же
+      `request_id` бесплатна и делает плату возвратной).
+
+- [ ] 6.6 The status-writer census counts function names, not status writes
+      Прогнано поверх копии `queries.py` со вторым `UPDATE … status='rejected'` внутри
+      существующей `set_message_delivered` и без своего `spawn_delivery_dispatch`:
+      `census: GREEN`, `call-site guard: GREEN`. `tests/test_delivery_hooks.py:60` сверяет
+      `set(KNOWN_STATUS_WRITERS)` — только ИМЕНА; объявленный статус не читает никто.
+      Требование говорит «every code path», сторож считает функции. Живого дефекта
+      сегодня нет, дыра — в сторожe. Верификационная половина
+      (`test_verification_outcome_reaches_the_app.py:245-259`) сделана строже и ту же
+      мутацию роняет. Лечится кодом теста по её образцу.
+
+- [ ] 6.7 A bare `expired` puts two different facts in one console line
+      `tg_callback.py:146-148` пишет `outcome='expired'` голым словом, а заметку про
+      возврат кладёт в `reason`. Воспроизведено обычной последовательностью:
+      `v.status='expired'`, `v.reason='expired'` и `r.outcome='expired'` встают в одну
+      строку консоли (`admin/templates/messages.html:171`) из двух разных фактов —
+      вендорского истечения сообщения и нашего собственного окна (`queries.py:1644`).
+      Половина «act on» при этом держится: ни одна ветка не сравнивает
+      `verification_rungs.outcome` с `'expired'`, возврат живёт отдельной колонкой.
+      Лечится кодом (`delivery_expired` / `window_expired`) либо спекой.
+
+- [ ] 6.8 A paid rung records no operator, so «routed without a known operator» is uncountable
+      `routed_operator` пишет единственное место (`queries.py:1866`) и только с трёх
+      модемных путей (`manager.py:721,749`, `sms_carrier.py:85`); `verification_rungs` и
+      `verifications` оператора не держат вовсе, а `tg_carrier`/`flash_carrier` строк в
+      `messages` не создают. Требование `outbound-routing/spec.md:289-349` велит записывать
+      случай, «so that the case is countable rather than invisible» — на платных рунгах он
+      невидим. Лечится кодом.
+
+- [ ] 6.9 A fee that bought nothing is recorded but not readable beside the spend
+      Исход `unanswered` на рунге записывается, но «the count is readable beside the
+      attributed spend» не исполняется: во всём `app/` единственный агрегат
+      (`queries.py:429`) не про деньги, `SUM(cost)` нет нигде. Лечится кодом.
+
+- [ ] 6.10 A month's spend and a per-application spend are not answerable
+      Данные записаны (`verification_rungs.cost`, `verifications.app_id`), а запроса или
+      отчёта, дающего ответ, нет ни в `queries.py`, ни в админке. Два SHALL'а требования
+      «What verifications cost is visible before the bill is» этим не исполнены.
+      Лечится кодом.
+
+- [ ] 6.11 Five annotations claim «nothing in production calls this yet», and production does
+      Аннотация — такое же утверждение о коде, как SHALL, и эти пять устарели вслед за
+      появлением `placement.place`. Поимённо: `outbound-routing/spec.md:607`
+      («the gate has no production caller» — а он `router.py:274,304` → `placement.py:168`
+      → `gates.py:188`, роутер смонтирован `main.py:131`); блок 728-815 («Counted is not
+      produced» — ложно обеими половинами: `ladder.walk` зовётся из `placement.py:162`, а
+      у `refusals.record` второй вызыватель `manager.py:751`); `spec.md:181-262`
+      («Nothing in production reads the bearer yet … `flash_call` has no probe registered» —
+      `probes.py:78`, `router.py:94`, `placement.py:122-128`, `ucaller.py:369-489`, и сама
+      заявка это кусает в `bite-flash-call.sh:116`); там же («Still unbacked: every
+      rung-skipping clause below» — код есть: `ladder.py:281-291`, `:77`,
+      `settings_store.py:79`, `ladder.py:265-267`, `:308-313`);
+      `phone-verification/spec.md`, требование 1215+ («The second rung is `flash_call` and
+      nothing carries it, task 4.17, blocked on 1.1» — обе задачи закрыты, `tasks.md:8` и
+      `:555`, а докстринг `placement.py:88-92` говорит обратное аннотации).
+      🔴 Последняя опаснее прочих: на установке с ключом uCaller отклонённый Gateway-ом
+      абонент получает платный звонок, а спека обещает громкий пропуск. Лечится спекой.
+
+- [ ] 6.12 The verification capability describes three doors and the contract carries four
+      Требование 11-121 говорит, что шлюз отвечает МЕТОДОМ, а `POST /verifications`
+      возвращает список предложений и не ставит ничего: метод называется только в
+      `POST /verifications/{id}/route`. Противоречие настоящее, и неправа СПЕКА —
+      требование строк 1215+ той же дельты существует только при отдельной двери выбора
+      («offered, selected, recorded», «walked before the selection is answered»), а
+      контракт `docs/verification-api.md:17-30` несёт четыре двери. Устарели вступительный
+      абзац требования, два его сценария и перечень владения `spec.md:26-29`.
+      Лечится спекой.
+
+- [ ] 6.13 The annotation promises seven mutations that do not exist
+      `outbound-routing/spec.md:181-262` обещает «seven mutations» за средовую половину
+      учётных данных. Укуса, гоняющего `tests/test_credentials_do_not_live_in_the_environment.py`,
+      нет ни в одном из 27 `bite-*.sh`, ни в `bite-code.py`, ни в 414 коммитах истории.
+      Тот же дефект заявка уже ловила на `phone-verification/spec.md:623` — это второй
+      случай, а не первый. Лечится написанным укусом либо снятым числом.
+
+- [ ] 6.14 The annotation promises five mutations of the dispatch shape that nobody runs
+      Сужено: по адресу 764-893 находка убита («seven red» и «mutation 9» сходятся —
+      `bite-nobody-is-watching.sh:51-103`, `bite-flash-call.sh:87`), но она настоящая по
+      адресу `phone-verification/spec.md:752`: пять мутаций формы рассылки не гоняет
+      никто, а `bite-late-call-outcome.sh` — про поздний исход звонка, не про это.
+      Лечится написанным укусом либо снятым числом.
