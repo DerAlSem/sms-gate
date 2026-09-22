@@ -1872,6 +1872,90 @@ async def _delete_refusal_reason(message_id: int) -> str:
 
 
 
+# The outcome a rung carries when its vendor did not answer inside the bound: the fee may
+# have been confirmed and charged with the `request_id` never reaching us. Spelled here to
+# keep this module below `app.verification.ladder` rather than beside it, and kept equal to
+# `ladder.UNANSWERED` by a guard.
+POSSIBLY_CHARGED = "unanswered"
+
+
+def _spend_window(period: str) -> tuple[str, list]:
+    """The period clause for a spend query, bounded on when the rung was started.
+
+    On the rung's own clock rather than the verification's: what is being counted is
+    authorisations placed at a vendor, and a ladder can begin in one window and place its
+    second paid rung in the next.
+    """
+    lower = periods.bound(period)
+    if lower is None:
+        return "", []
+    return " AND r.started_at > datetime('now', ?)", [lower]
+
+
+async def verification_spend(period: str = "all") -> list[aiosqlite.Row]:
+    """What each paid rung cost in this period, and what it may have cost.
+
+    Four numbers per route, and they are four because folding any two of them together
+    loses the question somebody is asking:
+
+    - `attempts` — rows, so a spend of nothing can be told from a rung nobody used;
+    - `spend` — the vendors' own reported costs added up. A refund has already lowered its
+      row to zero (`record_rung_delivery`), so nothing here has to remember to subtract;
+    - `refunded` — how many of those rows came back. Kept visible beside a spend that has
+      already been reduced, because a number that silently shrank is one nobody can check;
+    - `possibly_charged` — a **count**, never a sum. An ability check that did not answer
+      inside the bound may have been confirmed and charged at the vendor, and there is no
+      figure to add: what exists is the number of times it happened. Folded into the spend
+      it would be a guess; left out altogether it is a balance that drifts for no reason.
+
+    Only routes that have a paid row appear. A free rung listed at zero invites the
+    question of which vendor it is with, and the modem has none.
+    """
+    where, params = _spend_window(period)
+    db = await get_db()
+    async with db.execute(
+        f"""
+        SELECT r.route                                              AS route,
+               COUNT(*)                                             AS attempts,
+               COALESCE(SUM(COALESCE(r.cost, 0)), 0)                AS spend,
+               SUM(CASE WHEN r.refunded = 1 THEN 1 ELSE 0 END)      AS refunded,
+               SUM(CASE WHEN r.outcome = ? THEN 1 ELSE 0 END)       AS possibly_charged
+          FROM verification_rungs r
+         WHERE r.route IN ({_PAID_PLACEHOLDERS}){where}
+         GROUP BY r.route
+         ORDER BY r.route
+        """,
+        [POSSIBLY_CHARGED, *_PAID_ROUTE_VALUES, *params],
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def verification_spend_by_app(period: str = "all") -> list[aiosqlite.Row]:
+    """Which application spent it, from the application recorded on each verification.
+
+    Applications that spent nothing are absent rather than listed at zero: "which
+    applications are there" is the apps page's question, and answering it here would make
+    a spend report grow a row every time somebody registers a consumer.
+    """
+    where, params = _spend_window(period)
+    db = await get_db()
+    async with db.execute(
+        f"""
+        SELECT v.app_id                                             AS app_id,
+               COUNT(*)                                             AS attempts,
+               COALESCE(SUM(COALESCE(r.cost, 0)), 0)                AS spend,
+               SUM(CASE WHEN r.outcome = ? THEN 1 ELSE 0 END)       AS possibly_charged
+          FROM verification_rungs r
+          JOIN verifications v ON v.id = r.verification_id
+         WHERE r.route IN ({_PAID_PLACEHOLDERS}){where}
+         GROUP BY v.app_id
+         ORDER BY spend DESC, v.app_id
+        """,
+        [POSSIBLY_CHARGED, *_PAID_ROUTE_VALUES, *params],
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
 # What `verifications.routed_operator` holds where the lookup did not answer. The rule's
 # own entry for that case, spelled the same way (`app.verification.rule.UNKNOWN`) and kept
 # equal to it by a guard, because the two are one decision: the store writes the word and

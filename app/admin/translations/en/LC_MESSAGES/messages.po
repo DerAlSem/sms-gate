@@ -460,6 +460,38 @@ msgid "No data"
 msgstr ""
 
 #: app/admin/templates/stats.html:55
+#: app/admin/templates/stats.html
+msgid "What verifications cost"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Route"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Attempts"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Spend"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Possibly charged"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "No paid rung has been attempted"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Who spent it"
+msgstr ""
+
+#: app/admin/templates/stats.html
+msgid "Nothing has been spent on a verification"
+msgstr ""
+
 msgid "Refused for want of a route"
 msgstr ""
 

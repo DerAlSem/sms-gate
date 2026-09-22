@@ -420,6 +420,13 @@ async def admin_stats(
         {
             "counts": counts,
             "refusals": await route_refusals.counts(period=period),
+            # What the paid rungs cost, on the same period control as every other count
+            # on this page. Here rather than on a page of its own for the reason the
+            # refusals are here: an operator asking "what did the call route cost last
+            # month" is asking a counters question, and the answer must come from our own
+            # records rather than from the vendor's invoice.
+            "spend": await queries.verification_spend(period),
+            "spend_by_app": await queries.verification_spend_by_app(period),
             "rule_entries": await route_refusals.rule_entries(),
             "review_days": store.operator_route_review_days,
             "inbound_total": await queries.inbound_count(period),

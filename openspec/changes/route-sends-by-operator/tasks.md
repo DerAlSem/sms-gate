@@ -1635,16 +1635,38 @@ rather than on code.
       Четыре сторожа, новый укус `bite-routed-operator-is-countable.sh` — четыре мутации,
       все красные. Набор: 1327 зелёных.
 
-- [ ] 6.9 A fee that bought nothing is recorded but not readable beside the spend
+- [x] 6.9 A fee that bought nothing is recorded but not readable beside the spend
       Исход `unanswered` на рунге записывается, но «the count is readable beside the
       attributed spend» не исполняется: во всём `app/` единственный агрегат
       (`queries.py:429`) не про деньги, `SUM(cost)` нет нигде. Лечится кодом.
+      **Сделано 22.09.2026 вместе с 6.10 — это три сценария одного требования.**
+      `queries.verification_spend(period)` даёт по платному маршруту четыре числа, и их
+      четыре потому, что любое складывание теряет чей-то вопрос: `attempts`, `spend`
+      (суммы вендоров; возврат уже обнулил свою строку в `record_rung_delivery`, так что
+      вычитать никому не надо), `refunded` (видимо рядом со спендом, который уже
+      уменьшен: молча усохшее число нечем проверить) и 🔴 `possibly_charged` — СЧЁТ, а не
+      сумма: у платы, чей `request_id` до нас не доехал, числа нет вовсе. Сложенная со
+      спендом, она была бы догадкой; выброшенная — балансом, уезжающим без причины.
 
-- [ ] 6.10 A month's spend and a per-application spend are not answerable
+- [x] 6.10 A month's spend and a per-application spend are not answerable
       Данные записаны (`verification_rungs.cost`, `verifications.app_id`), а запроса или
       отчёта, дающего ответ, нет ни в `queries.py`, ни в админке. Два SHALL'а требования
       «What verifications cost is visible before the bill is» этим не исполнены.
       Лечится кодом.
+      **Сделано 22.09.2026.** `verification_spend_by_app(period)` отвечает «кто потратил»
+      из `verifications.app_id`; обе таблицы выведены на `/admin/stats` — там же, где
+      период и остальные счётчики, потому что «читаемо» это ЭКРАН, а не запрос.
+      Приложения, не потратившие ничего, отсутствуют, а не стоят нулём: «какие вообще
+      есть приложения» — вопрос другой страницы. Бесплатные рунги в отчёт не попадают:
+      строка нулей под модемом приглашает спросить, у какого он вендора.
+      «Месяц» здесь — катящиеся 30 дней, и страница так и подписана: `app/periods.py`
+      объясняет, почему календарный якорь проигрывает на умолчании.
+      ⚠️ Укус поймал дыру в МОЁМ сторожe: страница рисует `3.50` дважды (по маршруту и по
+      приложению), поэтому проверка по числу оставалась зелёной с ОТКЛЮЧЁННОЙ таблицей
+      маршрутов. Сторож переписан на предложения пустого состояния — единственные строки,
+      уникальные для каждой таблицы.
+      Девять сторожей (`tests/test_what_verifications_cost_is_answerable.py`), новый укус
+      `bite-what-verifications-cost.sh` — пять мутаций, все красные. Набор: 1336 зелёных.
 
 - [ ] 6.11 Five annotations claim «nothing in production calls this yet», and production does
       Аннотация — такое же утверждение о коде, как SHALL, и эти пять устарели вслед за
