@@ -31,6 +31,7 @@ top-up and an outage.
 from __future__ import annotations
 
 import logging
+import time
 
 from app.db import queries
 from app.verification import balance, ladder, tg_gateway
@@ -78,6 +79,14 @@ def carrier(
     and breaks nothing.
     """
     async def carry(phone: str, *, seconds_left: float, rung_id: int) -> ladder.Attempt:
+        # 🔴 A deadline, not a duration. This rung calls the vendor twice, and handing the
+        # same number to both is how one rung spends the whole ladder's budget: the door
+        # then answers at up to twice the time the application was promised, and
+        # `ladder.walk` finds the bound gone and never tries the rung behind this one.
+        # `flash_carrier` has always done it this way; this one did not, and no guard
+        # could tell them apart because they all only ask whether the bound *reached* the
+        # vendor. Task 4.63, from the critic circle of 22.09.2026.
+        deadline = time.monotonic() + max(0.0, seconds_left)
         ttl = await queries.verification_seconds_left(verification_id)
         if ttl < tg_gateway.TTL_MIN:
             logger.info("verification %d has %ds left, below the vendor's %ds floor; "
@@ -89,7 +98,7 @@ def carrier(
                        f"vendor's {tg_gateway.TTL_MIN}s floor")
 
         ability = await tg_gateway.check_send_ability(
-            phone, token=token, timeout=max(0.1, seconds_left))
+            phone, token=token, timeout=max(0.1, deadline - time.monotonic()))
 
         if ability.kind in _LOUD:
             _alert(ability)
@@ -126,7 +135,7 @@ def carrier(
         sent = await tg_gateway.send_verification_message(
             phone, code=code, ttl=ttl, token=token, request_id=ability.request_id,
             callback_url=callback_url, sender_username=sender_username,
-            timeout=max(0.1, seconds_left))
+            timeout=max(0.1, deadline - time.monotonic()))
 
         if not sent.ok:
             logger.warning("verification %d: the Telegram send refused after a charged "

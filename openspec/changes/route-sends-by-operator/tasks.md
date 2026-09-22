@@ -1272,7 +1272,7 @@ rather than on code.
       capability already uses for confirming a code — a single conditional operation that decides
       and records together.
 
-- [ ] 4.63 A carrier holds the ladder's bound as a deadline, not as a duration
+- [x] 4.63 A carrier holds the ladder's bound as a deadline, not as a duration
       `tg_carrier` hands the same `seconds_left` to `checkSendAbility` and again to
       `sendVerificationMessage`; `flash_carrier`, under the same norm, takes a deadline at entry
       and spends what is left. One rung can therefore spend the ladder's whole budget twice: the
@@ -1280,6 +1280,10 @@ rather than on code.
       tried because the walk finds the bound gone. The old wording — "each carrier applies it to
       its own vendor calls" — is satisfied by exactly the wrong implementation, which is why it
       has been rewritten. Fix is four lines, copied from the carrier that already does it right.
+      **Built 22.09.2026**, and it was four lines. `bite-bound-is-a-deadline.sh`, four
+      mutations, no survivors. The guard carries a positive control because "the second call
+      got less" is satisfied by flooring everything at `0.1`, which breaks the rung outright —
+      a one-inequality guard would have been a hole facing the other way. Suite 1305 green.
 
 - [ ] 4.64 The gateway's own number is normalised, or refused, when it is saved
       `Spec("gateway_msisdn", "str", …)` has no validator, and the value goes out to applications

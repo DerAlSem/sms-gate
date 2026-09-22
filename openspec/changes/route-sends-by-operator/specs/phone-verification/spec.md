@@ -1206,6 +1206,18 @@ carriers, and a carrier that omits the bound SHALL NOT silently fall back on a v
 method's own default — which on this vendor is five seconds for the check and ten for the
 send, fifteen against a bound that may be one.
 
+[backed since 22.09.2026 for the deadline · `tg_carrier.carry` takes
+`deadline = time.monotonic() + seconds_left` on entry and hands `deadline - time.monotonic()`
+to both vendor calls, which is what `flash_carrier` has always done. Guarded by
+`tests/test_the_bound_is_a_deadline_not_a_duration.py`, where the ability check is made to
+spend a measured part of the bound and the send's **own timeout argument** is read back — the
+assertion is about the number the second call was handed, not about the door's wall-clock,
+which would be measuring the test harness. `bite-bound-is-a-deadline.sh` turns four red: the
+send handed the whole duration again (the defect as found), the send floored at `0.1` — which
+satisfies "the second call got less" while breaking the rung outright, and is why this guard
+carries a positive control rather than one inequality — the deadline taken as zero, and the
+check floored instead of given what remains]
+
 [backed · the door is `select_verification_route` over `app/verification/placement.py` in
 `app/api/router.py`, the re-pointing is `queries.set_carrying_route`, and the bound is the
 setting `verification_ladder_bound` (10 s, a ceiling: the Gateway answers in 178–285 ms over
