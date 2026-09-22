@@ -2,6 +2,7 @@
 # КАТАЛОГА, и одно отрицание поверх «.claude/» не сработало бы молча.
 .claude/*
 !.claude/waiting/
+!.claude/skills/
 __pycache__/
 *.pyc
 data/sms.db*
