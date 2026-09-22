@@ -656,21 +656,65 @@ class SettingsStore:
 store = SettingsStore()
 
 
+# Keys the normalisers themselves read out of this store, seeded before everything else.
+# `msisdn` is rewritten against `phone_region`, and the region sits *below* the number in
+# the spec list — walked in list order, a Kazakh number would be normalised against the
+# shipped Russian region on the very boot that asked for Kazakhstan, and would be either
+# refused or rewritten into a wrong one without a word said. Seeding is the one pass where
+# a setting's value and the value another setting is validated against are decided
+# together, so the order is named here rather than left to the list.
+_READ_BY_THE_NORMALISERS = ("phone_region",)
+
+
 async def seed_from_env() -> None:
     """One-time migration: for each spec key with no row yet, insert the env value
-    (UPPERCASE name) if set, else the code default. Existing rows are never touched."""
+    (UPPERCASE name) if set, else the code default. Existing rows are never touched.
+
+    The value goes through `normalize_raw` and `validate_raw` — the same pair `set_many`
+    uses — because this is the second door that saves settings and a second door that
+    forgot the check is exactly the hole a validated setting **type** is supposed to make
+    impossible. Measured 22.09.2026 by the conformance sweep: `GATEWAY_MSISDN` set to a
+    national spelling reached an application in `RouteOffer.number` as data to build a
+    `tel:` on, and `OPERATOR_ROUTES` set to something unparseable made the routing door
+    answer 500 and left a verification offered, recorded and unplaced.
+
+    A value that does not validate is **not stored**, and the key keeps the shipped
+    default. Not stored rather than stored-as-the-default on purpose: no row means the
+    next start walks this branch again and complains again, while a default written in
+    silences the complaint for ever and leaves an operator looking at a setting nobody
+    typed.
+    """
     db = await get_db()
     async with db.execute("SELECT key FROM settings") as cur:
         existing = {row["key"] async for row in cur}
-    to_insert = []
+    candidates = []
     for spec in SETTINGS_SPEC:
         if spec.key in existing:
             continue
         env_val = os.environ.get(spec.key.upper())
-        raw = env_val if env_val is not None else to_str(spec.type, spec.default)
-        to_insert.append((spec.key, raw))
-    for key, raw in to_insert:
+        candidates.append((spec, env_val if env_val is not None
+                           else to_str(spec.type, spec.default)))
+    candidates.sort(key=lambda c: c[0].key not in _READ_BY_THE_NORMALISERS)
+    for spec, raw in candidates:
+        try:
+            raw = normalize_raw(spec.type, raw)
+            validate_raw(spec.type, raw, spec.route_key)
+        except ValueError as exc:
+            # The offending value is not logged unless the setting is not a secret: a
+            # validator's message quotes what it refused, and a token refused for its
+            # shape would put itself in the log of a gateway that keeps credentials out
+            # of the environment on purpose.
+            logger.error(
+                "Setting %s was not seeded: the value in the environment is not a valid "
+                "%s (%s). The shipped default stays in force.", spec.key, spec.type,
+                exc if not spec.is_secret else "the value is not shown, it is a secret",
+            )
+            continue
         await db.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?)", (key, raw)
+            "INSERT INTO settings (key, value) VALUES (?, ?)", (spec.key, raw)
         )
+        # Seen by the normalisation of every key after this one, exactly as `set_many`
+        # publishes what it wrote. `store.load()` rebuilds this from the rows a moment
+        # later; what it buys is the pass itself.
+        store._cache[spec.key] = raw
     await db.commit()

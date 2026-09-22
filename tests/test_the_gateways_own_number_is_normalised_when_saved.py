@@ -31,9 +31,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db import queries
-from app.db.connection import close_db, init_db
+from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
-from app.settings_store import SPEC_BY_KEY, store
+from app.settings_store import SETTINGS_SPEC, SPEC_BY_KEY, seed_from_env, store
 from app.verification.routes import CALL_IN, Proof, SMS_IN
 
 E164 = "+79851600019"
@@ -97,6 +97,94 @@ def test_the_setting_carries_a_type_rather_than_a_note():
     to the setting's **type**, so a second door that saves settings cannot be a door that
     forgot it."""
     assert SPEC_BY_KEY["gateway_msisdn"].type == "msisdn"
+
+
+# --- the OTHER door that saves settings: the environment ------------------------------
+#
+# Task 6.3, found by the conformance sweep of 22.09.2026. The annotation above says the
+# check belongs to the setting's **type** "so a second door that saves settings cannot be
+# a door that forgot it" — and `seed_from_env` was exactly that door: it wrote the value
+# of the environment variable raw, calling neither `normalize_raw` nor `validate_raw`. It
+# is the door a fresh estate goes through, and `gateway_msisdn` is a key this change
+# invented, so on any live estate the first deployment lands in that branch and no other.
+
+
+def _booted(monkeypatch, **env):
+    """A fresh estate booting with these variables set — the path `app/main.py` takes:
+    `seed_from_env()` and then `store.load()`, in that order and with nothing between."""
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+
+    async def body():
+        await seed_from_env()
+        await store.load()
+        db = await get_db()
+        async with db.execute("SELECT key, value FROM settings") as cur:
+            return {row["key"]: row["value"] async for row in cur}
+
+    return _run(body)
+
+
+def test_a_national_spelling_in_the_environment_is_seeded_in_the_dialable_form(monkeypatch):
+    """The harm in its own right: the number reaches `RouteOffer.number` as data, and a
+    consumer builds a `tel:` on it."""
+    _booted(monkeypatch, GATEWAY_MSISDN=NATIONAL)
+    assert store.gateway_msisdn == E164
+
+
+def test_a_number_that_is_not_one_does_not_reach_the_settings_from_the_environment(monkeypatch):
+    """Refused at the save means it is not saved. Nothing is written, so the shipped
+    default stays in force and the complaint is made again at the next start rather than
+    being silenced by a row that now exists."""
+    rows = _booted(monkeypatch, GATEWAY_MSISDN="call us")
+    assert store.gateway_msisdn == ""
+    assert "gateway_msisdn" not in rows
+
+
+def test_an_unreadable_rule_does_not_reach_the_settings_from_the_environment(monkeypatch):
+    """The same door, the other key — and this one is the precondition of task 6.2: an
+    `operator_routes` that cannot be parsed made `POST /verifications/{id}/route` answer
+    500 and left the verification pending with no rungs."""
+    from app.verification import rule
+
+    rows = _booted(monkeypatch, OPERATOR_ROUTES="{not a list")
+    assert "operator_routes" not in rows
+    assert store.operator_routes == rule.SHIPPED
+    rule.validate(store.operator_routes)
+
+
+def test_what_the_environment_gets_right_is_still_seeded(monkeypatch):
+    """The positive control, and it is not optional here: a seeding door that refused
+    everything satisfies both guards above, and the shape it takes — one `except` around
+    the whole loop — is the likelier mistake than the one being fixed."""
+    rows = _booted(monkeypatch, VOXLINK_URL="https://lookup.example.test/get/")
+    assert rows["voxlink_url"] == "https://lookup.example.test/get/"
+    assert store.voxlink_url == "https://lookup.example.test/get/"
+
+
+def test_every_shipped_default_passes_the_check_the_seeding_door_now_makes(monkeypatch):
+    """The check is new on this path, and the values it meets first are our own defaults.
+    A shipped default that fails its own type would leave a key unseeded on every fresh
+    estate, quietly — so the whole spec is driven through the door with nothing in the
+    environment."""
+    for spec in SETTINGS_SPEC:
+        monkeypatch.delenv(spec.key.upper(), raising=False)
+
+    rows = _booted(monkeypatch)
+
+    missing = sorted({spec.key for spec in SETTINGS_SPEC} - set(rows))
+    assert missing == [], missing
+
+
+def test_the_number_is_normalised_against_the_region_the_same_boot_asks_for(monkeypatch):
+    """The dependency the fix introduces, guarded because it is silent when wrong.
+    `msisdn` normalisation reads `phone_region` out of this same store, and the region
+    sits **below** the number in the spec list — so a seeding pass that walks the list in
+    order normalises a Kazakh number against the shipped Russian region and either refuses
+    a good number or rewrites it into a wrong one. Neither says a word at the time."""
+    _booted(monkeypatch, PHONE_REGION="KZ", GATEWAY_MSISDN="8 (701) 123-45-67")
+    assert store.phone_region == "KZ"
+    assert store.gateway_msisdn == "+77011234567"
 
 
 # --- and through the door, which is where the harm was ---------------------------------
