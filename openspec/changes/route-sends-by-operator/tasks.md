@@ -5,7 +5,20 @@ funded balance.
 
 ## 1. Prove the links before building anything
 
-- [ ] 1.1 Owner: create the uCaller account and fund the balance — the first call fails without it. Where the credentials live is settled (2.3: `settings`, marked secret), so the account and the balance are now the whole of the blocking part
+- [x] 1.1 Owner: create the uCaller account and fund the balance — the first call fails without it. Where the credentials live is settled (2.3: `settings`, marked secret), so the account and the balance are now the whole of the blocking part
+      🟢 **Done by the owner 22.09.2026** — the account exists and the balance is funded
+      by card. The owner holds the API key and is ready to save it.
+      ⚠️ **There is nowhere to save it yet, and that is the next session's first job.** No
+      `settings` entry for uCaller exists: `Spec(` gives `tg_gateway_token` and no
+      sibling. The entry is 2.3's — a secret in `settings`, never `.env`, because
+      `seed_from_env` copies a variable only into a key with no row and is therefore
+      already spent from the second start onwards.
+      🔴 **The credential's shape is a wire-contract question, not a guess.** The spec
+      says "a single bearer string carrying both an API key and a service id" — a reading
+      of the reference, taken 08.09.2026. Whether that is one field or two is what the
+      reference has to answer before the entry is declared, or the console will hold a
+      shape the vendor does not take. The external-contract gate applies: reference or
+      captured sample first.
 - [ ] 1.2 Place one `initCall` to `+79851600019` (the operator-confirmed МегаФон number the owner released for probes) and confirm the phone actually rings and shows a number whose last four digits match the `code` we passed. **If it does not ring, the `flash_call` rung is void** — and that is now survivable rather than fatal, provided 1.5 and 1.7 show the Gateway rung carrying it
 - [ ] 1.3 Capture the live responses of `initCall` and `getInfo` verbatim into the change folder — the contract so far comes from the vendor's reference only, and no parser is written against a reference when a sample is one call away
 - [ ] 1.4 Confirm from the captured `getInfo` what `cost` and `balance` actually are for our account, and whether the 0,80 ₽ list price is what we are charged
