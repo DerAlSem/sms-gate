@@ -503,11 +503,22 @@ dropped, the wait unnamed, the window counting one paid rung instead of both, th
 answered as a success, the refused verification left hanging with its route claimed, our own
 refusal recorded as a vendor's rung, and a gate that refuses everything.
 
-⚠️ **The note here previously named `bite-limits.sh`, and no such file has ever existed in
-this repository** — checked against the working tree and against every commit reachable in
-it. The enforcement's own seven mutations were therefore never saved as a script and cannot
-be re-run; the mutations that have actually been run are the eleven named above. Writing
-that script is work nobody has done, not work that was lost.
+**The enforcement's own mutations are bitten too, since 22.09.2026** — `bite-limits.sh`, seven
+of them: the window counting only the call rung, the gap dropped, either ceiling dropped, a
+calendar day instead of a rolling window, the vendor's numbers hard-coded instead of read, and
+the phone dropped from the selection so that every number counts as one.
+
+⚠️ **One of those seven does not bite around the clock, and that is a property of the test
+rather than of the mutation.** `test_the_daily_window_is_rolling_rather_than_a_calendar_day`
+places its attempts twenty hours back, so under a calendar day they fall on "yesterday" only
+while the hour in UTC is below 20; after 20:00 UTC that mutation is legitimately green. The
+script prints the current UTC hour beside the run so the result cannot be read wrongly.
+
+🔴 **That script was written on 22.09.2026 and the note here named it long before it existed.**
+Checked against the working tree and against every commit reachable from any ref: no such file
+had ever been committed, so the seven mutations it claims were never run by anything. The
+lesson generalises past this requirement — **a reference to a bite is a claim about the code
+like any other, and is verified the same way.**
 
 The **numbers** remain the vendors' reference rather than a measurement: uCaller read
 08.09.2026, Telegram Gateway read 18.09.2026, and no live sample shows either vendor
