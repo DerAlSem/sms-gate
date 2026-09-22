@@ -19,7 +19,7 @@ from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
 from app.verification import refusals, routes, rule
-from app.lookup.operator import record_operator
+from app.lookup.operator import cached_operator, resolve_within_bound
 from app.verification.dispatch import announce_verification_outcomes
 from app.verification.probes import build_probes
 from app.modem.parser import (
@@ -581,60 +581,24 @@ class ModemManager:
                 self._queue.task_done()
 
     async def _operator_for(self, phone: str) -> str | None:
-        """This number's operator, resolved under the sender's own bound. None if not.
+        """This number's operator, resolved under the routing bound. None if not.
 
-        🔴 **The waiting lives here and nowhere else, and that placement is the norm
-        rather than an optimisation.** The application's answer must not wait for
-        enrichment — an unreachable resolver as a slow API is what this replaced. But
-        since the route is read from the operator, an empty cache is not the same fact as
-        an unresolvable number: routed on an empty cache, the first message ever
-        addressed to a diverted operator's subscriber takes the rule's `?` entry and goes
-        out over the modem — the route that operator has been rejecting, on exactly the
-        message the rule exists for. Only the sender can tell the two apart without
-        putting anybody on hold, so `?` here means "the lookup did not answer" and never
-        "the lookup has not been asked".
+        The decision itself — a stale row used as it stands, the bound spent only on a
+        number with no operator at all, nothing ever failed for want of one — lives in
+        `app.lookup.operator.resolve_within_bound`, because the verification door has to
+        make the same one. It used to live here alone, and the door made a different
+        decision for a year: task 6.4.
 
-        **A stale row is used as it stands.** It still names an operator; refreshing it
-        changes no decision this rule can make — numbers move between operators on a
-        scale of years and the rule is reviewed on a scale of months — and every message
-        behind this one in the single-file queue would pay for the refresh.
-
-        Nothing here fails a send. The bound expiring, the lookup raising and the lookup
-        answering with nobody are one outcome as far as this sender is concerned: the
-        unknown-operator entry answers, and what it answers with is the owner's.
+        Kept as a method because it is the seam the sender's own tests steer, and because
+        what the sender does with a `None` is the sender's: the rule's unknown-operator
+        entry answers, and what it answers with is the owner's.
         """
-        named = await self._cached_operator(phone)
-        if named is not None:
-            return named
-
-        bound = store.operator_lookup_bound
-        try:
-            await asyncio.wait_for(record_operator(phone), timeout=bound)
-        except asyncio.TimeoutError:
-            # Abandoned, not cancelled in spirit: the lookup is still worth having for
-            # the next message to this number, but this one is not waiting any longer.
-            logger.info("operator lookup for %s did not answer within %.2fs; routing by "
-                        "the rule's unknown-operator entry", phone, bound)
-            return None
-        except Exception:
-            logger.exception("operator lookup for %s failed; routing by the rule's "
-                             "unknown-operator entry", phone)
-            return None
-        return await self._cached_operator(phone)
+        return await resolve_within_bound(phone)
 
     @staticmethod
     async def _cached_operator(phone: str) -> str | None:
-        """The operator already on record, or None — including when the row names nobody.
-
-        A row that exists and holds a NULL operator is the absence, not the presence:
-        `save_number_operator` accepts `None`, and treating "there is a row" as "there is
-        an operator" would route the number on nobody, invisibly.
-        """
-        row = await queries.get_number_operator(phone)
-        if row is None:
-            return None
-        named = (row["operator"] or "").strip()
-        return named or None
+        """The operator already on record, or None — including when the row names nobody."""
+        return await cached_operator(phone)
 
     async def _refuse_what_the_rule_routes_elsewhere(
         self, msg: OutgoingMessage

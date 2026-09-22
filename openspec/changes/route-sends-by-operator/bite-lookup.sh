@@ -14,14 +14,18 @@ SCRATCH=$(mktemp -d)
 PY=$REPO/../../../venv/bin/python
 TESTS="tests/test_send_path_operator_lookup.py"
 MG=$REPO/app/modem/manager.py
+RT=$REPO/app/api/router.py
+OP=$REPO/app/lookup/operator.py
+FILES="$MG $RT $OP"
 
 cd "$REPO" || exit 1
-cp "$MG" "$SCRATCH/manager.py.orig"
-restore() { cp "$SCRATCH/manager.py.orig" "$MG"; }
+for f in $FILES; do cp "$f" "$SCRATCH/$(basename "$f").orig"; done
+restore() { for f in $FILES; do cp "$SCRATCH/$(basename "$f").orig" "$f"; done; }
 trap 'restore; rm -rf "$SCRATCH"' EXIT
 
 run() {
   rm -rf "$REPO"/app/__pycache__ "$REPO"/app/db/__pycache__ "$REPO"/app/modem/__pycache__ \
+         "$REPO"/app/api/__pycache__ "$REPO"/app/lookup/__pycache__ \
          "$REPO"/app/verification/__pycache__ "$REPO"/tests/__pycache__ 2>/dev/null
   $PY -m pytest $TESTS -p no:cacheprovider -q 2>&1 | tail -1
 }
@@ -29,10 +33,12 @@ run() {
 echo "== 0. ИСХОДНОЕ обязано быть зелёным"
 run
 
-mut() {
-  local name="$1" expr="$2"
+mut() { mutf "$1" "$MG" "$2"; }
+
+mutf() {
+  local name="$1" file="$2" expr="$3"
   restore
-  $PY - "$MG" "$expr" <<'PYEOF'
+  $PY - "$file" "$expr" <<'PYEOF'
 import sys
 path, expr = sys.argv[1], sys.argv[2]
 s = open(path, encoding='utf-8').read()
@@ -60,6 +66,30 @@ mut "2. решение не записано на отказывающей ве�
 '        await queries.record_message_routing(
             msg.message_id, route=route, operator=operator)
         await refusals.record(@@@        await refusals.record('
+
+# --- 6.4: то же решение на ДВЕРИ верификации ----------------------------------------
+# Находка свипа 22.09.2026. Решение «протухшая строка берётся как есть, а бюджет тратится
+# только там, где оператора нет вовсе» отправитель принимал верно, а дверь — нет: она
+# звала `record_operator` безусловно, и строка возрастом 400 дней держала
+# `POST /verifications` три секунды. Бюджетом при этом оказывался `voxlink_timeout` —
+# терпение одного HTTP-вызова, — а не маршрутный бюджет.
+
+# 3. Дефект как найден: дверь снова обновляет протухшее сама и без маршрутного бюджета.
+mutf "3. дверь зовёт резолвер безусловно (дефект как найден)" "$RT" \
+'    await resolve_within_bound(body.phone)@@@    await record_operator(body.phone)'
+
+# 4. Бюджет снят: ждём столько, сколько терпит сам резолвер.
+mutf "4. маршрутный бюджет снят" "$OP" \
+'        await asyncio.wait_for(record_operator(phone), timeout=bound)@@@        await record_operator(phone)'
+
+# 5. ПОЛОЖИТЕЛЬНЫЙ КОНТРОЛЬ: резолвер не зовётся вовсе. Обе мутации выше он
+#    удовлетворяет безупречно — и оставляет дверь выбора ходить по лестнице оператора,
+#    которого никто никогда не разрешил.
+mutf "5. дверь не разрешает оператора вообще (контроль)" "$OP" \
+'    named = await cached_operator(phone)
+    if named is not None:
+        return named@@@    named = await cached_operator(phone)
+    return named'
 
 restore
 echo "== восстановлено; финальный прогон"

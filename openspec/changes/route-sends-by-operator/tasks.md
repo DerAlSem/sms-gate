@@ -1525,7 +1525,7 @@ rather than on code.
       ⚠️ Спека должна догнать: аннотация требования говорит «turns five red» — теперь
       восемь. Правка отложена в общий заход 6.11–6.14.
 
-- [ ] 6.4 The verification door blocks on refreshing a stale operator row
+- [x] 6.4 The verification door blocks on refreshing a stale operator row
       Замер: протухшая, но присутствующая строка (`МТС`, −400 дней при TTL 7 дней)
       держит `POST /verifications` 3.01 секунды. `router.py:182` зовёт `record_operator`
       безусловно, а `lookup/operator.py:35-40` пропускает только свежую строку и уходит в
@@ -1533,6 +1533,20 @@ rather than on code.
       Против «Nothing SHALL be delayed … or stale» и «The bound SHALL be spent only where
       the cache holds no operator at all». В отправителе (`manager.py:605-608`) сделано
       правильно — дверь отстала от него. Лечится кодом.
+      **Сделано 22.09.2026.** Решение переехало из `ModemManager._operator_for` в
+      `app.lookup.operator.resolve_within_bound`, и дверь зовёт ЕГО: протухшая строка
+      берётся как есть, `operator_lookup_bound` тратится только там, где оператора нет
+      вовсе, и ничего не падает ни от истечения бюджета, ни от исключения. Метод
+      отправителя остался — на нём стоит шов, которым рулят его собственные тесты, — но
+      стал делегатом: два вызывающих, обязанных решать одинаково, это одна функция, либо
+      одна функция и копия, которая отстаёт.
+      ⚠️ Шов переехал вместе с функцией: десять тестов `test_send_path_operator_lookup.py`
+      правили `manager_mod.record_operator`, теперь правят `operator_mod.record_operator`
+      — иначе подмена целит в имя, которого никто не читает. Три из них покраснели сразу,
+      то есть шов был живой, а не декоративный.
+      Три новых сторожа (протухшее не обновляется; бюджет тратится на неизвестного;
+      положительный контроль «оператор всё-таки записан до ответа»), укус `bite-lookup.sh`
+      вырос с двух мутаций до **пяти**. Набор: 1320 зелёных.
 
 - [ ] 6.5 A paid ability check can be confirmed, charged and then abandoned unsent
       Сужено злым проходом: сценарий воспроизведён (плата `0.01` записана,

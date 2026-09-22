@@ -25,14 +25,24 @@ would pay for the refresh.
 Nothing is failed for want of an operator, whatever the lookup does — raises, hangs past
 the bound, or stays unreachable for an hour. `?` answers, and what `?` answers with is
 the owner's to configure.
+
+The resolver is steered at `app.lookup.operator.record_operator` rather than at the
+sender's own name for it: since task 6.4 the decision — stale row used as it stands, the
+bound spent only where there is no operator at all — lives in
+`app.lookup.operator.resolve_within_bound`, because the **verification door** has to make
+the same one and for a year made a different one. Two callers that must decide alike are
+one function, or they are one function and a copy that falls behind.
 """
 
 import asyncio
 import json
+import time
 
 import pytest
 
 import app.api.router as api_router
+import app.lookup.operator as operator_mod
+import app.lookup.voxlink as voxlink_mod
 import app.modem.manager as manager_mod
 from app.db import queries
 from app.db.connection import close_db, get_db, init_db
@@ -156,7 +166,7 @@ def test_a_first_ever_message_to_a_diverted_operator_is_not_routed_on_an_empty_c
     """
     async def body():
         lookup = _Lookup(answers=MEGAFON)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
 
         modem = _Modem()
         message_id = await _send(modem, MEGAFON_PHONE)
@@ -180,7 +190,7 @@ def test_a_resolved_operator_is_not_looked_up_again(monkeypatch, alerts, pushes)
     """
     async def body():
         lookup = _Lookup(answers=MEGAFON)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
         await queries.save_number_operator(OTHER_PHONE, "МТС", "Москва")
 
         modem = _Modem()
@@ -204,7 +214,7 @@ def test_a_stale_row_is_used_as_it_stands_and_not_refreshed(monkeypatch, alerts,
     """
     async def body():
         lookup = _Lookup(answers=MEGAFON)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
         await queries.save_number_operator(OTHER_PHONE, "МТС", "Москва")
         db = await get_db()
         await db.execute(
@@ -230,7 +240,7 @@ def test_a_row_whose_operator_is_null_counts_as_absent(monkeypatch, alerts, push
     """
     async def body():
         lookup = _Lookup(answers=MEGAFON)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
         await queries.save_number_operator(MEGAFON_PHONE, None, None)
 
         modem = _Modem()
@@ -259,7 +269,7 @@ def test_a_row_whose_operator_is_blank_counts_as_absent(monkeypatch, alerts, pus
     """
     async def body():
         lookup = _Lookup(answers=MEGAFON)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
         await queries.save_number_operator(MEGAFON_PHONE, "   ", "Москва")
 
         modem = _Modem()
@@ -283,7 +293,7 @@ def test_an_unresolved_operator_takes_the_unknown_entry_and_is_recorded_as_unkno
     """
     async def body():
         lookup = _Lookup(answers=None)          # answers, resolves nobody
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
 
         modem = _Modem()
         message_id = await _send(modem, OTHER_PHONE)
@@ -308,7 +318,7 @@ def test_the_unknown_entry_is_the_owners_to_point_anywhere(monkeypatch, alerts, 
     """
     async def body():
         lookup = _Lookup(answers=None)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
         await store.set_many({rule.KEY: json.dumps(
             [
                 {"operator": rule.DEFAULT, "routes": [SMS_OUT]},
@@ -344,7 +354,7 @@ def test_a_lookup_that_hangs_is_abandoned_at_the_bound_and_fails_nothing(
     async def body():
         await store.set_many({"operator_lookup_bound": "0.05"})
         lookup = _Lookup(answers=MEGAFON, delay=30.0)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
 
         modem = _Modem()
         started = asyncio.get_event_loop().time()
@@ -363,7 +373,7 @@ def test_a_lookup_that_raises_fails_nothing(monkeypatch, alerts, pushes):
     """Enrichment raising is not a reason to refuse somebody their message."""
     async def body():
         lookup = _Lookup(raises=RuntimeError("the resolver is on fire"))
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
 
         modem = _Modem()
         message_id = await _send(modem, OTHER_PHONE)
@@ -387,7 +397,7 @@ def test_an_hour_of_unreachable_lookups_delays_and_fails_nothing(
     async def body():
         await store.set_many({"operator_lookup_bound": "0.02"})
         lookup = _Lookup(answers=None, delay=5.0)
-        monkeypatch.setattr(manager_mod, "record_operator", lookup)
+        monkeypatch.setattr(operator_mod, "record_operator", lookup)
 
         modem = _Modem()
         started = asyncio.get_event_loop().time()
@@ -445,5 +455,146 @@ def test_the_api_door_does_not_wait_for_the_lookup(monkeypatch):
         assert resp.json()["status"] == "pending"
         assert enqueued, "the message never reached the queue"
         assert finished == [], "the door waited for the lookup to finish"
+
+    _run(body)
+
+
+# --- the verification door ------------------------------------------------------ 6.4
+
+class _Voxlink:
+    """The resolver itself, counted and steerable — patched at `voxlink.lookup` rather
+    than at `record_operator`.
+
+    The unit the norm is written in is **the spend**: "the bound SHALL be spent only
+    where the cache holds no operator at all". `record_operator` is called on every path
+    by design and returns at once on a fresh row, so counting *it* would count the wrong
+    thing; what costs a person at a barrier their seconds is the HTTP call underneath.
+    """
+
+    def __init__(self, *, operator=MEGAFON, delay=0.0):
+        self.calls = []
+        self._operator = operator
+        self._delay = delay
+
+    async def __call__(self, msisdn10, url, timeout, client=None):
+        self.calls.append(msisdn10)
+        if self._delay:
+            await asyncio.sleep(self._delay)
+        if self._operator is None:
+            return None
+        from app.lookup.voxlink import RangeInfo
+        return RangeInfo(allocated=True, operator=self._operator, region="Москва")
+
+
+def _verification_door():
+    """The public router on a bare app, as the other door tests build it."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.verification.routes import Proof
+
+    class _FakeModem:
+        caller_id_held = True
+        link_in_service = True
+        can_transmit = True
+        can_receive = True
+
+        def health_snapshot(self):
+            return {"modem_detected": True}
+
+    async def holds():
+        return Proof(holds=True)
+
+    app = FastAPI()
+    app.include_router(api_router.router)
+    app.state.modem = _FakeModem()
+    app.state.ims_proof = holds
+    return TestClient(app)
+
+
+async def _stale_row(phone, operator="МТС"):
+    await queries.save_number_operator(phone, operator, "Москва")
+    db = await get_db()
+    await db.execute(
+        "UPDATE number_operators SET checked_at = datetime('now', '-400 days') "
+        " WHERE phone = ?", (phone,))
+    await db.commit()
+
+
+def test_the_verification_door_does_not_refresh_a_stale_row(monkeypatch):
+    """🔴 The harm, measured by the conformance sweep on 22.09.2026: a stale but present
+    row held `POST /verifications` for 3.01 seconds, and the budget it was spending was
+    `voxlink_timeout` — the patience of one HTTP call — rather than
+    `operator_lookup_bound`, which is what this estate bounds routing decisions with.
+
+    The sender has had this right since 4.4 (`test_a_stale_row_is_used_as_it_stands_and_
+    not_refreshed`, above): a stale row still names an operator, and refreshing it
+    changes no routing decision this rule can make. The door had not caught up.
+    """
+    async def body():
+        voxlink = _Voxlink(delay=1.0)
+        monkeypatch.setattr(voxlink_mod, "lookup", voxlink)
+        await _stale_row(OTHER_PHONE)
+        await store.set_many({"tg_gateway_token": "a-token"})
+
+        started = time.monotonic()
+        r = _verification_door().post(
+            "/verifications", json={"phone": OTHER_PHONE},
+            headers={"Authorization": "Bearer token-app1"})
+        elapsed = time.monotonic() - started
+
+        assert r.status_code == 200, r.text
+        assert voxlink.calls == [], \
+            "the door refreshed a row that already named an operator"
+        assert elapsed < 0.5, f"the door waited {elapsed:.2f}s on a row it already had"
+
+    _run(body)
+
+
+def test_the_verification_door_spends_the_routing_bound_on_a_number_with_no_operator(
+        monkeypatch):
+    """The other half, and the one that makes the first half a norm rather than a
+    shortcut: where there is no operator at all the door **does** resolve, because the
+    answer names a method and a first-time number is exactly who a code is usually for.
+    It spends `operator_lookup_bound` on it, not the resolver's own patience."""
+    async def body():
+        voxlink = _Voxlink(delay=1.0)
+        monkeypatch.setattr(voxlink_mod, "lookup", voxlink)
+        await store.set_many({"tg_gateway_token": "a-token",
+                              "operator_lookup_bound": "0.05",
+                              "voxlink_timeout": "30"})
+
+        started = time.monotonic()
+        r = _verification_door().post(
+            "/verifications", json={"phone": OTHER_PHONE},
+            headers={"Authorization": "Bearer token-app1"})
+        elapsed = time.monotonic() - started
+
+        assert r.status_code == 200, r.text
+        assert voxlink.calls == [OTHER_PHONE[2:]], \
+            "the door did not resolve a number it had no operator for"
+        assert elapsed < 0.5, (
+            f"the door waited {elapsed:.2f}s, which is the resolver's own timeout and "
+            f"not the routing bound")
+
+    _run(body)
+
+
+def test_a_resolved_operator_is_on_record_before_the_verification_door_answers(monkeypatch):
+    """The positive control on both: a door that skipped the lookup outright would pass
+    the two guards above perfectly, and would leave the selection door to walk a ladder
+    for an operator nobody ever resolved."""
+    async def body():
+        voxlink = _Voxlink(operator=MEGAFON)
+        monkeypatch.setattr(voxlink_mod, "lookup", voxlink)
+        await store.set_many({"tg_gateway_token": "a-token"})
+
+        r = _verification_door().post(
+            "/verifications", json={"phone": OTHER_PHONE},
+            headers={"Authorization": "Bearer token-app1"})
+
+        assert r.status_code == 200, r.text
+        row = await queries.get_number_operator(OTHER_PHONE)
+        assert row is not None and row["operator"] == MEGAFON
 
     _run(body)

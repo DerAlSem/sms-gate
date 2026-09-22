@@ -13,7 +13,7 @@ from app.api.schemas import (
     VerificationStatusResponse,
 )
 from app.db import queries
-from app.lookup.operator import record_operator
+from app.lookup.operator import record_operator, resolve_within_bound
 from app.modem.manager import ModemManager
 from app.settings_store import store
 from app.verification import placement, routes as routes_vocab, template, ucaller
@@ -179,7 +179,15 @@ async def create_verification(
     verification_id = await queries.create_verification(
         app_id, body.phone, code=code, ttl_seconds=store.verification_ttl_seconds,
     )
-    await record_operator(body.phone)
+    # Resolved under the routing bound, and only where there is no operator at all: a
+    # stale row still names one, and refreshing it changes no routing decision this rule
+    # can make. Measured 22.09.2026 — this door used to refresh unconditionally, so a row
+    # 400 days old held the request for three seconds on the resolver's own timeout,
+    # which bounds the patience of one HTTP call and not what a person waits at a
+    # barrier. The waiting that is owed is the other case, and it is owed: the answer
+    # names a method, and the numbers with no row are first-time numbers, which is who a
+    # confirmation code is usually for.
+    await resolve_within_bound(body.phone)
     return VerificationCreateResponse(
         id=verification_id,
         status="pending",
