@@ -481,12 +481,61 @@ def test_no_verification_door_answers_with_the_code_except_the_one_rung_that_mus
     carrying = {}
     for route in router.routes:
         model = getattr(route, "response_model", None)
-        if model is None or not getattr(route, "path", "").startswith("/verifications"):
+        if model is None:
             continue
         if "code" in getattr(model, "model_fields", {}):
             carrying[model.__name__] = sorted(route.methods)
 
     assert set(carrying) == {"RouteSelectResponse"}, carrying
+
+
+# --- 6.1 — the message door is a door of this capability too ----------------------------
+
+def test_the_message_carrying_a_code_is_not_readable_through_the_message_door(client):
+    """The door the enumeration above could not see, because it is not on a
+    `/verifications` path.
+
+    The `sms_out` rung composes the code into a real `messages` row owned by the same
+    application (`app/verification/sms_carrier.py`), and `GET /sms/{id}` answered it back
+    with the text in it. Measured on 22.09.2026 by the conformance sweep: an application
+    opened a verification on a number, walked the ids next to its own last send, read
+    `'SokolParking: 3164 is your code'` out of the response and confirmed the
+    verification with `POST /verifications/{id}/check` — without the message ever
+    reaching the person, which is the whole of what this requirement buys.
+
+    The answer is 404 rather than a redacted text, for two reasons. The code is nulled at
+    every terminal ending, so a guard that strips "this verification's code" from the text
+    stops stripping anything the moment the verification ends, while the text keeps the
+    digits forever. And this id was never the application's to hold: the same branch
+    already refuses to push a message-status webhook for a verification's message
+    (`tests/test_a_verification_owns_its_message.py`), because the application asked about
+    a verification, not about a message.
+    """
+    async def carried():
+        vid = await queries.create_verification(
+            "app1", PHONE, code="3164", ttl_seconds=300)
+        return await queries.create_message(
+            "app1", PHONE, "SokolParking: 3164 is your code", verification_id=vid)
+
+    message_id = _in_the_doors_loop(carried)
+
+    r = client.get(f"/sms/{message_id}", headers=AUTH)
+    assert r.status_code == 404, r.text
+    assert "3164" not in r.text
+
+
+def test_an_ordinary_message_is_still_readable_through_the_message_door(client):
+    """The positive control. Without it the guard above passes on a door that 404s every
+    message, which is what an over-wide `WHERE` actually looks like — and `GET /sms/{id}`
+    is the authoritative status source `delivery-dispatch` tells consumers to poll."""
+    async def ordinary():
+        return await queries.create_message("app1", PHONE, "your parking expires soon")
+
+    message_id = _in_the_doors_loop(ordinary)
+
+    r = client.get(f"/sms/{message_id}", headers=AUTH)
+    assert r.status_code == 200, r.text
+    assert r.json()["text"] == "your parking expires soon"
 
 
 def _fake_notifier(monkeypatch):

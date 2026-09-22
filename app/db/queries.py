@@ -82,13 +82,33 @@ async def verification_of_message(message_id: int) -> int | None:
 
 
 async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
+    """A message of the application's own traffic — the read behind `GET /sms/{id}`.
+
+    `verification_id IS NULL` is the border, not a filter for tidiness. The `sms_out`
+    rung composes a verification's code into `text` and stores it under the same
+    `app_id`, so without this line the door hands an application the code of a
+    verification it opened, and the application confirms that verification without the
+    message ever reaching the person — measured end to end on 22.09.2026. The code is
+    the one value in this capability that is a secret, and "the code never appears in an
+    API response" cannot be held by any door that answers with this row.
+
+    Placed here rather than at the door because this is the single place a `messages` row
+    leaves to the owning application; the admin console, which is not bound to one
+    application and is allowed to read its own traffic, has `get_message_any`.
+
+    The answer is "no such message" rather than a stripped text: the code is nulled at
+    every terminal ending while the text keeps the digits forever, so a strip would stop
+    stripping the moment the verification ends. The id was never the application's to
+    hold either — nothing hands it back, and no delivery webhook is pushed for a
+    verification's message.
+    """
     db = await get_db()
     async with db.execute(
         """
         SELECT id, phone, text, status, created_at, sent_at, delivered_at, error,
                attempts, delivery_inferred
         FROM messages
-        WHERE id = ? AND app_id = ?
+        WHERE id = ? AND app_id = ? AND verification_id IS NULL
         """,
         (message_id, app_id),
     ) as cursor:

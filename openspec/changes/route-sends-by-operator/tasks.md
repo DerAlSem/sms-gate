@@ -1235,7 +1235,7 @@ rather than on code.
       now says the mutations were *reasoned*, not run — so what remains here is the work, not the
       honesty: write them, or strike the reasoning and let the named `tests/…` file stand alone.
       Three of the eight requirements written after the 11.09 circle rest on one of these.
-      **В работе с 22.09.2026. `bite-code.py` написан и прогнан — 19 мутаций, выживших нет**,
+      **В работе с 22.09.2026. `bite-code.py` написан и прогнан — 21 мутация, выживших нет**,
       против `tests/test_the_code_and_who_may_spend_it.py`; это самый крупный из
       одиннадцати и единственный, на который ссылались ЧЕТЫРЕ требования сразу. Он нашёл
       две настоящие дыры, а не подтвердил готовое:
@@ -1449,7 +1449,7 @@ rather than on code.
 написано SHALL'ом той же дельты (`spec.md:1276`), и два платных рунга идут к РАЗНЫМ
 вендорам, так что ни один не видит двух авторизаций.
 
-- [ ] 6.1 🔴 The owning application reads its own verification code out of `GET /sms/{id}`
+- [x] 6.1 🔴 The owning application reads its own verification code out of `GET /sms/{id}`
       Воспроизведено сквозным прогоном: `select` → `GET /sms/1` отдал
       `'SokolParking: 3164 is your code'` → `POST /check` вернул `confirmed`. На рунге
       `sms_out` код живёт в `messages.text` (`sms_carrier.py:79-81`), а дверь сообщения
@@ -1460,6 +1460,19 @@ rather than on code.
       пути по префиксу `startswith("/verifications")` и ищет поле `code`, а течёт `text`.
       Лечится кодом: не отдавать `text` сообщения, несущего `verification_id`, и
       перечислять двери по моделям, а не по префиксу пути.
+      **Сделано 22.09.2026.** Граница — в `queries.get_message`, единственном месте, где
+      строка `messages` уходит владеющему приложению: `AND verification_id IS NULL`, и
+      дверь отвечает 404. Не вычищенным текстом: код обнуляется на каждом терминальном
+      окончании, а цифры в `text` живут вечно, так что вычистка перестала бы чистить ровно
+      тогда, когда верификация кончилась; и этот id приложению никогда не выдавался —
+      вебхук на сообщение верификации не шлётся с задачи 4.27. Перечисление в
+      `tests/test_the_code_and_who_may_spend_it.py:470` расширено с префикса `/verifications`
+      на ВСЕ модели роутера; добавлены два сторожа — дверь на сообщении с `verification_id`
+      и положительный контроль на обычном. Укус: `bite-code.py` вырос до **21** мутации
+      (№20 открывает дверь всем сообщениям, №21 закрывает всем), все красные, выживших нет.
+      ⚠️ Спека должна догнать: `specs/phone-verification/spec.md:1017` говорит «seven of
+      `bite-code.py`'s mutations» — теперь девять. Правка отложена в общий заход 6.11–6.14,
+      потому что любая правка `specs/` снимает отметку круга.
 
 - [ ] 6.2 An unreadable routing rule leaves a verification offered, recorded and unplaced
       Воспроизведено: нечитаемый `operator_routes` → `POST /verifications/{id}/route`
