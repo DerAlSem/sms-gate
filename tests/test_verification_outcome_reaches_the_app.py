@@ -25,7 +25,7 @@ from app.db.connection import close_db, get_db, init_db
 from app.db.migrate import run_migrations
 from app.settings_store import store
 from app.verification.dispatch import announce_verification_outcomes
-from app.verification.routes import CALL_IN, FLASH_CALL, SMS_IN
+from app.verification.routes import CALL_IN, FLASH_CALL, SMS_IN, SMS_OUT, TG_GATEWAY
 
 PHONE = "+79261234888"
 
@@ -447,7 +447,14 @@ def test_a_call_verification_survives_the_sweep_while_the_credential_is_held(pus
 
     The positive control above uses `call_in`, whose precondition is the modem, so it says
     nothing about a rung proved from the settings. This is the same assertion for the only
-    rung the gateway pays a vendor to ring."""
+    rung the gateway pays a vendor to ring.
+
+    ⚠️ **Since 7.2 this passes for two independent reasons** — the credential is held *and*
+    the sweep no longer re-proves a rung the gateway places at all — so it no longer bites
+    the defect it was written for. What bites that is
+    `test_the_ladder_built_by_the_modem_manager_carries_the_configured_credential`, which
+    asserts the parameter is passed rather than the verdict it produces. Kept because it
+    is the live incident written down, not because it is the guard."""
     import app.modem.manager as manager_mod
 
     class LiveRoute:
@@ -470,8 +477,27 @@ def test_a_call_verification_survives_the_sweep_while_the_credential_is_held(pus
     assert pushed == []
 
 
-def test_a_call_verification_is_ended_by_the_sweep_once_the_credential_is_gone(pushed):
-    """The pair. Without it the test above passes against a sweep that ends nothing."""
+# --- 7.2 — a rung the gateway places is not re-proved after it has placed ----------------
+#
+# The owner's decision of 23.09.2026, and the boundary is `placement.PLACED_HERE` rather
+# than a list written here: a list in the sweep would drift away from it silently.
+#
+# The reading underneath: `call_in` and `sms_in` need their precondition for the whole
+# window because the event they wait for is still ahead, and the subscriber is the one who
+# acts. On `tg_gateway`, `flash_call` and `sms_out` the selection *is* the placement — the
+# door walked the ladder inside it, a vendor was contacted, and the person has already
+# heard the call or read the code. Withdrawing the credential afterwards cancels nothing
+# retroactively, so re-proving it can only destroy a verification that is already paid for.
+
+def test_a_paid_call_is_not_re_proved_after_it_has_been_placed(pushed):
+    """The defect this fixes costs money in one click: the owner edits `ucaller_key` on
+    `/admin/` while a call is ringing, and the sweep ends the verification a minute later
+    with "the flash_call route lost the precondition it was offered on". The call was
+    placed, billed and answered; nothing about it was undone.
+
+    Deliberately the *same* state as the 7.1 pair used to assert `failed` on — no
+    credential in `settings` at all — because that is the state a revocation leaves
+    behind, and it is the strongest form of the question."""
     import app.modem.manager as manager_mod
 
     class LiveRoute:
@@ -484,9 +510,96 @@ def test_a_call_verification_is_ended_by_the_sweep_once_the_credential_is_gone(p
         m._reader_link = LiveRoute()
         vid = await _open(FLASH_CALL)
         await m.verification_step()
+        row = await queries.get_verification(vid, "app1")
+        return row["status"], row["reason"]
+
+    status, reason = _run(body)
+    assert status == "pending", (
+        f"the sweep ended a call that was already placed and paid for: {reason}")
+    assert pushed == []
+
+
+def test_a_telegram_code_already_sent_is_not_re_proved(pushed):
+    """The same for the rung that sends rather than rings. `tg_gateway_token` ships blank,
+    so this is the state a revoked or retyped token leaves behind — and the message with
+    the code in it is already in the person's Telegram."""
+    import app.modem.manager as manager_mod
+
+    class LiveRoute:
+        caller_id_subscribed = True
+        in_service = True
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = LiveRoute()
+        m._reader_link = LiveRoute()
+        vid = await _open(TG_GATEWAY)
+        await m.verification_step()
+        row = await queries.get_verification(vid, "app1")
+        return row["status"], row["reason"]
+
+    status, reason = _run(body)
+    assert status == "pending", (
+        f"the sweep ended a Telegram verification whose code was already sent: {reason}")
+    assert pushed == []
+
+
+def test_a_code_handed_to_the_modem_is_not_re_proved(pushed):
+    """And for the gateway's own SIM, whose precondition is hardware rather than a
+    credential: the sender port going away does not un-send a message the modem already
+    submitted to the network."""
+    import app.modem.manager as manager_mod
+
+    class NoSender:
+        caller_id_subscribed = True
+        in_service = False    # `can_transmit` is false, so `sms_out` is not offerable
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = NoSender()
+        m._reader_link = NoSender()
+        vid = await _open(SMS_OUT)
+        await m.verification_step()
+        row = await queries.get_verification(vid, "app1")
+        return row["status"], row["reason"]
+
+    status, reason = _run(body)
+    assert status == "pending", (
+        f"the sweep ended a verification the modem had already carried: {reason}")
+    assert pushed == []
+
+
+def test_the_sweep_reads_placed_here_rather_than_a_list_of_its_own(pushed, monkeypatch):
+    """The owner's instruction of 23.09.2026, as a guard rather than a comment: the sweep
+    must ask `placement`, so that a rung moving across that boundary moves here too.
+
+    Bitten by moving `call_in` — the one rung the sweep must re-prove — *into*
+    `PLACED_HERE` and asserting the sweep follows. A sweep carrying its own tuple of route
+    names stays red here, which is the whole point; the positive control that `call_in` is
+    re-proved on the real boundary is
+    `test_an_open_verification_whose_route_died_is_ended_by_the_sweep` above.
+    """
+    import app.modem.manager as manager_mod
+    from app.verification import placement
+
+    class DeadRoute:
+        caller_id_subscribed = False    # the subscription is gone
+        in_service = True
+
+    monkeypatch.setattr(placement, "PLACED_HERE",
+                        frozenset(placement.PLACED_HERE | {CALL_IN}))
+
+    async def body():
+        m = manager_mod.ModemManager("/dev/null", "/dev/null")
+        m._sender = DeadRoute()
+        m._reader_link = DeadRoute()
+        vid = await _open(CALL_IN)
+        await m.verification_step()
         return (await queries.get_verification(vid, "app1"))["status"]
 
-    assert _run(body) == "failed"
+    assert _run(body) == "pending", (
+        "the sweep decided by a list of its own rather than by placement.PLACED_HERE")
+    assert pushed == []
 
 
 # --- 4.15 — the two pushes travel the same route and must not be read as each other ------

@@ -18,7 +18,7 @@ from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANS
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
 from app.modem import calls
 from app.modem.calls import CallWatch
-from app.verification import refusals, routes, rule, ucaller
+from app.verification import placement, refusals, routes, rule, ucaller
 from app.lookup.operator import cached_operator, resolve_within_bound
 from app.verification.dispatch import announce_verification_outcomes
 from app.verification.probes import build_probes
@@ -1702,8 +1702,26 @@ class ModemManager:
         the log, and the caller heard the carrier's voicemail. The asymmetry is a property
         of the bearer. What is forbidden is concealing it, which is why the reason names
         the outage instead of the clock.
+
+        🔴 **Only the rungs the subscriber acts on are re-proved** — the owner's decision of
+        23.09.2026, task 7.2. On `call_in` and `sms_in` the event is still ahead: the
+        precondition has to hold for the whole window, because a subscription that has
+        lapsed means the call or message the person is about to send will confirm nothing.
+        On the rungs this gateway places, the selection *was* the placement — the door
+        walked the ladder inside it, a vendor was contacted and billed, and the person has
+        already heard the call or read the code. Re-proving that precondition afterwards
+        asks whether we *could* place it again, which is not a question anything is waiting
+        on; and answering "no" destroys a verification that is already paid for. Live, the
+        owner editing `ucaller_key` on `/admin/` would end every open paid verification
+        within the minute, with a reason saying the route had lost a precondition it had in
+        fact already used.
+
+        The boundary is read from `placement` rather than listed here. A list of rung names
+        in this sweep would drift away from `PLACED_HERE` silently, and the drift is only
+        visible when it costs money.
         """
-        open_rows = await queries.open_verifications_with_a_route()
+        open_rows = [row for row in await queries.open_verifications_with_a_route()
+                     if not placement.places_here(row["route"])]
         if not open_rows:
             return
         for row in open_rows:

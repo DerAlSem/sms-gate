@@ -521,7 +521,8 @@ parser cannot read is recorded under its own outcome rather than dropped.
 
 ### Requirement: A verification whose route stops working ends with a named reason, and a call that arrived during an outage is gone
 
-An open verification whose selected route has lost the precondition it was offered on SHALL be
+An open verification **on a rung the subscriber is the one to act on** — `call_in` and
+`sms_in` — whose selected route has lost the precondition it was offered on SHALL be
 **terminated with that reason and the application notified**, rather than left to reach its
 deadline and be reported as expired.
 
@@ -532,6 +533,19 @@ thirty-second settle, and the hard rung of the escalation exits the process outr
 recovery can therefore consume a verification's whole window. "Expired" told to a person who
 did call, on time, from the right number, is the gateway reporting the one thing that did not
 happen.
+
+🔴 **On a rung this gateway places, the precondition SHALL NOT be re-proved once the rung has
+been selected.** The owner's decision of 23.09.2026. On the two rungs above the event is still
+ahead — the person has yet to dial or to text — so the precondition has to hold for the whole
+window or what they are about to do will confirm nothing. On `tg_gateway`, `flash_call` and
+`sms_out` the selection **is** the placement: the ladder is walked inside it, a vendor is
+contacted and billed, and by the time any sweep could look the person has already heard the
+call or read the code. Asking again whether that rung *could* be placed answers a question
+nothing is waiting on, and answering "no" destroys a verification that is already paid for —
+so withdrawing a credential mid-window SHALL NOT be read as the route having failed. The
+boundary between the two kinds SHALL be the one the gateway already keeps for deciding what it
+places (`placement.PLACED_HERE`) rather than a second list maintained beside it: two lists of
+rung names drift apart silently, and this one drifts into money.
 
 🔴 **A call that arrives while the modem is out of service is lost, and the gateway SHALL NOT
 behave as though it could be recovered.** Inbound SMS has a buffer: messages accumulate in
@@ -546,9 +560,19 @@ Every writer of a verification's terminal state SHALL notify, on this path as on
 
 [normative · `scan_inbox` after reconnect at app/modem/manager.py:452; `_RECOVERY_TIMEOUT = 300.0` at app/modem/manager.py:55; `_RECOVERY_SETTLE = 30.0` at app/modem/manager.py:58; `os._exit(1)` at app/modem/manager.py:1236 — read 18.09.2026]
 
-#### Scenario: The route dies under an open verification
-- **WHEN** an open verification's selected route loses the precondition it was offered on
+[normative · the narrowing: `_end_verifications_whose_route_died` filters by `placement.places_here` at app/modem/manager.py:1724; `PLACED_HERE` at app/verification/placement.py:64; mutation-proven by `openspec/changes/route-sends-by-operator/bite-placement-is-not-re-proved.sh` — written 23.09.2026]
+
+#### Scenario: The route dies under an open verification the subscriber has yet to act on
+- **WHEN** an open `call_in` or `sms_in` verification's selected route loses the precondition it was offered on
 - **THEN** the verification ends with that reason and the application is notified, rather than expiring silently
+
+#### Scenario: A credential is withdrawn while a paid rung is in flight
+- **WHEN** the credential behind an already-selected `tg_gateway` or `flash_call` verification is changed or cleared
+- **THEN** that verification is left alone, because the call was placed and the code sent before the credential went away
+
+#### Scenario: The boundary is the one the gateway already keeps
+- **WHEN** a rung moves into or out of the set of rungs this gateway places
+- **THEN** what the sweep re-proves moves with it, because the sweep reads that set rather than a list of its own
 
 #### Scenario: The person called during a recovery
 - **WHEN** a recovery takes the modem out of service for the remainder of an `call_in` verification's window

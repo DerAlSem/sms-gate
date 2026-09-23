@@ -136,6 +136,17 @@ exists to avoid.
       Do not invent a second store.
 - [x] 7.2 A verification whose selected rung loses its precondition ends with that reason and
       notifies, rather than reaching its deadline. Every writer of a terminal state notifies.
+      🔴 **Narrowed 23.09.2026, by the owner's decision, to the rungs the subscriber acts
+      on — `call_in` and `sms_in`.** Written generally, this ended verifications on the
+      rungs *this gateway* places, where the selection **is** the placement: the ladder is
+      walked inside it and a vendor is billed, so re-proving the precondition afterwards
+      answers a question nothing waits on and answering "no" destroys a call already placed
+      and paid for. Live consequence: the owner editing `ucaller_key` or
+      `tg_gateway_token` on `/admin/` killed every open paid verification within the
+      minute. The boundary is `placement.PLACED_HERE` rather than a second list of rung
+      names. Requirement text narrowed here; the code and its bites ship with
+      `route-sends-by-operator`, task 7.2 — and note that this change's `.critique` mark
+      was re-issued `--waived` for that edit rather than re-critiqued.
 - [x] 7.3 The `call_in` window, configurable separately and defaulting to no longer than
       the ladder's.
 - [x] 7.4 Return the code to the owning application **only** on `sms_in`, and never in an
