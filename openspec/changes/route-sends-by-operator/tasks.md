@@ -76,6 +76,45 @@ funded balance.
       still not *proved* free — a charge would only show on the next reading — and the two
       balances cannot be told apart on this account at all, because `getInfo.balance` is
       documented as the balance before the charge and there has not been a charge.
+      🟡 **Владелец назвал цену 23.09.2026 — и назвал её как ориентир, не как замер:**
+      «на МТС вроде 2 рубля, на все остальные — 0,8 рубля», и дословно «надо следить».
+      Значит дорогой случай — **2 ₽**, а не 0,80 ₽ прайс-листа, и задача остаётся открытой
+      ровно на прежнем: цену подтверждает только настоящее списание. Число, которое из этого
+      выведено, — пол баланса, см. ниже.
+      🔴 **Замер прода 23.09.2026 07:43 UTC: попыток на `flash_call` НЕ БЫЛО НИ ОДНОЙ.**
+      `verification_rungs` держит РОВНО одну строку за всё время — `tg_gateway`,
+      `cost 0.01`, 22.09 19:06 UTC, `carried`; `verifications` — две, обе пробы владельца
+      того же вечера. Отсюда два следствия, и оба про эту задачу: скорость расхода uCaller
+      измерить НЕ НА ЧЁМ, и пол баланса по наблюдению вывести нельзя — он выводится из
+      размера счёта и нашего собственного потолка. И второе: пол читается только вместе с
+      размещённым звонком (`getInfo.balance` минус списание, `flash_carrier.py:155`), он не
+      опрашивается, — значит при нулевом трафике он не выстрелит вовсе, сколько его ни
+      ставь. Выставить его всё равно надо: это гасит стартовый сторож
+      `report_unwatched_rungs` и заряжает охрану к тому дню, когда трафик пойдёт.
+- [ ] 1.4a Owner: выставить `flash_call_balance_floor` на `/admin/`. **Рекомендация —
+      `200`**, и она выведена из НАШЕГО ЖЕ потолка, а не из аналогии: пол =
+      `verification_paid_per_hour` × дорогая цена звонка = 100 × 2 ₽. Читается одной
+      фразой: «когда алерт придёт, в запасе ещё час максимально разрешённого расхода».
+      Цена изменится — пересчитать по той же формуле, и тогда два числа не разъедутся.
+      🔴 **Аналогия с Telegram здесь НЕ работает, и это стоит знать до спора о числе.**
+      У Telegram пол `10.0` при цене подтверждения `0.01` — это запас примерно на тысячу
+      подтверждений. Та же «тысяча звонков» на uCaller стоит 800 ₽ по дешёвой цене, то есть
+      80% всего счёта: 1000 ₽ покупают 500 звонков по 2 ₽ или 1250 по 0,8 ₽, и весь счёт
+      целиком меньше, чем один только пол телеграма в штуках. Поэтому пол здесь — ДОЛЯ
+      счёта, а не фиксированное число звонков.
+      Порог шума не мешает брать с запасом: пол только АЛЕРТИТ и никогда не отказывает
+      (`balance.py:98-122`), а алерт дедуплицируется по `balance_floor:flash_call`. Ошибка
+      вверх стоит одного сообщения, ошибка вниз — молчания при исчерпании. Ниже ~80 ₽
+      (40 звонков по дорогой цене) алерт перестаёт оставлять время на пополнение.
+- [ ] 1.4b 🔴 **Счёт uCaller защищает ПОТОЛОК, а не пол, и потолок под этот счёт велик.**
+      `verification_paid_per_day` = 300 при дорогой цене 2 ₽ — это 600 ₽/сутки, то есть
+      весь счёт в 1000 ₽ уходит за **1 сутки 16 часов**; `verification_paid_per_hour` = 100
+      это 200 ₽/час, то есть **5 часов** до нуля. Потолок при этом ОБЩИЙ на оба платных
+      рунга (задача 4.52), так что худший случай — все 300 ушли в uCaller.
+      Решение за владельцем: снижать потолок, пополнять счёт или принять цену. Это ровно та
+      строка реестра, `sms-gate-ec2f9e87/20260920-01`, — и замер 23.09 говорит, что она
+      созрела ФОРМАЛЬНО: проба сработала на ОДНОЙ строке платной попытки, а одна строка не
+      является темпом. Настоящего своего трафика у потолка по-прежнему нет.
 - [x] 1.5a Owner: open **gateway.telegram.org**, "Log in to Start", confirm in Telegram, then copy the token from `gateway.telegram.org/account/api`. 🔴 **This is a different door from the one that is shut:** the Gateway needs no `my.telegram.org` and no `api_id`/`api_hash` — those are the user-account route's, and their refusal on 18.09.2026 does not reach here. Costs nothing and unblocks 1.5 by itself
 - [x] 1.5 **Prove the Gateway rung end to end for nothing, before any balance exists.** Free testing is tied to the login: *"you'll be able to send free verification messages to the Telegram account tied to the number you used to log in"* — so the owner logs in with the number the probe will target. Send a code we generated to it, with an explicit `ttl`, and watch the whole mechanism: the code we supplied arrives unchanged, the `delivery_status` moves, the callback is signed, `revokeVerificationMessage` withdraws it. **Done 18.09.2026 and it proved more than expected.** Our code arrives unchanged, delivery is `sent`→`delivered` in one second and `read` at 71 s, `request_cost` is 0 on an account whose `remaining_balance` is 0 — so the whole mechanism runs before any Fragment top-up. 🔴 **Revocation, however, is observably inert:** `ok/true` twice, message still on screen both times, `delivery_status` never `revoked`. Findings and their limits are in `captures/README.md`. Proves our half of the rung and nothing about a customer's reachability, which is 1.7
 - [ ] 1.6 Capture the live `checkSendAbility`, `sendVerificationMessage` and callback payloads verbatim into the change folder, including the callback headers. The reference gives field names; the sample gives what is actually populated, and the signature cannot be verified against a document. **Half done 18.09.2026 — `captures/` holds `sendVerificationMessage`, `checkVerificationStatus` and `revokeVerificationMessage` with their notes. 🟢 **`checkSendAbility` arrived 20.09.2026 with task 1.7** — `probe-1.7-check-able.json` and `probe-1.7-check-declined.json`, both halves of it. Still missing: the callback — ⚠️ **which was said to ride with 1.9 for want of a public HTTPS address, and that was wrong: `sms.deralsem.ru` answers publicly from edge and reaches this house over the live `wg-burns` tunnel, so the callback can be captured as soon as there is a request to report on**.** Not tickable until both arrive
