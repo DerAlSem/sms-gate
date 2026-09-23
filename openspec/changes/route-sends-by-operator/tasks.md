@@ -132,6 +132,14 @@ funded balance.
       can put a Russian screen in front of a person at all, and it is not ours to
       settle alone.
 - [ ] 3.2a Then write the integration contract with real examples and hand it over, once the shape is settled and not before — the owner's condition of 18.09.2026. Until `sp_app` adopts it, no МегаФон subscriber sees any improvement
+      🔴 **23.09.2026 владелец ответил, чем это стало на проде: `sp_app` шлёт ТОЛЬКО
+      коды.** Значит отказы маршрута по МегаФону — это коды входа, которых люди не
+      получили, а не «обычный текст, который подождёт»: 11 строк `route_refusals`
+      (`sp_app` 9, `gmp_app` 2) с 22.09 14:44 UTC, темп ~15 в сутки. Правило при этом
+      ВЕРНО и правки не требует — лечение ровно одно и оно здесь: `sp_app` переходит на
+      `/verifications`, откуда коды поедут Telegram-ом (доказано живьём 22.09). Решение
+      владельца 23.09: переходит; говорит владельцу `sp_app` он сам. Потеря идёт, пока не
+      перешёл — это известная и принятая цена, а не открытый вопрос.
       🟡 **Half done, and the half that remains is not ours.** The document is written:
       `docs/verification-api.md`, 21.09.2026 — the four doors with real request and
       response bodies, the push, the four vocabularies (routes, statuses, check
@@ -1433,6 +1441,11 @@ rather than on code.
 - [ ] 5.1 Run one verification end to end to `+79851600019` on the production host: the call arrives, the digits are read, `/check` confirms, and the outcome reaches the application. The modem route cannot reach that number at all today, so this is the only proof the change works
 - [ ] 5.2 Confirm a non-МегаФон verification still arrives as an SMS, unchanged, on the same code path — **to a number the owner has released for probes, not to a customer**. This host carries live customer traffic, and a verification sent to prove a code path still reaches a real person's phone
 - [ ] 5.3 Confirm the new refusal fires on a message the owner originates to a МегаФон number, and that the count in 4.18 registers it. **Owner's call whether to also wait for `gmp_app`'s next real message** — as originally written, the first witness of the new behaviour is a customer's message rather than a probe
+      🟢 **Отказ отработал живьём и посчитан, замер 23.09.2026 10:07 MSK:**
+      `route_refusals` = 11 строк, `sp_app` 9 и `gmp_app` 2, все с оператором МЕГАФОН,
+      первая 22.09 14:44 UTC. То есть и своё приложение, и чужое дождались — пробой
+      владельца это не подтверждалось и не понадобилось. Галку ставит владелец: формально
+      задача просила сообщение, ОТПРАВЛЕННОЕ владельцем, а пришли настоящие клиентские.
 - [ ] 5.4 Watch the first week's spend against the costs recorded in 1.4 and 1.8 — **both balances**, and with refunds subtracted. A week whose recorded spend and whose two `remaining_balance` readings disagree is either an unattributed possibly-charged check or a refund that was not reflected, and both have counters to look at
 - [ ] 5.5 Run one verification end to end over the **Gateway rung** on the production host, to a number reachable in Telegram that the owner has released for probes: the message arrives, the code is ours, `/check` confirms, the signed callback is accepted, and the outcome reaches the application. Until this runs, the cheap rung is proved only off the production host
 - [ ] 5.6 Watch one verification **cross the rungs** in production — a МегаФон number the Gateway declines, followed by a call — and confirm the two rungs are recorded as two attempts of one verification, with two vendor identifiers and one code. This is the only proof that the ladder is a ladder rather than two routes that happen to be configured together
@@ -1799,3 +1812,9 @@ rather than on code.
       Значит сторож обязан перепроверять только рунги первого рода.
       **Это правка ПОВЕДЕНИЯ и она про деньги — полоса C, решение владельца, не полоса B.**
       Отдельной заявкой либо разделом здесь; чинить попутно нельзя.
+      🟢 **Решение владельца 23.09.2026 — вариант (1): сузить сторожа по `places_here`.**
+      Граница в репозитории уже проведена и названа: `placement.PLACED_HERE` — рунги, на
+      которых действует сам шлюз (`tg_gateway`, `flash_call`, `sms_out`), против `call_in`
+      и `sms_in`, где действует абонент. Перечень рунгов в стороже НЕ заводить: он бы
+      разъезжался с `PLACED_HERE` молча. Норму в `verify-by-inbound-contact` придётся
+      сузить ТЕКСТОМ, а не только кодом, — поэтому полоса C и своя сессия.
