@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25 12:37'
+updated_date: '2026-09-25 13:36'
 labels:
   - routing
   - megafon
@@ -27,3 +28,11 @@ ordinal: 28000
 - [ ] #3 После перехода новых строк route_refusals с route=tg_gateway от sp_app и gmp_app за сутки — 0
 - [ ] #4 Верификации абонентов МегаФона от этих приложений видны в verifications и доходят по tg_gateway или flash_call
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+25.09.2026: контракт = docs/verification-api.md (уже был, 3.3/3.4 учтены). Раздел «What a deployment can carry today» сверен с продом и переписан: gateway_msisdn, ключ uCaller, callback Telegram заданы; шаблонов нет. Добавлен раздел про МегаФон. Опубликован страницей для передачи разработчику sp_app.
+
+25.09.2026: для разработчика — короткая русская версия docs/verification-api.ru.md (72c4d91), вычитана ru-check. Владелец передаёт сам; AC#1 отмечать после передачи.
+<!-- SECTION:NOTES:END -->

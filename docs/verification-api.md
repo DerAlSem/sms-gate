@@ -392,36 +392,47 @@ somebody improves a sentence — silently, on your side, in front of a person at
 
 ## What a deployment can carry today
 
-The vocabulary of routes is fixed and flat. Every name the gateway knows:
+Stated for the production deployment as of **25.09.2026**. The vocabulary of routes is
+fixed and flat. Every name the gateway knows:
 
 | route | who acts | carried today? |
 |---|---|---|
-| `call_in` | the subscriber calls the gateway's number; the call is not answered | **yes**, once the operator holds `gateway_msisdn` |
-| `sms_in` | the subscriber texts the code to the gateway's number | **yes**, once the operator holds `gateway_msisdn` |
-| `sms_out` | the gateway texts the code to the subscriber | not wired to these doors yet |
-| `flash_call` | a vendor calls; the last digits of the calling number are the code | no vendor account yet |
-| `tg_gateway` | the code arrives in Telegram | **yes**, once the operator holds a Gateway token |
+| `call_in` | the subscriber calls the gateway's number; the call is not answered | **yes** — the gateway's number is configured and handed to you in `number` |
+| `sms_in` | the subscriber texts the code to the gateway's number | **yes**, offered only when nothing cheaper proved itself (the subscriber pays for one SMS) |
+| `sms_out` | the gateway texts the code to the subscriber | **only for an application with a verification template** configured by the operator — none is configured today; ask for one if you want this route |
+| `flash_call` | a vendor calls; the last four digits of the calling number are the code | **wired and configured**; the first paid call on production has not been observed yet |
+| `tg_gateway` | the code arrives in Telegram | **yes** — carried a code on production on 22.09.2026 |
 | `tg_user`, `max_user`, `app_bot` | messenger accounts | named, and carried by nothing |
 
-`gateway_msisdn` is the gateway's own number, and it ships **blank**. That is deliberate
-and it is why no number is printed anywhere in this document: the two routes that need one
-are simply not offered until an operator has entered it, and an instruction reading "reach
-us, we cannot say where" is not an offer. **We will never quote you digits here that a
-deployment has not been configured to hold.**
+Which of these a particular number is offered is decided per request, by what can prove
+itself for that number at that moment — you learn it from `routes`, never from this table.
 
-🔴 **`tg_gateway` used to be offered and then place nothing.** It was written up here as a
-defect, and it is fixed: selecting it now asks the vendor and sends the code inside your
-`POST /route` call, and the answer names the rung that carried. One limitation of it is
-worth your knowing, because it shows up in `reason` rather than in a special error: the rung
-the routing rule names **after** Telegram is a vendor callback that has no account yet, so
-for a subscriber Telegram declines there is no second rung to carry it and the verification
-comes back `failed` with a reason naming both. That is a refusal with a cause, not a
-silence — which is the whole difference from what this paragraph used to describe.
+**Telegram, then a call — inside one selection.** When you select a rung, the gateway walks
+the routing rule for the subscriber's operator **from that rung onwards**. For МегаФон the
+rule reads `tg_gateway`, then `flash_call`: select `tg_gateway`, and if Telegram declines the
+number when we ask it to send, the gateway moves to `flash_call` within the same
+`POST /verifications/{id}/route`. The answer's `route` names the rung that carried, and its
+`instruction` is what to show the person. A rung the rule does not name for that operator is
+carried alone, with no continuation.
 
-⚠️ **One thing we do not yet promise on this route: delivery reports.** The vendor is not
-currently told where to report, so a message it accepts and then fails to deliver inside its
-lifetime does not reach us as an event. What you get is the verification's own expiry, on
-time, by poll or push. Recorded against the gateway as task 4.57.
+If Telegram **accepted** the message and it then went undelivered, or the person says
+nothing arrived while the verification is still `pending`, there is no automatic second
+rung: open a **new** verification and select the next route you are offered (see
+[Failure is terminal](#failure-is-terminal)).
+
+The vendor is told where to report delivery (since 21.09.2026), so a Telegram message it
+accepted and then failed to deliver ends the verification with a reason instead of waiting
+out the clock.
+
+## Why this matters for МегаФон subscribers — today
+
+Since **22.09.2026** the gateway does not send arbitrary text to МегаФон numbers:
+`POST /sms/send` to such a number is accepted and then ends `failed`, with `error` reading
+*"the route the rule names for МегаФон is tg_gateway, which cannot carry arbitrary text"*.
+The operator rejects our SMS route, and before that date such messages looked delivered to
+you and never reached the person. A login code sent through `/sms/send` therefore reaches
+**no** МегаФон subscriber. Through the doors in this document it can — by Telegram, then by
+a call. That is the whole reason to move code delivery here.
 
 ## What we need from you
 
