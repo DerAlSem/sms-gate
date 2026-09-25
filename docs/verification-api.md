@@ -407,12 +407,18 @@ fixed and flat. Every name the gateway knows:
 Which of these a particular number is offered is decided per request, by what can prove
 itself for that number at that moment — you learn it from `routes`, never from this table.
 
-**Telegram, then a call.** For a subscriber Telegram declines, the verification comes back
-`failed` with a `reason`, and `GET /verifications/{id}` on it lists what is left (for
-МегаФон numbers, `flash_call` among it). Open a **new** verification and select it (see
-[Failure is terminal](#failure-is-terminal)). If the person says the Telegram message did
-not arrive while the verification is still `pending`, the same move applies: open a new
-one and select the next route you were offered.
+**Telegram, then a call — inside one selection.** When you select a rung, the gateway walks
+the routing rule for the subscriber's operator **from that rung onwards**. For МегаФон the
+rule reads `tg_gateway`, then `flash_call`: select `tg_gateway`, and if Telegram declines the
+number when we ask it to send, the gateway moves to `flash_call` within the same
+`POST /verifications/{id}/route`. The answer's `route` names the rung that carried, and its
+`instruction` is what to show the person. A rung the rule does not name for that operator is
+carried alone, with no continuation.
+
+If Telegram **accepted** the message and it then went undelivered, or the person says
+nothing arrived while the verification is still `pending`, there is no automatic second
+rung: open a **new** verification and select the next route you are offered (see
+[Failure is terminal](#failure-is-terminal)).
 
 The vendor is told where to report delivery (since 21.09.2026), so a Telegram message it
 accepted and then failed to deliver ends the verification with a reason instead of waiting
