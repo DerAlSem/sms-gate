@@ -6,6 +6,7 @@ title: >-
 status: Backlog
 assignee: []
 created_date: '2026-09-25 11:59'
+updated_date: '2026-09-25 12:37'
 due_date: '2026-10-22'
 labels:
   - migrated
@@ -23,7 +24,7 @@ host: local
 cwd: ~/dev/sms-gate
 match: (?i)backup|dump|borg|restic|rsync|snapshot
 ---
-ssh -o ConnectTimeout=8 -o BatchMode=yes -p 30022 home.deralsem.ru "systemctl list-timers --all --no-pager"
+ssh -o ConnectTimeout=8 -o BatchMode=yes -p 30022 home.deralsem.ru "systemctl list-timers --all --no-pager" | grep -v dpkg-db-backup
 ```
 
 Перенесено из отложки `20260922-04.md`.
@@ -50,3 +51,9 @@ credential, но и накопитель телефонов всех, кого �
 **По созревании:** исключить оба пути из того, что копируется, и проверить
 исключение чтением самого бэкапа, а не конфигом бэкапера.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+25.09.2026: созревание было ложным — совпал dpkg-db-backup.timer (штатный таймер Debian, база пакетов). Настоящих бэкапов sms-gate нет: в ~/sms-gate-backups только ручной снимок 23.09 перед выкатом. Проба сужена: grep -v dpkg-db-backup.
+<!-- SECTION:NOTES:END -->
