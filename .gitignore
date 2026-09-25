@@ -3,6 +3,7 @@
 .claude/*
 !.claude/waiting/
 !.claude/skills/
+!.claude/settings.json
 __pycache__/
 *.pyc
 data/sms.db*
