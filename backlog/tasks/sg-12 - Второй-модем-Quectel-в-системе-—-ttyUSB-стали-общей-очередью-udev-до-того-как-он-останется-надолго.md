@@ -3,10 +3,10 @@ id: SG-12
 title: >-
   Второй модем Quectel в системе — ttyUSB стали общей очередью, udev до того,
   как он останется надолго
-status: Backlog
+status: Done
 assignee: []
 created_date: '2026-09-25 11:59'
-updated_date: '2026-09-25 12:11'
+updated_date: '2026-09-25 12:39'
 due_date: '2026-10-16'
 labels:
   - migrated
@@ -85,4 +85,6 @@ ID_PATH=pci-0000:00:14.0-usb-0:4:1.2   ID_USB_INTERFACE_NUM=02
 
 <!-- SECTION:NOTES:BEGIN -->
 25.09.2026 владелец: проба не нужна — звонки проходят на EP16. Блок when снят; судьба задачи — в разборе созревшего.
+
+Дока не менялась: владелец 25.09.2026: звонки идут на EP16, второй модуль EG25-G не ставится — udev-ловушка не наступает
 <!-- SECTION:NOTES:END -->

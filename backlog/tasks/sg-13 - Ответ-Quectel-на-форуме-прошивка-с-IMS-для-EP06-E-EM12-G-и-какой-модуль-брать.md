@@ -1,9 +1,10 @@
 ---
 id: SG-13
 title: 'Ответ Quectel на форуме: прошивка с IMS для EP06-E/EM12-G и какой модуль брать'
-status: Backlog
+status: Done
 assignee: []
 created_date: '2026-09-25 11:59'
+updated_date: '2026-09-25 12:39'
 due_date: '2026-09-24'
 labels:
   - migrated
@@ -38,3 +39,9 @@ ordinal: 13000
 
 Машинной пробы нет: форум без API, ответ приходит владельцу уведомлением.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Дока не менялась: владелец 25.09.2026: голосовой модем EP16 уже есть, звонки проходят — ответ форума и покупка EG25-G не нужны
+<!-- SECTION:NOTES:END -->

@@ -3,9 +3,10 @@ id: SG-9
 title: >-
   uCaller стал ЛЕСТНИЦЕЙ: четыре решения сняты, ждёт ДВУХ балансов — и один рунг
   проверяется бесплатно
-status: Backlog
+status: Done
 assignee: []
 created_date: '2026-09-25 11:59'
+updated_date: '2026-09-25 12:39'
 due_date: '2026-09-25'
 labels:
   - migrated
@@ -104,3 +105,9 @@ ordinal: 9000
 
 ОТЛОЖКА.md, пункт 19, заведён 08.09.2026
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Дока не менялась: поглощена 25.09.2026: ключи uCaller и tg_gateway на проде, tg_gateway доставил код живьём 22.09; остаток — платные пробы 5.1/5.6/5.7 (SG-6) и решения SG-18
+<!-- SECTION:NOTES:END -->
