@@ -3,9 +3,11 @@ id: SG-29
 title: >-
   uCaller initCall отказывает code 1 — звонок (flash_call) не размещается на
   проде
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@worktree-tg-gateway-rung'
 created_date: '2026-09-25 13:46'
+updated_date: '2026-09-25 14:41'
 labels:
   - bug
   - ucaller
@@ -27,8 +29,18 @@ ordinal: 30000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Названа и доказана пробой на 79000000001 причина code 1
+- [x] #1 Названа и доказана пробой на 79000000001 причина code 1
 - [ ] #2 initCall через адаптер размещает звонок на тестовом номере
-- [ ] #3 Тест фиксирует форму тела initCall, которую вендор принимает
+- [x] #3 Тест фиксирует форму тела initCall, которую вендор принимает
 - [ ] #4 Выкачено по ship-sms-gate; владелец повторил 5.1 на +79851600019 — confirmed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+25.09 сессия Dx: тело initCall из адаптера = {phone: str (wire_number), code: str, unique: UUIDv4 из idempotency_key(rung_id)}; client НЕ уходит — client_label нигде не передаётся (flash_carrier.py:76 default ''). Значит подозреваемых три: phone строкой (главный), code строкой, unique. Справочник §3: phone NUMBER, code number|string. Разделяющая проба спроектирована: 5 вызовов на 79000000001 c паузой 17с — A тело адаптера как есть; B phone int; C phone int+code int; D phone str без unique; E GET-контроль формой 1.3. Скрипт на stdlib, ключ из settings (ucaller_key, ucaller_service_id) без печати. Запись скрипта, читающего боевой ключ, заблокирована классификатором авто-режима [Production Reads] — нужно слово владельца. Замок снят не был.
+
+25.09 17:0x MSK проба sg29_probe.py на derserver, тестовый 79000000001: A (адаптер как есть, phone str) → code 1; B (phone int, code str, unique) → status true ucaller_id=57288106; C (phone int, code int) → true 57288114; D (phone str, без unique) → code 1; E (GET-контроль) → true 57288122. Вывод: причина code 1 — phone строкой в JSON; code строкой и unique ни при чём.
+
+Фикс: ucaller.wire_number возвращает int → phone уходит JSON-числом; code остаётся строкой (ведущие нули). Тесты: test_the_number_goes_to_the_vendor_as_a_json_number (был красным до фикса), test_the_code_stays_a_string_so_leading_zeros_survive. Полный набор: 1373 passed, 7 failed — те же 7 падают на чистом HEAD df8c88e (alert_send_sh ×4, cds_attribution ×2, verification_contract_doc ×1), к SG-29 не относятся. AC2 НЕ проверен через сам адаптер: проба B доказала форму тела, но код адаптера на хосте ещё старый — проверится выкатом.
+<!-- SECTION:NOTES:END -->

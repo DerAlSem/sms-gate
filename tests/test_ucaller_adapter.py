@@ -248,10 +248,23 @@ def test_the_door_never_mints_a_code_the_call_rung_cannot_carry():
 
 # --- the request this adapter actually makes -------------------------------------------
 
-def test_the_number_goes_to_the_vendor_as_digits_without_a_plus():
+def test_the_number_goes_to_the_vendor_as_a_json_number():
+    """SG-29. The same digits as a JSON **string** earn `code 1` ("Invalid request") —
+    measured 25.09.2026 on the test number 79000000001, one field changed at a time: the
+    string refused, the number placed (`captures/sg29_probe.py`). The GET form of 1.3 hid
+    this, since a query string has no types."""
     seen: list = []
     call("+7 (900) 000-00-01", payload=capture("uc-1.3-initCall-reachable"), seen=seen)
-    assert json.loads(seen[0].content)["phone"] == "79000000001"
+    phone = json.loads(seen[0].content)["phone"]
+    assert phone == 79000000001 and not isinstance(phone, str)
+
+
+def test_the_code_stays_a_string_so_leading_zeros_survive():
+    """Accepted as a string in the same probe, and a number would turn 0042 into 42 —
+    a call from a number ending in the wrong four digits."""
+    seen: list = []
+    call(code="0042", payload=capture("uc-1.3-initCall-reachable"), seen=seen)
+    assert json.loads(seen[0].content)["code"] == "0042"
 
 
 def test_the_bearer_is_the_header_form_of_the_pair():

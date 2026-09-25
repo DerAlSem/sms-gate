@@ -255,9 +255,15 @@ class Balance:
 
 # --- numbers, codes and keys -------------------------------------------------------------
 
-def wire_number(phone: str) -> str:
-    """The number as the vendor wants to receive it: E.164 digits, no `+`."""
-    return re.sub(r"\D", "", phone)
+def wire_number(phone: str) -> int:
+    """The number as the vendor wants to receive it: E.164 digits, no `+`, **as a JSON
+    number**.
+
+    🔴 The same digits as a string earn `code 1` ("Invalid request") on a POST body — SG-29,
+    measured 25.09.2026 on the test number, one field changed at a time. The GET samples of
+    1.3 could not show it: a query string has no types.
+    """
+    return int(re.sub(r"\D", "", phone))
 
 
 def validate_code(code: str) -> str:
