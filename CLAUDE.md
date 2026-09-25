@@ -29,6 +29,11 @@ Do not edit Backlog task, draft, document, decision, or milestone markdown files
 25.09.2026. Как устроено — `backlog/docs/capabilities/`; строки отложки
 `.claude/waiting` переехали задачами в колонку Backlog.
 
+В `openspec/changes/` остались каталоги ТОЛЬКО живых заявок (SG-1…8): там
+рабочие улики, на которые ссылаются задачи и ветки ворктри, а тесты читают
+`route-sends-by-operator/captures/`. Каталог уходит вместе с закрытием своей
+задачи; фикстуры — в `tests/` до удаления их каталога.
+
 Стек, гочи и выкат — `AGENTS.md` (FastAPI + SQLite + AT-модем, systemd на
 одном хосте); выкат только через скилл `ship-sms-gate`.
 
