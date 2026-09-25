@@ -1,8 +1,8 @@
 # .claude/* вместо .claude/: git не пускает обратно содержимое исключённого
 # КАТАЛОГА, и одно отрицание поверх «.claude/» не сработало бы молча.
 .claude/*
-!.claude/waiting/
 !.claude/skills/
+!.claude/settings.json
 __pycache__/
 *.pyc
 data/sms.db*
