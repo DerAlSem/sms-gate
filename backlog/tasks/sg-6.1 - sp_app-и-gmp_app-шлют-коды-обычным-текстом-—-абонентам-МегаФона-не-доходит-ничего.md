@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-25 12:37'
-updated_date: '2026-09-25 13:36'
+updated_date: '2026-09-25 13:55'
 labels:
   - routing
   - megafon
@@ -35,4 +35,6 @@ ordinal: 28000
 25.09.2026: контракт = docs/verification-api.md (уже был, 3.3/3.4 учтены). Раздел «What a deployment can carry today» сверен с продом и переписан: gateway_msisdn, ключ uCaller, callback Telegram заданы; шаблонов нет. Добавлен раздел про МегаФон. Опубликован страницей для передачи разработчику sp_app.
 
 25.09.2026: для разработчика — короткая русская версия docs/verification-api.ru.md (72c4d91), вычитана ru-check. Владелец передаёт сам; AC#1 отмечать после передачи.
+
+25.09.2026, проба 5.2: verification_templates на проде ПУСТА для всех приложений. Пока у sp_app/gmp_app нет шаблона, их верификации на sms_out (все операторы, кроме МегаФона) падают с 'sms_out incapable'. Завести шаблоны ДО перевода приложений на дверь верификации — формат: [{"app_id":"sp_app","template":"… {code} …"}], ровно один {code}.
 <!-- SECTION:NOTES:END -->

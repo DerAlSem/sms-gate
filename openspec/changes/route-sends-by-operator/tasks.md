@@ -1478,7 +1478,8 @@ rather than on code.
 ## 5. Verify against the real thing
 
 - [ ] 5.1 Run one verification end to end to `+79851600019` on the production host: the call arrives, the digits are read, `/check` confirms, and the outcome reaches the application. The modem route cannot reach that number at all today, so this is the only proof the change works
-- [ ] 5.2 Confirm a non-МегаФон verification still arrives as an SMS, unchanged, on the same code path — **to a number the owner has released for probes, not to a customer**. This host carries live customer traffic, and a verification sent to prove a code path still reaches a real person's phone
+- [x] 5.2 Confirm a non-МегаФон verification still arrives as an SMS, unchanged, on the same code path — **to a number the owner has released for probes, not to a customer**. This host carries live customer traffic, and a verification sent to prove a code path still reaches a real person's phone
+      🟢 **Проведена владельцем 25.09.2026 16:53 MSK** на отданный под пробы номер Билайна (оператор определился `ВЫМПЕЛКОМ`): верификация 5, `sms_out` → `carried`, сообщение 2585 `delivered`, `/check` → `confirmed` с первой попытки. Первая попытка (верификация 4) упала `sms_out incapable`: `verification_templates` на проде была пуста для ВСЕХ приложений; владелец завёл шаблон для `test`. Для `sp_app`/`gmp_app` шаблонов нет — см. SG-6.1.
 - [ ] 5.3 Confirm the new refusal fires on a message the owner originates to a МегаФон number, and that the count in 4.18 registers it. **Owner's call whether to also wait for `gmp_app`'s next real message** — as originally written, the first witness of the new behaviour is a customer's message rather than a probe
       🟢 **Отказ отработал живьём и посчитан, замер 23.09.2026 10:07 MSK:**
       `route_refusals` = 11 строк, `sp_app` 9 и `gmp_app` 2, все с оператором МЕГАФОН,
