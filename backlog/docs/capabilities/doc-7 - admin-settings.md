@@ -3,7 +3,7 @@ id: doc-7
 title: admin-settings
 type: specification
 created_date: '2026-09-26 05:59'
-updated_date: '2026-09-26 16:03'
+updated_date: '2026-09-26 16:42'
 ---
 # admin-settings Specification
 
@@ -99,7 +99,7 @@ other type as a one-line text field.
 
 ### Requirement: A route's bearer is never shown back from the store
 
-In `inbound_dispatch` and `delivery_dispatch` every stored non-blank `bearer` SHALL be
+In `inbound_dispatch` (and in `delivery_dispatch` on the application's page, doc-8) every stored non-blank `bearer` SHALL be
 shown as a fixed placeholder. On save, a placeholder SHALL be replaced by the stored bearer
 of the route with the same route key, matched in order among routes sharing that key; a
 placeholder with no such stored route SHALL be refused at the field. A refused save SHALL
@@ -168,3 +168,18 @@ guard for the others. A refused save SHALL bring its first error into view.
 
 - **WHEN** the owner edits two sections and saves one
 - **THEN** leaving the page asks for confirmation
+
+### Requirement: What belongs to one application is not edited here
+
+`verification_templates` and `delivery_dispatch` SHALL NOT be editable on the settings screen;
+in their sections each SHALL be named with a pointer that it is set on the application's page
+(doc-8). `messenger_brands` SHALL be shown without its `apps` key; on save the stored `apps`
+SHALL be put back before validation, and a submitted `apps` SHALL be refused at the field.
+Clearing a brand an application still names SHALL be refused by `validate_brands`.
+
+[normative · evidence: app/admin/settings_layout.py (app_owned), app/admin/router.py (_strip_apps_for_display, _reinsert_messenger_apps), tests/test_admin_app_detail.py · conf: high]
+
+#### Scenario: Saving Vendors keeps the applications' brands
+
+- **WHEN** the owner saves the Vendors section
+- **THEN** `messenger_brands.apps` is stored exactly as before

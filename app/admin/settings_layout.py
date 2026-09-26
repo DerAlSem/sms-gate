@@ -27,6 +27,11 @@ class FieldLayout:
     key: str
     label: str          # N_(...) msgid
     help: str           # N_(...) msgid
+    # SG-33.4: this key still lives in SETTINGS_SPEC and is still counted by the
+    # "every key in exactly one section" sentry, but the owner edits it on the
+    # application's own page (`/admin/apps/<id>`), not here. The settings screen
+    # renders a pointer instead of an input, and never puts the key in its POST.
+    app_owned: bool = False
 
 
 @dataclass(frozen=True)
@@ -37,8 +42,8 @@ class Section:
     fields: tuple[FieldLayout, ...] = field(default_factory=tuple)
 
 
-def _f(key: str, label: str, help_: str) -> FieldLayout:
-    return FieldLayout(key=key, label=label, help=help_)
+def _f(key: str, label: str, help_: str, app_owned: bool = False) -> FieldLayout:
+    return FieldLayout(key=key, label=label, help=help_, app_owned=app_owned)
 
 
 SECTIONS: tuple[Section, ...] = (
@@ -108,8 +113,8 @@ SECTIONS: tuple[Section, ...] = (
            N_("How many wrong codes are tolerated before a verification stops accepting "
               "any.")),
         _f("verification_templates", N_("SMS wording for verification codes"),
-           N_("JSON list, one template per application, exactly one {code} placeholder "
-              "each. An application with no entry never gets a code by SMS.")),
+           N_("Set on each application's own page (Apps), not here — an application "
+              "with no template there never gets a code by SMS."), app_owned=True),
     )),
     Section("routing", N_("Routes by operator"), False, (
         _f("operator_routes", N_("Which way out each operator takes"),
@@ -141,8 +146,9 @@ SECTIONS: tuple[Section, ...] = (
            N_("The service id half of the uCaller credential, the second half of the "
               "pair above.")),
         _f("messenger_brands", N_("Messenger accounts and brands"),
-           N_("JSON: which application may send under which brand, and the account "
-              "each brand owns on each messenger.")),
+           N_("JSON: the account each brand owns on each messenger. Which application "
+              "may send under which brand is set on that application's own page "
+              "(Apps), not here.")),
         _f("messenger_limits", N_("Messenger sending limits"),
            N_("JSON: hourly and daily sending maxima per account, and the minimum time "
               "between two messages to the same recipient.")),
@@ -173,9 +179,7 @@ SECTIONS: tuple[Section, ...] = (
            N_('JSON list of routes that receive inbound SMS by prefix, e.g. '
               '[{"prefix":"X","webhook_url":"https://...","bearer":"..."}].')),
         _f("delivery_dispatch", N_("Delivery status webhooks"),
-           N_('JSON list of routes that receive outbound delivery statuses by '
-              'application, e.g. [{"app_id":"X","webhook_url":"https://...",'
-              '"bearer":"..."}].')),
+           N_("Set on each application's own page (Apps), not here."), app_owned=True),
     )),
     Section("advanced", N_("Advanced"), True, (
         _f("alert_dedup_window", N_("Suppress repeated identical alerts for"),
@@ -230,6 +234,11 @@ SECTIONS: tuple[Section, ...] = (
 FIELD_BY_KEY: dict[str, FieldLayout] = {
     f.key: f for section in SECTIONS for f in section.fields
 }
+# Keys the settings screen shows as a pointer rather than an input — see
+# `FieldLayout.app_owned`.
+APP_OWNED_KEYS: frozenset[str] = frozenset(
+    f.key for section in SECTIONS for f in section.fields if f.app_owned
+)
 SECTION_BY_ID: dict[str, Section] = {s.id: s for s in SECTIONS}
 SECTION_ID_OF_KEY: dict[str, str] = {
     f.key: s.id for s in SECTIONS for f in s.fields

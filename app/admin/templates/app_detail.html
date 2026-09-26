@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/admin/apps">&larr; {% trans %}All applications{% endtrans %}</a></p>
+
+<h2><code>{{ app.id }}</code>{% if app.description %} — {{ app.description }}{% endif %}</h2>
+{% if orphan %}
+<div class="card" style="background:#fef3c7;border:1px solid #fcd34d;margin-bottom:16px;">
+  {% trans %}There is no application with this id — these are its leftover records; they can be removed here.{% endtrans %}
+</div>
+{% else %}
+<p class="muted" style="font-size:13px;">
+  {% trans %}Active{% endtrans %}: {% if app.is_active %}{% trans %}yes{% endtrans %}{% else %}{% trans %}no{% endtrans %}{% endif %}
+  &middot;
+  {% trans %}May spend{% endtrans %}: {% if app.may_spend %}{% trans %}yes{% endtrans %}{% else %}{% trans %}no{% endtrans %}{% endif %}
+  <span class="muted">({% trans %}switched on the applications list{% endtrans %})</span>
+</p>
+{% endif %}
+
+{# ------------------------------------------------------------------ SMS template #}
+<div class="card" id="template" style="margin-bottom:16px;">
+  <form method="post" action="/admin/apps/{{ app.id | urlencode }}/save" class="app-section" data-section="template">
+    <input type="hidden" name="_part" value="template">
+    <div class="label" style="display:flex;align-items:center;gap:8px;">
+      <span>{% trans %}SMS text with the code{% endtrans %}</span>
+      <span class="dirty-mark muted" style="font-size:11px;font-weight:600;" hidden>&#9679; {% trans %}unsaved{% endtrans %}</span>
+    </div>
+    {% if saved == 'template' %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
+    <p class="muted" style="font-size:12px;">
+      {% trans %}Exactly one {code} placeholder. Empty — no entry, and this application will not get a code by SMS (the call and Telegram rungs still work). Count {code} as 6 characters when judging length.{% endtrans %}
+    </p>
+    <textarea name="template" id="tmpl-text" rows="3" style="width:100%;font-family:monospace;">{{ template_value }}</textarea>
+    <div class="muted" id="tmpl-counter" style="font-size:12px;margin-top:4px;"></div>
+    {% if errors.template %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors.template }}</div>{% endif %}
+    <button type="submit" style="margin-top:12px;">{% trans %}Save{% endtrans %}</button>
+  </form>
+</div>
+
+{# ------------------------------------------------------------------ delivery webhook #}
+<div class="card" id="webhook" style="margin-bottom:16px;">
+  <form method="post" action="/admin/apps/{{ app.id | urlencode }}/save" class="app-section" data-section="webhook">
+    <input type="hidden" name="_part" value="webhook">
+    <div class="label" style="display:flex;align-items:center;gap:8px;">
+      <span>{% trans %}Delivery status webhook{% endtrans %}</span>
+      <span class="dirty-mark muted" style="font-size:11px;font-weight:600;" hidden>&#9679; {% trans %}unsaved{% endtrans %}</span>
+    </div>
+    {% if saved == 'webhook' %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
+    {% if webhook_extra %}
+    <div class="muted" style="font-size:12px;">
+      {% trans n=webhook_extra %}{{ n }} more record(s) for this application do not act — the first one wins{% endtrans %}
+    </div>
+    {% endif %}
+    <table>
+      <tr>
+        <td style="width:200px;"><label for="wh-url" style="font-weight:600;">{% trans %}Webhook URL{% endtrans %}</label></td>
+        <td><input name="webhook_url" id="wh-url" type="text" value="{{ webhook_url_value }}" style="width:100%;"></td>
+      </tr>
+      <tr>
+        <td><label for="wh-bearer" style="font-weight:600;">{% trans %}Bearer{% endtrans %}</label></td>
+        <td>
+          <input name="bearer" id="wh-bearer" type="password"
+                 placeholder="{{ _('configured (blank — keep)') if bearer_configured else _('not configured') }}"
+                 style="width:100%;">
+          <input type="hidden" name="clear_bearer" value="false">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;margin-top:4px;">
+            <input type="checkbox" name="clear_bearer" value="true">
+            {% trans %}remove the bearer{% endtrans %}
+          </label>
+        </td>
+      </tr>
+    </table>
+    {% if errors.webhook %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors.webhook }}</div>{% endif %}
+    <button type="submit" style="margin-top:12px;">{% trans %}Save{% endtrans %}</button>
+  </form>
+</div>
+
+{# ------------------------------------------------------------------ messenger brands #}
+<div class="card" id="brands" style="margin-bottom:16px;">
+  <div class="label">{% trans %}Messenger brands{% endtrans %}</div>
+  {% if not available_brands %}
+    <p class="muted" style="font-size:13px;">
+      {% trans %}No brands are set up — that is done in Settings, section Vendors.{% endtrans %}
+      <a href="/admin/settings#vendors">{% trans %}Settings{% endtrans %}</a>
+    </p>
+    {% if errors.brands %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors.brands }}</div>{% endif %}
+  {% else %}
+  <form method="post" action="/admin/apps/{{ app.id | urlencode }}/save" class="app-section" data-section="brands">
+    <input type="hidden" name="_part" value="brands">
+    <span class="dirty-mark muted" style="font-size:11px;font-weight:600;" hidden>&#9679; {% trans %}unsaved{% endtrans %}</span>
+    {% if saved == 'brands' %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
+    <table>
+      <tr><th>{% trans %}Brand{% endtrans %}</th><th>{% trans %}Allowed{% endtrans %}</th><th>{% trans %}Default{% endtrans %}</th></tr>
+      {% for brand in available_brands %}
+      <tr>
+        <td><code>{{ brand }}</code></td>
+        <td><input type="checkbox" class="brand-check" name="brands" value="{{ brand }}" {% if brand in selected_brands %}checked{% endif %}></td>
+        <td><input type="radio" class="brand-default" name="default" value="{{ brand }}" {% if brand == default_brand %}checked{% endif %}></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% if errors.brands %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors.brands }}</div>{% endif %}
+    <button type="submit" style="margin-top:12px;">{% trans %}Save{% endtrans %}</button>
+  </form>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  // Live "N characters · M SMS" counter for the template textarea — the same limits
+  // app/modem/pdu_encode.py encodes with. {code} is counted as its own 6 literal
+  // characters, not as the code that will replace it at send time.
+  var BASIC = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞ\u001bÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+  var EXT = "\f^{}\\[~]|€";
+
+  function smsCount(text) {
+    var isGsm7 = true, septets = 0;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (BASIC.indexOf(ch) !== -1) { septets += 1; }
+      else if (EXT.indexOf(ch) !== -1) { septets += 2; }
+      else { isGsm7 = false; break; }
+    }
+    if (isGsm7) {
+      var parts = septets === 0 ? 0 : (septets <= 160 ? 1 : Math.ceil(septets / 153));
+      return parts;
+    }
+    var units = text.length; // JS string length already counts UTF-16 code units
+    return units === 0 ? 0 : (units <= 70 ? 1 : Math.ceil(units / 67));
+  }
+
+  var textarea = document.getElementById("tmpl-text");
+  var counter = document.getElementById("tmpl-counter");
+  function updateCounter() {
+    var text = textarea.value;
+    var n = text.length;
+    var parts = smsCount(text);
+    counter.textContent = {{ _('characters:') | tojson }} + " " + n + " · " + {{ _('SMS parts:') | tojson }} + " " + parts;
+  }
+  if (textarea && counter) {
+    textarea.addEventListener("input", updateCounter);
+    updateCounter();
+  }
+
+  // Keep a brand's "default" radio in step with its own checkbox: unchecking the
+  // brand clears it as a default too, and checking the only selected brand offers it
+  // as the default without an extra click. The server enforces the real rule either
+  // way (a permitted brand with no default is refused), so JS only saves the common
+  // case a click.
+  var checks = document.querySelectorAll(".brand-check");
+  checks.forEach(function (box) {
+    box.addEventListener("change", function () {
+      var row = box.closest("tr");
+      var radio = row ? row.querySelector(".brand-default") : null;
+      if (!box.checked && radio) { radio.checked = false; }
+      if (box.checked) {
+        var anyOtherChecked = false;
+        checks.forEach(function (other) {
+          if (other !== box && other.checked) { anyOtherChecked = true; }
+        });
+        if (!anyOtherChecked && radio) { radio.checked = true; }
+      }
+    });
+  });
+
+  // Unsaved-changes guard, per section — saving one section reloads the whole page,
+  // so only that section's own edit is ever carried across a save.
+  var dirtySections = new Set();
+  document.querySelectorAll("form.app-section").forEach(function (form) {
+    var section = form.dataset.section;
+    var mark = form.querySelector(".dirty-mark");
+    form.addEventListener("input", function () {
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    form.addEventListener("change", function () {
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    form.addEventListener("submit", function () {
+      dirtySections.delete(section);
+    });
+  });
+  window.addEventListener("beforeunload", function (e) {
+    if (dirtySections.size === 0) { return; }
+    e.preventDefault();
+    e.returnValue = "";
+  });
+})();
+</script>
+{% endblock %}

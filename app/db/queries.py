@@ -2199,6 +2199,18 @@ async def get_app(app_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
+async def get_app_full(app_id: str) -> aiosqlite.Row | None:
+    """One application's row for its own admin page: id, description and both
+    switches. `get_app` above stays as it is — its callers on the send path have no
+    use for the description — this is the app-detail page's own read."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, description, is_active, may_spend FROM apps WHERE id = ?",
+        (app_id,),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
 async def app_may_spend(app_id: str) -> bool:
     """Whether this application holds the entitlement to spend on a paid route.
 

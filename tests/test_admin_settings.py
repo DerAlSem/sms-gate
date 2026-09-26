@@ -151,12 +151,14 @@ def test_a_refused_save_keeps_the_valid_field_as_submitted():
 
 
 def _brands_json(account: str, number: str) -> str:
+    # SG-33.4: the settings screen no longer edits `apps` — the binding between an
+    # application and a brand moved to that application's own page — so what is
+    # submitted here is exactly what the field shows: brands only.
     return json.dumps({
         "brands": {"sokol": {"tg_user": {
             "account": account, "number": number,
             "intro": "Это наш сервисный аккаунт, вы запросили код.",
         }}},
-        "apps": {"sokol_app": {"brands": ["sokol"], "default": "sokol"}},
     })
 
 

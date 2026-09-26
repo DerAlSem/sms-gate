@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-26 19:02+0300\n"
+"POT-Creation-Date: 2026-09-26 19:36+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -15,15 +15,15 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
 
-#: app/admin/settings_layout.py:45
+#: app/admin/settings_layout.py:50
 msgid "Modem and sending"
 msgstr "Модем и отправка"
 
-#: app/admin/settings_layout.py:46
+#: app/admin/settings_layout.py:51
 msgid "Max parts per multipart SMS"
 msgstr "Максимум частей у одной SMS"
 
-#: app/admin/settings_layout.py:47
+#: app/admin/settings_layout.py:52
 msgid ""
 "How many parts one SMS may be split into. Longer text is refused before "
 "sending, rather than sent cut short."
@@ -31,11 +31,11 @@ msgstr ""
 "На сколько частей может разбиваться одна SMS. Более длинный текст будет "
 "отклонён при отправке, а не обрезан."
 
-#: app/admin/settings_layout.py:49
+#: app/admin/settings_layout.py:54
 msgid "Retry delays for a failed send"
 msgstr "Задержки перед повтором при сбое отправки"
 
-#: app/admin/settings_layout.py:50
+#: app/admin/settings_layout.py:55
 msgid ""
 "Comma-separated seconds to wait before each retry after a transient send "
 "failure. The number of delays sets the number of retries. Empty means one"
@@ -45,19 +45,19 @@ msgstr ""
 "после временного сбоя отправки. Количество задержек задаёт количество "
 "повторов. Пусто — только одна попытка, без повтора."
 
-#: app/admin/settings_layout.py:53
+#: app/admin/settings_layout.py:58
 msgid "Auto-recover the modem"
 msgstr "Автовосстановление модема"
 
-#: app/admin/settings_layout.py:54
+#: app/admin/settings_layout.py:59
 msgid "Automatically recover the modem when it loses network registration."
 msgstr "Автоматически восстанавливать модем при потере регистрации в сети."
 
-#: app/admin/settings_layout.py:55
+#: app/admin/settings_layout.py:60
 msgid "Recover on repeated send failures too"
 msgstr "Восстанавливать и при повторных сбоях отправки"
 
-#: app/admin/settings_layout.py:56
+#: app/admin/settings_layout.py:61
 msgid ""
 "Also treat repeated send failures as a reason to recover the modem. Off "
 "means only lost registration triggers recovery."
@@ -65,41 +65,41 @@ msgstr ""
 "Считать повторные сбои отправки поводом для восстановления модема. Выкл —"
 " восстановление только при потере регистрации."
 
-#: app/admin/settings_layout.py:58
+#: app/admin/settings_layout.py:63
 msgid "Default country for phone numbers"
 msgstr "Страна по умолчанию для телефонных номеров"
 
-#: app/admin/settings_layout.py:59
+#: app/admin/settings_layout.py:64
 msgid "ISO country code used to validate phone numbers, e.g. RU, US, GB."
 msgstr "Код страны ISO для проверки телефонных номеров, например RU, US, GB."
 
-#: app/admin/settings_layout.py:60
+#: app/admin/settings_layout.py:65
 msgid "Give up waiting for delivery after"
 msgstr "Перестать ждать доставку после"
 
-#: app/admin/settings_layout.py:61
+#: app/admin/settings_layout.py:66
 msgid "Seconds after which a message stuck as \"sent\" is marked \"expired\"."
 msgstr ""
 "Через сколько секунд сообщение, застрявшее в статусе «отправлено», "
 "помечается «просрочено»."
 
-#: app/admin/settings_layout.py:62
+#: app/admin/settings_layout.py:67
 msgid "Block a number after this many failures"
 msgstr "Блокировать номер после стольких сбоев"
 
-#: app/admin/settings_layout.py:63
+#: app/admin/settings_layout.py:68
 msgid "How many permanent failures in a row before a number is blocked."
 msgstr "Сколько подряд окончательных сбоев до блокировки номера."
 
-#: app/admin/settings_layout.py:65
+#: app/admin/settings_layout.py:70
 msgid "Telegram alerts"
 msgstr "Уведомления в Телеграм"
 
-#: app/admin/settings_layout.py:66
+#: app/admin/settings_layout.py:71
 msgid "Telegram bot token"
 msgstr "Токен Telegram-бота"
 
-#: app/admin/settings_layout.py:67
+#: app/admin/settings_layout.py:72
 msgid ""
 "The alerting bot's own API token. Blank disables Telegram alerting "
 "entirely."
@@ -107,19 +107,19 @@ msgstr ""
 "Собственный API-токен бота для уведомлений. Пусто — уведомления в "
 "Телеграм полностью выключены."
 
-#: app/admin/settings_layout.py:69
+#: app/admin/settings_layout.py:74
 msgid "Where alerts go — the Telegram chat"
 msgstr "Куда приходят алерты — чат Телеграма"
 
-#: app/admin/settings_layout.py:70
+#: app/admin/settings_layout.py:75
 msgid "The chat id alerts are sent to."
 msgstr "Id чата, куда отправляются алерты."
 
-#: app/admin/settings_layout.py:71
+#: app/admin/settings_layout.py:76
 msgid "Name shown in notifications"
 msgstr "Имя, показываемое в уведомлениях"
 
-#: app/admin/settings_layout.py:72
+#: app/admin/settings_layout.py:77
 msgid ""
 "Label shown in every notification, so alerts from several gateways can be"
 " told apart. Blank uses the server's hostname."
@@ -127,35 +127,35 @@ msgstr ""
 "Метка в каждом уведомлении — чтобы отличать алерты разных шлюзов. Пусто —"
 " имя хоста сервера."
 
-#: app/admin/settings_layout.py:74
+#: app/admin/settings_layout.py:79
 msgid "Notify on system errors"
 msgstr "Уведомлять о системных ошибках"
 
-#: app/admin/settings_layout.py:75
+#: app/admin/settings_layout.py:80
 msgid "Send crashes and exceptions (error-level log records) to Telegram."
 msgstr "Отправлять в Телеграм сбои и исключения (записи журнала уровня error)."
 
-#: app/admin/settings_layout.py:76
+#: app/admin/settings_layout.py:81
 msgid "Notify when a send fails"
 msgstr "Уведомлять о сбое отправки"
 
-#: app/admin/settings_layout.py:77
+#: app/admin/settings_layout.py:82
 msgid "Notify when an outbound SMS fails to send."
 msgstr "Уведомлять, когда исходящая SMS не отправилась."
 
-#: app/admin/settings_layout.py:78
+#: app/admin/settings_layout.py:83
 msgid "Notify on delivery failure"
 msgstr "Уведомлять о сбое доставки"
 
-#: app/admin/settings_layout.py:79
+#: app/admin/settings_layout.py:84
 msgid "Notify on a delivery failure, or when a number is blacklisted."
 msgstr "Уведомлять о сбое доставки или о попадании номера в чёрный список."
 
-#: app/admin/settings_layout.py:80
+#: app/admin/settings_layout.py:85
 msgid "Notify on an unmatched delivery report"
 msgstr "Уведомлять о несопоставленном отчёте о доставке"
 
-#: app/admin/settings_layout.py:81
+#: app/admin/settings_layout.py:86
 msgid ""
 "Notify when a delivery report could not be matched to any message. The "
 "report itself is recorded either way."
@@ -163,21 +163,21 @@ msgstr ""
 "Уведомлять, если отчёт о доставке не удалось сопоставить ни с одним "
 "сообщением. Сам отчёт при этом всё равно записывается."
 
-#: app/admin/settings_layout.py:83
+#: app/admin/settings_layout.py:88
 msgid "Notify on every inbound SMS"
 msgstr "Уведомлять о каждой входящей SMS"
 
-#: app/admin/settings_layout.py:84
+#: app/admin/settings_layout.py:89
 msgid "Notify on every inbound SMS received. Can be noisy on a busy gateway."
 msgstr ""
 "Уведомлять о каждой полученной входящей SMS. На загруженном шлюзе может "
 "быть много уведомлений."
 
-#: app/admin/settings_layout.py:85
+#: app/admin/settings_layout.py:90
 msgid "Notify when an inbound webhook fails"
 msgstr "Уведомлять о сбое входящего вебхука"
 
-#: app/admin/settings_layout.py:86
+#: app/admin/settings_layout.py:91
 msgid ""
 "Notify when delivering an inbound SMS to the application's webhook fails "
 "— otherwise the drop is silent."
@@ -185,21 +185,21 @@ msgstr ""
 "Уведомлять, когда доставка входящей SMS на вебхук приложения не удалась —"
 " иначе потеря останется незамеченной."
 
-#: app/admin/settings_layout.py:88
+#: app/admin/settings_layout.py:93
 msgid "Notify when a route is refused"
 msgstr "Уведомлять об отказе маршрута"
 
-#: app/admin/settings_layout.py:89
+#: app/admin/settings_layout.py:94
 msgid "Notify when a route is refused, unreadable, or cannot be attempted at all."
 msgstr ""
 "Уведомлять, когда маршрут отказал, не читается или его вообще нельзя "
 "попробовать."
 
-#: app/admin/settings_layout.py:91
+#: app/admin/settings_layout.py:96
 msgid "Allow replying to alerts to send an SMS"
 msgstr "Разрешить отвечать на алерты для отправки SMS"
 
-#: app/admin/settings_layout.py:92
+#: app/admin/settings_layout.py:97
 msgid ""
 "Reply to a notification in Telegram to send an SMS back. Takes effect "
 "after a restart."
@@ -207,15 +207,15 @@ msgstr ""
 "Ответ на уведомление в Телеграме отправляет SMS в ответ. Действует после "
 "перезапуска."
 
-#: app/admin/settings_layout.py:95
+#: app/admin/settings_layout.py:100
 msgid "Number verification"
 msgstr "Проверка номера"
 
-#: app/admin/settings_layout.py:96
+#: app/admin/settings_layout.py:101
 msgid "Order of verification rungs"
 msgstr "Порядок ступеней проверки"
 
-#: app/admin/settings_layout.py:97
+#: app/admin/settings_layout.py:102
 msgid ""
 "Comma-separated list of rungs offered, cheapest first. A rung nothing can"
 " prove is never offered, whatever its place here."
@@ -223,11 +223,11 @@ msgstr ""
 "Ступени через запятую, от дешёвой к дорогой. Ступень, которую нечем "
 "подтвердить, не предлагается — независимо от места в списке."
 
-#: app/admin/settings_layout.py:99
+#: app/admin/settings_layout.py:104
 msgid "The gateway's own phone number"
 msgstr "Собственный номер шлюза"
 
-#: app/admin/settings_layout.py:100
+#: app/admin/settings_layout.py:105
 msgid ""
 "The number a subscriber must call or text. Blank means the rungs that "
 "need it are never offered."
@@ -235,19 +235,19 @@ msgstr ""
 "Номер, на который абонент должен позвонить или написать. Пусто — ступени,"
 " которым он нужен, не предлагаются."
 
-#: app/admin/settings_layout.py:102
+#: app/admin/settings_layout.py:107
 msgid "How long a verification stays open"
 msgstr "Сколько верификация остаётся открытой"
 
-#: app/admin/settings_layout.py:103
+#: app/admin/settings_layout.py:108
 msgid "Seconds before an open verification expires."
 msgstr "Через сколько секунд открытая верификация истекает."
 
-#: app/admin/settings_layout.py:104
+#: app/admin/settings_layout.py:109
 msgid "How long the call-in rung stays open"
 msgstr "Сколько открыта ступень обратного звонка"
 
-#: app/admin/settings_layout.py:105
+#: app/admin/settings_layout.py:110
 msgid ""
 "Seconds a call_in verification stays open; capped by how long the "
 "verification itself stays open, above."
@@ -255,11 +255,11 @@ msgstr ""
 "Сколько секунд открыта верификация через call_in; не может быть дольше, "
 "чем время выше."
 
-#: app/admin/settings_layout.py:107
+#: app/admin/settings_layout.py:112
 msgid "Wrong codes allowed"
 msgstr "Допустимо неверных кодов"
 
-#: app/admin/settings_layout.py:108
+#: app/admin/settings_layout.py:113
 msgid ""
 "How many wrong codes are tolerated before a verification stops accepting "
 "any."
@@ -267,28 +267,27 @@ msgstr ""
 "Сколько неверных кодов допускается, прежде чем верификация перестанет "
 "принимать любые."
 
-#: app/admin/settings_layout.py:110
+#: app/admin/settings_layout.py:115
 msgid "SMS wording for verification codes"
 msgstr "Текст SMS с кодом подтверждения"
 
-#: app/admin/settings_layout.py:111
-#, python-brace-format
+#: app/admin/settings_layout.py:116
 msgid ""
-"JSON list, one template per application, exactly one {code} placeholder "
-"each. An application with no entry never gets a code by SMS."
+"Set on each application's own page (Apps), not here — an application with"
+" no template there never gets a code by SMS."
 msgstr ""
-"JSON-список, один шаблон на приложение, ровно один плейсхолдер {code} в "
-"каждом. Приложению без записи код по SMS не отправляется."
+"Настраивается на странице самого приложения (Приложения), а не здесь — "
+"без записи там приложению код по SMS не отправляется."
 
-#: app/admin/settings_layout.py:114
+#: app/admin/settings_layout.py:119
 msgid "Routes by operator"
 msgstr "Маршруты по операторам"
 
-#: app/admin/settings_layout.py:115
+#: app/admin/settings_layout.py:120
 msgid "Which way out each operator takes"
 msgstr "Каким путём уходит трафик каждого оператора"
 
-#: app/admin/settings_layout.py:116
+#: app/admin/settings_layout.py:121
 msgid ""
 "JSON list naming the routes tried for each operator, in order. \"*\" "
 "answers for an operator with no entry, \"?\" for one that could not be "
@@ -297,11 +296,11 @@ msgstr ""
 "JSON-список маршрутов для каждого оператора, по порядку. «*» — для "
 "оператора без записи, «?» — для того, который не удалось определить."
 
-#: app/admin/settings_layout.py:119
+#: app/admin/settings_layout.py:124
 msgid "Flag a routing rule after this many days"
 msgstr "Отмечать правило маршрутизации после стольких дней"
 
-#: app/admin/settings_layout.py:120
+#: app/admin/settings_layout.py:125
 msgid ""
 "Report a routing-rule entry that has stood this many days without being "
 "revisited — a rule set during an outage can outlive it."
@@ -309,23 +308,23 @@ msgstr ""
 "Сообщать о записи правила маршрутизации, которая стоит без пересмотра "
 "столько дней — правило, заданное на время сбоя, может его пережить."
 
-#: app/admin/settings_layout.py:122
+#: app/admin/settings_layout.py:127
 msgid "Look up the operator for a number"
 msgstr "Определять оператора номера"
 
-#: app/admin/settings_layout.py:123
+#: app/admin/settings_layout.py:128
 msgid "Enable looking up a number's operator and region."
 msgstr "Включить определение оператора и региона номера."
 
-#: app/admin/settings_layout.py:125
+#: app/admin/settings_layout.py:130
 msgid "Vendors"
 msgstr "Поставщики"
 
-#: app/admin/settings_layout.py:126
+#: app/admin/settings_layout.py:131
 msgid "Telegram Gateway API token"
 msgstr "API-токен Telegram Gateway"
 
-#: app/admin/settings_layout.py:127
+#: app/admin/settings_layout.py:132
 msgid ""
 "Access token for the Telegram Gateway verification rung. Blank means that"
 " rung is never offered."
@@ -333,11 +332,11 @@ msgstr ""
 "Токен доступа для ступени проверки через Telegram Gateway. Пусто — эта "
 "ступень не предлагается."
 
-#: app/admin/settings_layout.py:129
+#: app/admin/settings_layout.py:134
 msgid "Telegram Gateway sender channel"
 msgstr "Канал-отправитель Telegram Gateway"
 
-#: app/admin/settings_layout.py:130
+#: app/admin/settings_layout.py:135
 msgid ""
 "Username of the verified Telegram channel codes are sent from. Blank uses"
 " the vendor's own sender."
@@ -345,11 +344,11 @@ msgstr ""
 "Имя пользователя верифицированного канала Телеграма, от которого "
 "отправляются коды. Пусто — отправитель по умолчанию у вендора."
 
-#: app/admin/settings_layout.py:132
+#: app/admin/settings_layout.py:137
 msgid "This gateway's public address for delivery reports"
 msgstr "Публичный адрес этого шлюза для отчётов о доставке"
 
-#: app/admin/settings_layout.py:134
+#: app/admin/settings_layout.py:139
 msgid ""
 "This gateway's own public HTTPS address, so the Telegram Gateway can "
 "report deliveries back to it, e.g. https://sms.example.org. Blank means "
@@ -359,11 +358,11 @@ msgstr ""
 " сообщать сюда о доставке, например https://sms.example.org. Пусто — "
 "отчётов о доставке и возвратов не будет вовсе."
 
-#: app/admin/settings_layout.py:137
+#: app/admin/settings_layout.py:142
 msgid "uCaller secret key"
 msgstr "Секретный ключ uCaller"
 
-#: app/admin/settings_layout.py:138
+#: app/admin/settings_layout.py:143
 msgid ""
 "The secret key half of the uCaller credential, from the cabinet under "
 "\"Мои сервисы\". Blank means the flash_call rung is never offered."
@@ -371,33 +370,35 @@ msgstr ""
 "Половина учётных данных uCaller — секретный ключ, из личного кабинета, "
 "раздел «Мои сервисы». Пусто — ступень flash_call не предлагается."
 
-#: app/admin/settings_layout.py:140
+#: app/admin/settings_layout.py:145
 msgid "uCaller service id"
 msgstr "Id сервиса uCaller"
 
-#: app/admin/settings_layout.py:141
+#: app/admin/settings_layout.py:146
 msgid ""
 "The service id half of the uCaller credential, the second half of the "
 "pair above."
 msgstr "Вторая половина учётных данных uCaller — id сервиса, пара к ключу выше."
 
-#: app/admin/settings_layout.py:143
+#: app/admin/settings_layout.py:148
 msgid "Messenger accounts and brands"
 msgstr "Аккаунты мессенджеров и бренды"
 
-#: app/admin/settings_layout.py:144
+#: app/admin/settings_layout.py:149
 msgid ""
-"JSON: which application may send under which brand, and the account each "
-"brand owns on each messenger."
+"JSON: the account each brand owns on each messenger. Which application "
+"may send under which brand is set on that application's own page (Apps), "
+"not here."
 msgstr ""
-"JSON: какое приложение может отправлять под каким брендом и какой аккаунт"
-" у бренда в каждом мессенджере."
+"JSON: какой аккаунт закреплён за каждым брендом на каждом мессенджере. "
+"Какому приложению доступен какой бренд — настраивается на странице самого"
+" приложения (Приложения), а не здесь."
 
-#: app/admin/settings_layout.py:146
+#: app/admin/settings_layout.py:152
 msgid "Messenger sending limits"
 msgstr "Лимиты отправки в мессенджерах"
 
-#: app/admin/settings_layout.py:147
+#: app/admin/settings_layout.py:153
 msgid ""
 "JSON: hourly and daily sending maxima per account, and the minimum time "
 "between two messages to the same recipient."
@@ -405,15 +406,15 @@ msgstr ""
 "JSON: максимумы отправки в час и в сутки на аккаунт, а также минимальный "
 "интервал между двумя сообщениями одному получателю."
 
-#: app/admin/settings_layout.py:150
+#: app/admin/settings_layout.py:156
 msgid "Money limits and protection"
 msgstr "Лимиты и защита денег"
 
-#: app/admin/settings_layout.py:151
+#: app/admin/settings_layout.py:157
 msgid "Paid verifications allowed per hour"
 msgstr "Лимит платных проверок в час"
 
-#: app/admin/settings_layout.py:152
+#: app/admin/settings_layout.py:158
 msgid ""
 "How many paid rungs (call or Telegram) this gateway may attempt per "
 "rolling hour, across every number and application together."
@@ -421,11 +422,11 @@ msgstr ""
 "Сколько платных ступеней (звонок или Телеграм) шлюз может попробовать за "
 "скользящий час — суммарно по всем номерам и приложениям."
 
-#: app/admin/settings_layout.py:154
+#: app/admin/settings_layout.py:160
 msgid "Paid verifications allowed per day"
 msgstr "Лимит платных проверок в сутки"
 
-#: app/admin/settings_layout.py:155
+#: app/admin/settings_layout.py:161
 msgid ""
 "How many paid rungs this gateway may attempt per rolling day, across "
 "every number and application together."
@@ -433,11 +434,11 @@ msgstr ""
 "Сколько платных ступеней шлюз может попробовать за скользящие сутки — "
 "суммарно по всем номерам и приложениям."
 
-#: app/admin/settings_layout.py:157
+#: app/admin/settings_layout.py:163
 msgid "Alert below this Telegram Gateway balance"
 msgstr "Алерт при балансе Telegram Gateway ниже"
 
-#: app/admin/settings_layout.py:158
+#: app/admin/settings_layout.py:164
 msgid ""
 "Alert when the last-seen Telegram Gateway balance falls below this, in "
 "the vendor's own units."
@@ -445,11 +446,11 @@ msgstr ""
 "Алерт, когда последний известный баланс Telegram Gateway опускается ниже "
 "этого значения, в собственных единицах вендора."
 
-#: app/admin/settings_layout.py:160
+#: app/admin/settings_layout.py:166
 msgid "Alert below this uCaller balance"
 msgstr "Алерт при балансе uCaller ниже"
 
-#: app/admin/settings_layout.py:161
+#: app/admin/settings_layout.py:167
 msgid ""
 "Alert when the uCaller balance falls below this. 0 means not configured —"
 " there is no account to watch yet."
@@ -457,11 +458,11 @@ msgstr ""
 "Алерт, когда баланс uCaller опускается ниже этого значения. 0 — не "
 "настроено, аккаунта для отслеживания пока нет."
 
-#: app/admin/settings_layout.py:163
+#: app/admin/settings_layout.py:169
 msgid "Minimum time between two paid attempts"
 msgstr "Минимальный интервал между двумя платными попытками"
 
-#: app/admin/settings_layout.py:164
+#: app/admin/settings_layout.py:170
 msgid ""
 "Seconds that must pass between two paid verification attempts on the same"
 " number."
@@ -469,31 +470,31 @@ msgstr ""
 "Сколько секунд должно пройти между двумя платными попытками проверки "
 "одного номера."
 
-#: app/admin/settings_layout.py:166
+#: app/admin/settings_layout.py:172
 msgid "Paid attempts per number per minute"
 msgstr "Платных попыток на номер в минуту"
 
-#: app/admin/settings_layout.py:167
+#: app/admin/settings_layout.py:173
 msgid "How many paid attempts one number may have within a rolling minute."
 msgstr "Сколько платных попыток допустимо для одного номера за скользящую минуту."
 
-#: app/admin/settings_layout.py:168
+#: app/admin/settings_layout.py:174
 msgid "Paid attempts per number per day"
 msgstr "Платных попыток на номер в сутки"
 
-#: app/admin/settings_layout.py:169
+#: app/admin/settings_layout.py:175
 msgid "How many paid attempts one number may have within a rolling day."
 msgstr "Сколько платных попыток допустимо для одного номера за скользящие сутки."
 
-#: app/admin/settings_layout.py:171
+#: app/admin/settings_layout.py:177
 msgid "Webhooks"
 msgstr "Вебхуки"
 
-#: app/admin/settings_layout.py:172
+#: app/admin/settings_layout.py:178
 msgid "Inbound SMS webhooks"
 msgstr "Вебхуки входящих SMS"
 
-#: app/admin/settings_layout.py:173
+#: app/admin/settings_layout.py:179
 #, python-brace-format
 msgid ""
 "JSON list of routes that receive inbound SMS by prefix, e.g. "
@@ -502,38 +503,31 @@ msgstr ""
 "JSON-список маршрутов, получающих входящие SMS по префиксу, напр. "
 "[{\"prefix\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
 
-#: app/admin/settings_layout.py:175
+#: app/admin/settings_layout.py:181
 msgid "Delivery status webhooks"
 msgstr "Вебхуки статусов доставки"
 
-#: app/admin/settings_layout.py:176
-#, python-brace-format
-msgid ""
-"JSON list of routes that receive outbound delivery statuses by "
-"application, e.g. "
-"[{\"app_id\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
-msgstr ""
-"JSON-список маршрутов, получающих статусы исходящей доставки по "
-"приложению, напр. "
-"[{\"app_id\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
+#: app/admin/settings_layout.py:182
+msgid "Set on each application's own page (Apps), not here."
+msgstr "Настраивается на странице самого приложения (Приложения), а не здесь."
 
-#: app/admin/settings_layout.py:180
+#: app/admin/settings_layout.py:184
 msgid "Advanced"
 msgstr "Дополнительно"
 
-#: app/admin/settings_layout.py:181
+#: app/admin/settings_layout.py:185
 msgid "Suppress repeated identical alerts for"
 msgstr "Не повторять одинаковый алерт в течение"
 
-#: app/admin/settings_layout.py:182
+#: app/admin/settings_layout.py:186
 msgid "Seconds during which an identical alert is not sent again."
 msgstr "Сколько секунд одинаковый алерт не отправляется повторно."
 
-#: app/admin/settings_layout.py:183
+#: app/admin/settings_layout.py:187
 msgid "Backup relay for alerts"
 msgstr "Резервный релей для алертов"
 
-#: app/admin/settings_layout.py:184
+#: app/admin/settings_layout.py:188
 msgid ""
 "Base URL of a relay that can reach Telegram when this host cannot. Tried "
 "first; the direct route is the fallback. Blank disables the relay."
@@ -541,27 +535,27 @@ msgstr ""
 "Базовый URL релея, который достаёт до Телеграма, когда этот хост не "
 "может. Пробуется первым, прямой путь — запасной. Пусто — релей выключен."
 
-#: app/admin/settings_layout.py:187
+#: app/admin/settings_layout.py:191
 msgid "Webhook POST retries"
 msgstr "Повторов POST для вебхука"
 
-#: app/admin/settings_layout.py:188
+#: app/admin/settings_layout.py:192
 msgid "How many times delivery of an inbound webhook is retried."
 msgstr "Сколько раз повторяется доставка входящего вебхука."
 
-#: app/admin/settings_layout.py:189
+#: app/admin/settings_layout.py:193
 msgid "Webhook POST timeout"
 msgstr "Таймаут POST для вебхука"
 
-#: app/admin/settings_layout.py:190
+#: app/admin/settings_layout.py:194
 msgid "Seconds to wait for a webhook POST to answer."
 msgstr "Сколько секунд ждать ответа на POST вебхука."
 
-#: app/admin/settings_layout.py:191
+#: app/admin/settings_layout.py:195
 msgid "Precondition probe budget"
 msgstr "Бюджет времени на проверку условий"
 
-#: app/admin/settings_layout.py:192
+#: app/admin/settings_layout.py:196
 msgid ""
 "Seconds allowed for the whole set of precondition probes together, before"
 " offering a rung."
@@ -569,11 +563,11 @@ msgstr ""
 "Сколько секунд отводится на все проверки условий вместе, прежде чем "
 "предложить ступень."
 
-#: app/admin/settings_layout.py:194
+#: app/admin/settings_layout.py:198
 msgid "Verification ladder time budget"
 msgstr "Бюджет времени на лестницу верификации"
 
-#: app/admin/settings_layout.py:195
+#: app/admin/settings_layout.py:199
 msgid ""
 "Seconds allowed for the whole ladder once a rung has been selected — one "
 "bound for every rung together, never one each."
@@ -581,11 +575,11 @@ msgstr ""
 "Сколько секунд отводится на всю лестницу после выбора ступени — один "
 "бюджет на все ступени вместе, а не на каждую по отдельности."
 
-#: app/admin/settings_layout.py:197
+#: app/admin/settings_layout.py:201
 msgid "How stale a proof may be"
 msgstr "Насколько старым может быть подтверждение"
 
-#: app/admin/settings_layout.py:198
+#: app/admin/settings_layout.py:202
 msgid ""
 "Refuse a route whose precondition was last proven longer ago than this, "
 "in seconds."
@@ -593,19 +587,19 @@ msgstr ""
 "Отклонять маршрут, чьё условие подтверждено раньше этого срока, в "
 "секундах."
 
-#: app/admin/settings_layout.py:200
+#: app/admin/settings_layout.py:204
 msgid "Keep finished verifications for"
 msgstr "Хранить завершённые верификации"
 
-#: app/admin/settings_layout.py:201
+#: app/admin/settings_layout.py:205
 msgid "Delete finished verifications after this many days."
 msgstr "Удалять завершённые верификации через столько дней."
 
-#: app/admin/settings_layout.py:202
+#: app/admin/settings_layout.py:206
 msgid "Length of the daily ceiling window"
 msgstr "Длина окна суточного лимита"
 
-#: app/admin/settings_layout.py:203
+#: app/admin/settings_layout.py:207
 msgid ""
 "The window the daily paid-attempt ceilings count in, rolling backwards "
 "from now, in hours."
@@ -613,11 +607,11 @@ msgstr ""
 "Окно, в котором считаются суточные лимиты платных попыток, скользящее "
 "назад от текущего момента, в часах."
 
-#: app/admin/settings_layout.py:206
+#: app/admin/settings_layout.py:210
 msgid "Callback signature time tolerance"
 msgstr "Допустимое отклонение времени в подписи вебхука"
 
-#: app/admin/settings_layout.py:207
+#: app/admin/settings_layout.py:211
 msgid ""
 "Refuse a signed Telegram Gateway callback whose timestamp is further than"
 " this from now, in seconds — guards against replay."
@@ -626,11 +620,11 @@ msgstr ""
 "отстоит от текущего момента больше, чем на это значение в секундах — "
 "защита от повтора."
 
-#: app/admin/settings_layout.py:209
+#: app/admin/settings_layout.py:213
 msgid "Operator lookup time budget"
 msgstr "Бюджет времени на определение оператора"
 
-#: app/admin/settings_layout.py:210
+#: app/admin/settings_layout.py:214
 msgid ""
 "How long the sender waits for an unknown recipient's operator before "
 "routing by the rule's \"?\" entry, in seconds. The lookup itself keeps "
@@ -640,35 +634,35 @@ msgstr ""
 "получателя, прежде чем маршрутизировать по записи «?» правила. Само "
 "определение при этом продолжается в любом случае."
 
-#: app/admin/settings_layout.py:213
+#: app/admin/settings_layout.py:217
 msgid "Operator lookup endpoint"
 msgstr "Адрес для определения оператора"
 
-#: app/admin/settings_layout.py:214
+#: app/admin/settings_layout.py:218
 msgid "The URL used to look up a number's operator and region."
 msgstr "URL, по которому определяются оператор и регион номера."
 
-#: app/admin/settings_layout.py:215
+#: app/admin/settings_layout.py:219
 msgid "Operator lookup timeout"
 msgstr "Таймаут определения оператора"
 
-#: app/admin/settings_layout.py:216
+#: app/admin/settings_layout.py:220
 msgid "Seconds allowed for one operator-lookup request."
 msgstr "Сколько секунд отводится на один запрос определения оператора."
 
-#: app/admin/settings_layout.py:217
+#: app/admin/settings_layout.py:221
 msgid "Re-check an operator after"
 msgstr "Перепроверять оператора через"
 
-#: app/admin/settings_layout.py:218
+#: app/admin/settings_layout.py:222
 msgid "Days after which a cached operator/region lookup is refreshed."
 msgstr "Через сколько дней кэш оператора и региона обновляется."
 
-#: app/admin/settings_layout.py:219
+#: app/admin/settings_layout.py:223
 msgid "Ignore delivery reports older than"
 msgstr "Игнорировать отчёты о доставке старше"
 
-#: app/admin/settings_layout.py:220
+#: app/admin/settings_layout.py:224
 msgid ""
 "Stop considering a delivery report once the message it names is older "
 "than this many hours. The report is still recorded."
@@ -676,11 +670,11 @@ msgstr ""
 "Не учитывать отчёт о доставке, если названное в нём сообщение старше "
 "стольких часов. Сам отчёт всё равно записывается."
 
-#: app/admin/settings_layout.py:223
+#: app/admin/settings_layout.py:227
 msgid "Refuse contradicting delivery reports"
 msgstr "Отклонять противоречащие отчёты о доставке"
 
-#: app/admin/settings_layout.py:224
+#: app/admin/settings_layout.py:228
 msgid ""
 "Refuse a delivery report whose recipient address contradicts the only "
 "candidate message, instead of recording the contradiction and attributing"
@@ -709,6 +703,145 @@ msgstr "Год"
 #: app/admin/templates/_period.html:11
 msgid "All time"
 msgstr "Всё время"
+
+#: app/admin/templates/app_detail.html:3
+msgid "All applications"
+msgstr "Все приложения"
+
+#: app/admin/templates/app_detail.html:8
+msgid ""
+"There is no application with this id — these are its leftover records; "
+"they can be removed here."
+msgstr ""
+"Приложения с таким id нет — это оставшиеся записи; их можно убрать здесь."
+
+#: app/admin/templates/app_detail.html:12 app/admin/templates/apps.html:25
+msgid "Active"
+msgstr "Активно"
+
+#: app/admin/templates/app_detail.html:12
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
+#: app/admin/templates/apps.html:41 app/admin/templates/apps.html:42
+#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
+#: app/admin/templates/settings.html:93
+msgid "yes"
+msgstr "да"
+
+#: app/admin/templates/app_detail.html:12
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:41
+#: app/admin/templates/apps.html:42 app/admin/templates/settings.html:93
+msgid "no"
+msgstr "нет"
+
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:25
+msgid "May spend"
+msgstr "Может тратить"
+
+#: app/admin/templates/app_detail.html:15
+msgid "switched on the applications list"
+msgstr "переключается в списке приложений"
+
+#: app/admin/templates/app_detail.html:24
+msgid "SMS text with the code"
+msgstr "Текст SMS с кодом"
+
+#: app/admin/templates/app_detail.html:25
+#: app/admin/templates/app_detail.html:46
+#: app/admin/templates/app_detail.html:91 app/admin/templates/settings.html:18
+msgid "unsaved"
+msgstr "не сохранено"
+
+#: app/admin/templates/app_detail.html:28
+#: app/admin/templates/app_detail.html:49
+#: app/admin/templates/app_detail.html:93 app/admin/templates/settings.html:151
+#: app/admin/templates/settings.html:163
+msgid "Saved"
+msgstr "Сохранено"
+
+#: app/admin/templates/app_detail.html:31
+#, python-brace-format
+msgid ""
+"Exactly one {code} placeholder. Empty — no entry, and this application "
+"will not get a code by SMS (the call and Telegram rungs still work). "
+"Count {code} as 6 characters when judging length."
+msgstr ""
+"Ровно одно место для кода — {code}. Пусто — записи нет, и это приложение "
+"не получит код по SMS (звонок и Телеграм всё равно работают). При "
+"подсчёте длины {code} считайте за 6 знаков."
+
+#: app/admin/templates/app_detail.html:35
+#: app/admin/templates/app_detail.html:75
+#: app/admin/templates/app_detail.html:105 app/admin/templates/settings.html:64
+msgid "error"
+msgstr "ошибка"
+
+#: app/admin/templates/app_detail.html:36
+#: app/admin/templates/app_detail.html:76
+#: app/admin/templates/app_detail.html:106
+msgid "Save"
+msgstr "Сохранить"
+
+#: app/admin/templates/app_detail.html:45
+msgid "Delivery status webhook"
+msgstr "Вебхук отчётов о доставке"
+
+#: app/admin/templates/app_detail.html:53
+#, python-format
+msgid "%(n)s more record(s) for this application do not act — the first one wins"
+msgstr "ещё %(n)s записей для этого приложения не действуют — первая побеждает"
+
+#: app/admin/templates/app_detail.html:58
+msgid "Webhook URL"
+msgstr "URL вебхука"
+
+#: app/admin/templates/app_detail.html:62
+msgid "Bearer"
+msgstr "Bearer"
+
+#: app/admin/templates/app_detail.html:65
+msgid "configured (blank — keep)"
+msgstr "задан (пусто — оставить)"
+
+#: app/admin/templates/app_detail.html:65
+msgid "not configured"
+msgstr "не задан"
+
+#: app/admin/templates/app_detail.html:70
+msgid "remove the bearer"
+msgstr "убрать bearer"
+
+#: app/admin/templates/app_detail.html:82
+msgid "Messenger brands"
+msgstr "Бренды мессенджеров"
+
+#: app/admin/templates/app_detail.html:85
+msgid "No brands are set up — that is done in Settings, section Vendors."
+msgstr "Бренды не заведены — это делается в Настройках, раздел «Поставщики»."
+
+#: app/admin/templates/app_detail.html:86 app/admin/templates/base.html:96
+#: app/admin/templates/settings.html:3
+msgid "Settings"
+msgstr "Настройки"
+
+#: app/admin/templates/app_detail.html:96
+msgid "Brand"
+msgstr "Бренд"
+
+#: app/admin/templates/app_detail.html:96
+msgid "Allowed"
+msgstr "Разрешён"
+
+#: app/admin/templates/app_detail.html:96
+msgid "Default"
+msgstr "По умолчанию"
+
+#: app/admin/templates/app_detail.html:141
+msgid "characters:"
+msgstr "символов:"
+
+#: app/admin/templates/app_detail.html:141
+msgid "SMS parts:"
+msgstr "SMS:"
 
 #: app/admin/templates/apps.html:3
 msgid "Client apps"
@@ -748,33 +881,26 @@ msgid "Messages"
 msgstr "Сообщения"
 
 #: app/admin/templates/apps.html:25
-msgid "Active"
-msgstr "Активно"
+msgid "SMS text"
+msgstr "Текст SMS"
 
-#: app/admin/templates/apps.html:25
-msgid "May spend"
-msgstr "Может тратить"
+#: app/admin/templates/apps.html:34
+msgid "unreadable"
+msgstr "не читается"
 
-#: app/admin/templates/apps.html:32 app/admin/templates/apps.html:33
-#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
-#: app/admin/templates/settings.html:91
-msgid "yes"
-msgstr "да"
+#: app/admin/templates/apps.html:38
+msgid "no — no code will be sent by SMS"
+msgstr "нет — код по SMS не уйдёт"
 
-#: app/admin/templates/apps.html:32 app/admin/templates/apps.html:33
-#: app/admin/templates/settings.html:91
-msgid "no"
-msgstr "нет"
-
-#: app/admin/templates/apps.html:39
+#: app/admin/templates/apps.html:48
 msgid "Deactivate"
 msgstr "Деактивировать"
 
-#: app/admin/templates/apps.html:39
+#: app/admin/templates/apps.html:48
 msgid "Activate"
 msgstr "Активировать"
 
-#: app/admin/templates/apps.html:42
+#: app/admin/templates/apps.html:51
 #, python-format
 msgid ""
 "Allow %(app_id)s to spend money on paid verifications? Calls and Telegram"
@@ -783,25 +909,29 @@ msgstr ""
 "Разрешить приложению %(app_id)s тратить деньги на платные подтверждения? "
 "Звонок и Telegram оплачиваются с наших счетов."
 
-#: app/admin/templates/apps.html:45
+#: app/admin/templates/apps.html:54
 msgid "Revoke spending"
 msgstr "Запретить траты"
 
-#: app/admin/templates/apps.html:45
+#: app/admin/templates/apps.html:54
 msgid "Allow spending"
 msgstr "Разрешить траты"
 
-#: app/admin/templates/apps.html:49
+#: app/admin/templates/apps.html:58
 msgid "Delete app"
 msgstr "Удалить приложение"
 
-#: app/admin/templates/apps.html:51 app/admin/templates/messages.html:124
+#: app/admin/templates/apps.html:60 app/admin/templates/messages.html:124
 msgid "Delete"
 msgstr "Удалить"
 
-#: app/admin/templates/apps.html:54
+#: app/admin/templates/apps.html:63
 msgid "internal"
 msgstr "внутреннее"
+
+#: app/admin/templates/apps.html:71
+msgid "Records of deleted applications remain"
+msgstr "Остались записи удалённых приложений"
 
 #: app/admin/templates/base.html:91
 msgid "SMS"
@@ -819,13 +949,9 @@ msgstr "Префиксы"
 msgid "Statistics"
 msgstr "Статистика"
 
-#: app/admin/templates/base.html:95
+#: app/admin/templates/base.html:95 app/admin/templates/settings.html:39
 msgid "Apps"
 msgstr "Приложения"
-
-#: app/admin/templates/base.html:96 app/admin/templates/settings.html:3
-msgid "Settings"
-msgstr "Настройки"
 
 #: app/admin/templates/base.html:97
 msgid "Modem"
@@ -1097,90 +1223,86 @@ msgstr "Проверено"
 msgid "Cache is empty"
 msgstr "Кэш пуст"
 
-#: app/admin/templates/settings.html:18
-msgid "unsaved"
-msgstr "не сохранено"
-
 #: app/admin/templates/settings.html:23
 #, python-format
 msgid "changed: %(n)s"
 msgstr "изменено: %(n)s"
 
 #: app/admin/templates/settings.html:39
+msgid "set on the application's own page"
+msgstr "настраивается на странице приложения"
+
+#: app/admin/templates/settings.html:41
 msgid "configured (blank = keep)"
 msgstr "задано (пусто = не менять)"
 
-#: app/admin/templates/settings.html:39 app/admin/templates/settings.html:79
-#: app/admin/templates/settings.html:83 app/admin/templates/settings.html:87
+#: app/admin/templates/settings.html:41 app/admin/templates/settings.html:81
+#: app/admin/templates/settings.html:85 app/admin/templates/settings.html:89
 msgid "not set"
 msgstr "не задано"
 
-#: app/admin/templates/settings.html:55
+#: app/admin/templates/settings.html:57
 msgid "On"
 msgstr "Вкл"
 
-#: app/admin/templates/settings.html:55
+#: app/admin/templates/settings.html:57
 msgid "Off"
 msgstr "Выкл"
 
-#: app/admin/templates/settings.html:62
-msgid "error"
-msgstr "ошибка"
-
-#: app/admin/templates/settings.html:72
+#: app/admin/templates/settings.html:74
 msgid "Telegram account"
 msgstr "Аккаунт Телеграма"
 
-#: app/admin/templates/settings.html:74
+#: app/admin/templates/settings.html:76
 msgid "could not be read"
 msgstr "не удалось прочитать"
 
-#: app/admin/templates/settings.html:79 app/admin/templates/settings.html:83
-#: app/admin/templates/settings.html:87
+#: app/admin/templates/settings.html:81 app/admin/templates/settings.html:85
+#: app/admin/templates/settings.html:89
 msgid "set"
 msgstr "задано"
 
-#: app/admin/templates/settings.html:90
+#: app/admin/templates/settings.html:92
 msgid "tg_user in the rung order"
 msgstr "tg_user в порядке ступеней"
 
-#: app/admin/templates/settings.html:98
+#: app/admin/templates/settings.html:100
 msgid "connected"
 msgstr "подключено"
 
-#: app/admin/templates/settings.html:108
+#: app/admin/templates/settings.html:110
 msgid "Stage tg_user is enabled"
 msgstr "Ступень tg_user включена"
 
-#: app/admin/templates/settings.html:110
+#: app/admin/templates/settings.html:112
 #, python-format
 msgid ""
 "Stage tg_user is enabled for %(wired)s of %(total)s applications — the "
 "reasons for the rest are above"
 msgstr ""
-"Ступень tg_user включена у %(wired)s из %(total)s приложений — почему не у "
-"остальных, сказано выше"
+"Ступень tg_user включена у %(wired)s из %(total)s приложений — почему не "
+"у остальных, сказано выше"
 
-#: app/admin/templates/settings.html:112
+#: app/admin/templates/settings.html:114
 msgid "Stage tg_user is not enabled: it is not in the order of verification rungs"
 msgstr "Ступень tg_user не включена: её нет в порядке ступеней проверки"
 
-#: app/admin/templates/settings.html:114
+#: app/admin/templates/settings.html:116
 #, python-format
 msgid "Stage tg_user is not enabled: %(reason)s"
 msgstr "Ступень tg_user не включена: %(reason)s"
 
-#: app/admin/templates/settings.html:116
+#: app/admin/templates/settings.html:118
 msgid ""
 "Stage tg_user is not enabled: no application has a tg_user account "
 "configured"
 msgstr "Ступень tg_user не включена: ни у одного приложения нет аккаунта tg_user"
 
-#: app/admin/templates/settings.html:121
+#: app/admin/templates/settings.html:123
 msgid "How to set it up"
 msgstr "Как настроить"
 
-#: app/admin/templates/settings.html:123
+#: app/admin/templates/settings.html:125
 msgid ""
 "The three variables above are set in the file named by EnvironmentFile= "
 "in deploy/sms-gate.service — on the production host, /opt/sms-gate/.env."
@@ -1188,7 +1310,7 @@ msgstr ""
 "Три переменные выше задаются в файле, указанном в EnvironmentFile= в "
 "deploy/sms-gate.service — на боевом хосте это /opt/sms-gate/.env."
 
-#: app/admin/templates/settings.html:124
+#: app/admin/templates/settings.html:126
 msgid ""
 "TG_SESSION_DIR must be an absolute path; it holds one "
 "&lt;account&gt;.session file per sender account."
@@ -1196,7 +1318,7 @@ msgstr ""
 "TG_SESSION_DIR должен быть абсолютным путём; в нём — по одному файлу "
 "&lt;account&gt;.session на каждый отправляющий аккаунт."
 
-#: app/admin/templates/settings.html:125
+#: app/admin/templates/settings.html:127
 msgid ""
 "Signing an account in for the first time is deploy/tg-sign-in.py — see "
 "its own docstring for the environment variables it needs."
@@ -1204,15 +1326,11 @@ msgstr ""
 "Для первого входа в аккаунт используется deploy/tg-sign-in.py — про "
 "нужные ему переменные окружения — в комментарии в начале файла."
 
-#: app/admin/templates/settings.html:126
+#: app/admin/templates/settings.html:128
 msgid "After editing .env, the service must be restarted:"
 msgstr "После правки .env сервис нужно перезапустить:"
 
-#: app/admin/templates/settings.html:149 app/admin/templates/settings.html:161
-msgid "Saved"
-msgstr "Сохранено"
-
-#: app/admin/templates/settings.html:153 app/admin/templates/settings.html:165
+#: app/admin/templates/settings.html:155 app/admin/templates/settings.html:167
 msgid "Save section"
 msgstr "Сохранить раздел"
 
@@ -1346,4 +1464,23 @@ msgstr "Ни одной записи в силе ещё не было"
 
 #~ msgid "Let this app spend money on paid verifications?"
 #~ msgstr ""
+
+#~ msgid ""
+#~ "JSON: which application may send under"
+#~ " which brand, and the account each"
+#~ " brand owns on each messenger."
+#~ msgstr ""
+#~ "JSON: какое приложение может отправлять "
+#~ "под каким брендом и какой аккаунт "
+#~ "у бренда в каждом мессенджере."
+
+#~ msgid ""
+#~ "JSON list of routes that receive "
+#~ "outbound delivery statuses by application, "
+#~ "e.g. "
+#~ "[{\"app_id\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
+#~ msgstr ""
+#~ "JSON-список маршрутов, получающих статусы "
+#~ "исходящей доставки по приложению, напр. "
+#~ "[{\"app_id\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
 

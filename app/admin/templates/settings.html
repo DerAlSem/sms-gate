@@ -35,7 +35,9 @@
       <code class="muted" style="font-size:10px;">{{ f.key }}</code>
     </td>
     <td>
-      {% if f.is_secret %}
+      {% if f.app_owned %}
+        <span class="muted" style="font-size:13px;">{% trans %}set on the application's own page{% endtrans %} — <a href="/admin/apps">{% trans %}Apps{% endtrans %}</a></span>
+      {% elif f.is_secret %}
         <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
       {% elif f.key == 'phone_region' %}
         <select name="{{ f.key }}" id="set-{{ f.key }}">
