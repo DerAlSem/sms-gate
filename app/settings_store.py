@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
-                       # | "oproutes" | "templates" | "region" | "delays"
+                       # | "oproutes" | "templates" | "region" | "delays" | "rungs"
                        # | "callbackbase" | "msisdn"
     default: object
     section: str
@@ -107,7 +107,7 @@ SETTINGS_SPEC: list[Spec] = [
     # need a deployment. The shipped order is the owner's decision of 18.09.2026 and is
     # recorded as a decision rather than a measurement. Changing it changes nothing about
     # what a route proves.
-    Spec("verification_route_order", "str",
+    Spec("verification_route_order", "rungs",
          "call_in,sms_out,flash_call,tg_gateway,sms_in", "Verification", False,
          "Rungs offered, cheapest first (comma-separated). A rung nothing can prove is "
          "never offered, whatever its place here"),
@@ -348,13 +348,17 @@ SETTINGS_SPEC: list[Spec] = [
          'Which application may send under which brand, and the account per brand: JSON '
          'with "apps" and "brands". Each account records the number it lives on, in E.164, '
          'and the "intro" it sends as its first message to a number — who is writing and '
-         'why — {"brands": {"sokol": {"tg_user": {"account": "@name", "number": '
+         'why — {"brands": {"sokol": {"tg_user": {"account": "@sokol_parking", "number": '
          '"+79990000000", "intro": "Это Сокол Паркинг, вы запросили код"}}}}. One account '
          'may carry one brand only, one number is one account on a messenger, and a rung '
          'with no introduction is not offered a number it has never written to'),
+    # The account name in this example is deliberately the same one messenger_brands'
+    # own example uses (SG-33.3 review, 26.09.2026): `check_every_account_is_rate_bound`
+    # keys a brand's account against this setting's own keys, and two examples that do
+    # not share a name would fail together the moment both are pasted in.
     Spec("messenger_limits", "limits", "", "Routing", False,
          'Per-account hourly and daily maxima and the per-recipient window: JSON, e.g. '
-         '{"accounts": {"sokol_tg": {"per_hour": 5, "per_day": 20}}, '
+         '{"accounts": {"@sokol_parking": {"per_hour": 5, "per_day": 20}}, '
          '"recipient_window_seconds": 600}'),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
@@ -505,6 +509,22 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
                 ) from exc
             if seconds <= 0:
                 raise ValueError(f"delay must be positive: {seconds}")
+        return
+    if type_ == "rungs":
+        from app.verification.routes import ALL_ROUTES
+        seen: set[str] = set()
+        for part in raw.split(","):
+            name = part.strip()
+            if not name:         # a trailing or doubled comma is a typo, not an error
+                continue
+            if name not in ALL_ROUTES:
+                raise ValueError(
+                    f"unknown rung {name!r} — known rungs are "
+                    f"{', '.join(sorted(ALL_ROUTES))}"
+                )
+            if name in seen:
+                raise ValueError(f"rung {name!r} is named twice")
+            seen.add(name)
         return
     if type_ == "region":
         import phonenumbers

@@ -18,8 +18,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.settings_store import Spec, SPEC_BY_KEY, cast_value, to_str, store
+from app.verification.routes import (
+    APP_BOT, CALL_IN, FLASH_CALL, MAX_USER, SMS_IN, SMS_OUT, TG_GATEWAY, TG_USER,
+)
 
 N_ = lambda s: s  # noqa: E731 — a marker for pybabel, not a real translation call
+
+# The rungs a form-mode picker offers, in the shipped ladder's own order (see
+# `verification_route_order`'s default and `app.verification.routes.ALL_ROUTES`) — not
+# alphabetical, so that "cheapest first" is legible in the picker too, not only in the
+# comma-separated value it edits. The label is `N_`-wrapped for the same reason every
+# other label in this module is: the template translates it, this module never does.
+RUNGS: tuple[tuple[str, str], ...] = (
+    (CALL_IN, N_("Subscriber's call to our number")),
+    (SMS_IN, N_("Subscriber's SMS to our number")),
+    (SMS_OUT, N_("SMS carrying the code")),
+    (FLASH_CALL, N_("Flash call (uCaller)")),
+    (TG_GATEWAY, N_("Telegram Gateway")),
+    (TG_USER, N_("Telegram account")),
+    (MAX_USER, N_("MAX account")),
+    (APP_BOT, N_("Application's bot")),
+)
 
 
 @dataclass(frozen=True)
@@ -52,9 +71,9 @@ SECTIONS: tuple[Section, ...] = (
            N_("How many parts one SMS may be split into. Longer text is refused before "
               "sending, rather than sent cut short.")),
         _f("send_retry_backoff", N_("Retry delays for a failed send"),
-           N_("Comma-separated seconds to wait before each retry after a transient send "
-              "failure. The number of delays sets the number of retries. Empty means one "
-              "attempt only, no retry.")),
+           N_("How many seconds to wait before each retry after a transient send failure. "
+              "As many delays as retries. None at all means one attempt only, no "
+              "retry.")),
         _f("modem_watchdog_enabled", N_("Auto-recover the modem"),
            N_("Automatically recover the modem when it loses network registration.")),
         _f("send_stall_recovery_enabled", N_("Recover on repeated send failures too"),
@@ -99,8 +118,8 @@ SECTIONS: tuple[Section, ...] = (
     )),
     Section("verification", N_("Number verification"), False, (
         _f("verification_route_order", N_("Order of verification rungs"),
-           N_("Comma-separated list of rungs offered, cheapest first. A rung nothing can "
-              "prove is never offered, whatever its place here.")),
+           N_("Rungs are tried top to bottom, cheapest first. A rung nothing can prove "
+              "is never offered, wherever it stands.")),
         _f("gateway_msisdn", N_("The gateway's own phone number"),
            N_("The number a subscriber must call or text. Blank means the rungs that "
               "need it are never offered.")),
@@ -118,9 +137,10 @@ SECTIONS: tuple[Section, ...] = (
     )),
     Section("routing", N_("Routes by operator"), False, (
         _f("operator_routes", N_("Which way out each operator takes"),
-           N_("JSON list naming the routes tried for each operator, in order. \"*\" "
-              "answers for an operator with no entry, \"?\" for one that could not be "
-              "resolved.")),
+           N_("Rungs are tried top to bottom for each operator. \"Any other operator\" "
+              "answers for one with no row of its own; \"Not resolved\" answers when the "
+              "operator could not be told at all; \"Refuse\" means not sending at "
+              "all.")),
         _f("operator_route_review_days", N_("Flag a routing rule after this many days"),
            N_("Report a routing-rule entry that has stood this many days without being "
               "revisited — a rule set during an outage can outlive it.")),
@@ -176,8 +196,8 @@ SECTIONS: tuple[Section, ...] = (
     )),
     Section("webhooks", N_("Webhooks"), False, (
         _f("inbound_dispatch", N_("Inbound SMS webhooks"),
-           N_('JSON list of routes that receive inbound SMS by prefix, e.g. '
-              '[{"prefix":"X","webhook_url":"https://...","bearer":"..."}].')),
+           N_("Where an inbound SMS goes: by the text's prefix, to an application's "
+              "webhook.")),
         _f("delivery_dispatch", N_("Delivery status webhooks"),
            N_("Set on each application's own page (Apps), not here."), app_owned=True),
     )),

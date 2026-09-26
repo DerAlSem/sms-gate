@@ -10,7 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app import periods
 from app.admin import settings_layout
-from app.admin.i18n import render, resolve_locale, SUPPORTED
+from app.admin.i18n import get_translations, render, resolve_locale, SUPPORTED
 from app.phone import country_choices, is_dialable
 from app.config import settings
 from app.db import queries
@@ -991,6 +991,24 @@ def _resolve_bearer_sentinel(key: str, raw: str) -> tuple[str, str | None]:
     return json.dumps(resolved, ensure_ascii=False), error
 
 
+def _format_json_for_display(raw: str) -> str:
+    """Pretty-print a JSON value for the settings screen's own read-only display.
+
+    Applied to the stored value only — same reasoning as `_mask_bearers` and
+    `_strip_apps_for_display` above: a refused save redisplays exactly what the operator
+    typed, and reformatting that would be a second, silent edit on top of theirs.
+    Unparsable or blank text is returned unchanged; reporting a syntax error is
+    `validate_raw`'s job, not this one's.
+    """
+    if not raw or not raw.strip():
+        return raw
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    return json.dumps(data, indent=2, ensure_ascii=False)
+
+
 def _strip_apps_for_display(raw: str) -> str:
     """`messenger_brands` without its `apps` key — the settings screen shows the
     account map only; which application may send under which brand is set on that
@@ -1095,7 +1113,9 @@ def _settings_view_rows(overrides: dict[str, str] | None = None):
             if spec.type == "routes":
                 value = _mask_bearers(current)
             elif spec.key == "messenger_brands":
-                value = _strip_apps_for_display(current)
+                value = _format_json_for_display(_strip_apps_for_display(current))
+            elif spec.key == "messenger_limits":
+                value = _format_json_for_display(current)
             else:
                 value = current
             configured = None
@@ -1124,13 +1144,48 @@ def _settings_view_rows(overrides: dict[str, str] | None = None):
     return sections
 
 
+# The two examples the settings screen's "Insert example" button offers for
+# `messenger_brands` and `messenger_limits` — the same shapes named in `Spec.description`
+# for each, formatted the way the field itself is (see `_format_json_for_display`).
+#
+# Both examples name the same account, "@sokol_parking" (SG-33.3 review, 26.09.2026):
+# `route_config.check_every_account_is_rate_bound` refuses a brand's account that has no
+# matching key in the limit rule, and the two examples are meant to be pasted in together —
+# an account name that did not match would fail that check the moment both landed.
+_JSON_EXAMPLES: dict[str, str] = {
+    "messenger_brands": json.dumps(
+        {"brands": {"sokol": {"tg_user": {
+            "account": "@sokol_parking", "number": "+79990000000",
+            "intro": "Это Сокол Паркинг, вы запросили код",
+        }}}},
+        indent=2, ensure_ascii=False,
+    ),
+    "messenger_limits": json.dumps(
+        {"accounts": {"@sokol_parking": {"per_hour": 5, "per_day": 20}},
+         "recipient_window_seconds": 600},
+        indent=2, ensure_ascii=False,
+    ),
+}
+
+
+def _rung_choices(request: Request) -> list[dict]:
+    """`settings_layout.RUNGS`, translated for the requesting locale — see settings.html's
+    picker for `verification_route_order` and `operator_routes`. Translated here, not in
+    the template, so the JSON blob the JS reads is built by `json.dumps` (correct escaping)
+    rather than by hand-assembling a Jinja expression."""
+    tr = get_translations(resolve_locale(request))
+    return [{"code": code, "label": tr.gettext(label)} for code, label in settings_layout.RUNGS]
+
+
 @router.get("/settings")
 async def admin_settings(request: Request, _: str = Depends(admin_auth)):
     return render("settings.html", request, {
         "sections": _settings_view_rows(), "active": "settings", "errors": {},
         "saved": request.query_params.get("saved", ""),
         "countries": country_choices(resolve_locale(request)),
-        "tg_account": settings_layout.tg_account_overview()})
+        "tg_account": settings_layout.tg_account_overview(),
+        "rung_choices": _rung_choices(request), "bearer_sentinel": BEARER_SENTINEL,
+        "json_examples": _JSON_EXAMPLES})
 
 
 @router.post("/settings")
@@ -1179,7 +1234,9 @@ async def admin_settings_save(request: Request, _: str = Depends(admin_auth)):
             "sections": _settings_view_rows(submitted), "active": "settings",
             "errors": errors, "saved": "",
             "countries": country_choices(resolve_locale(request)),
-            "tg_account": settings_layout.tg_account_overview()})
+            "tg_account": settings_layout.tg_account_overview(),
+            "rung_choices": _rung_choices(request), "bearer_sentinel": BEARER_SENTINEL,
+            "json_examples": _JSON_EXAMPLES})
     query = ("?" + urlencode({"saved": section})) if section else ""
     fragment = f"#{section}" if section else ""
     return RedirectResponse(url=f"/admin/settings{query}{fragment}", status_code=303)

@@ -3,7 +3,7 @@ id: doc-7
 title: admin-settings
 type: specification
 created_date: '2026-09-26 05:59'
-updated_date: '2026-09-26 16:42'
+updated_date: '2026-09-26 17:59'
 ---
 # admin-settings Specification
 
@@ -12,7 +12,8 @@ The admin console's settings screen: how the runtime settings in `SETTINGS_SPEC`
 (`app/settings_store.py`) are shown to the owner and saved. First described from the code at
 `ea3e04f` (26.09.2026); SG-33.1 made saving per section and stopped a refusal from
 discarding what was typed; SG-33.2 grouped the screen by the owner's tasks,
-named each setting in the interface language and added the Telegram account card.
+named each setting in the interface language and added the Telegram account card;
+SG-33.3 put forms in place of hand-written JSON and checked the rung order's names.
 
 ## Requirements
 ### Requirement: Every setting is shown once, in a section named for the owner's task
@@ -86,9 +87,9 @@ SHALL NOT take the page down.
 ### Requirement: The editor follows the setting's type
 
 A boolean SHALL be edited as an On/Off switch whose unticked state saves `false`,
-`phone_region` as a list of countries, the JSON-shaped types (`routes`, `oproutes`,
-`templates`, `brands`, `limits`) as free text, a secret as a password field, and every
-other type as a one-line text field.
+`phone_region` as a list of countries, a secret as a password field, the settings named below
+as forms, `messenger_brands` and `messenger_limits` as JSON text, and every other type as a
+one-line text field.
 
 [normative · evidence: app/admin/templates/settings.html, tests/test_admin_settings.py · conf: high]
 
@@ -96,6 +97,89 @@ other type as a one-line text field.
 
 - **WHEN** the owner unticks a boolean setting and saves its section
 - **THEN** the setting is stored as `false`
+
+### Requirement: A form writes the same value the text field would
+
+`operator_routes`, `verification_route_order`, `send_retry_backoff` and `inbound_dispatch`
+SHALL be edited as forms. The field the section posts SHALL stay the setting's own text field,
+hidden while the form is shown: the form SHALL write its value there on every change, so the
+server receives and validates exactly what it received before the forms, and SHALL mark the
+section unsaved. Each form SHALL offer to edit the value as text and to go back; a value the
+form cannot read — typed as text, or sent back by a refused save — SHALL open as text, with a
+message, and the server's error SHALL stay at the field either way. Opening a stored value
+and saving it untouched SHALL post a value equal to the stored one.
+
+[normative · evidence: app/admin/templates/settings.html (script) · conf: medium — driven in jsdom, not a real browser]
+
+#### Scenario: An unreadable rule opens as text
+
+- **WHEN** a save of `operator_routes` with broken JSON is refused
+- **THEN** the field shows the submitted text with the error, and the form is hidden
+
+#### Scenario: An untouched form changes nothing
+
+- **WHEN** the owner opens the page and saves the Routes section without editing it
+- **THEN** `operator_routes` is posted equal to the stored rule
+
+### Requirement: The routing rule is a row per operator
+
+`operator_routes` SHALL be shown as one row per operator in stored order, each with its
+operator name, its rungs in order with a human name, controls to move a rung up or down or
+remove it, a choice to add a rung the row does not have yet, and an «Отказать» switch that
+stores the row as `["refuse"]`. The rows for `*` («Любой другой оператор») and `?`
+(«Оператор не определён») SHALL always be last, without a name field and without removal; a
+rule that lacks either SHALL show it refused, which is what `rule.route_for` does for a
+missing entry. A row with no rung and no refusal SHALL be posted as it is, for the rule's own
+validation to refuse.
+
+[normative · evidence: app/admin/templates/settings.html, app/verification/rule.py · conf: medium — driven in jsdom]
+
+#### Scenario: Refusing an operator
+
+- **WHEN** the owner ticks «Отказать» on a row and saves
+- **THEN** that operator's entry is stored with routes `["refuse"]`
+
+### Requirement: The rung order names only rungs the gateway knows
+
+`verification_route_order` SHALL be edited as an ordered list of rungs with a choice to add
+one not yet listed; an unknown name from the store SHALL be shown, marked unknown, rather than
+dropped. On save, a name that is not in `routes.ALL_ROUTES`, or a rung named twice, SHALL be
+refused at the field; empty parts between commas SHALL be ignored, and a blank value accepted.
+
+[normative · evidence: app/settings_store.py (validate_raw, "rungs"), tests/test_settings_store.py · conf: high]
+
+#### Scenario: A misspelt rung is refused
+
+- **WHEN** the owner saves `verification_route_order` as `call_in,sms_outt`
+- **THEN** nothing is stored and the field names `sms_outt` as unknown
+
+### Requirement: Retry delays and inbound routes are rows
+
+`send_retry_backoff` SHALL be edited as a row of whole-second fields, one per retry, with
+removal and «Добавить повтор»; no row SHALL mean one attempt with no retry. `inbound_dispatch`
+SHALL be edited as a table of prefix, webhook URL and bearer, with rows added and removed; with
+no routes the screen SHALL say that inbound SMS is not forwarded anywhere. A stored bearer SHALL
+show as an empty password field that keeps the stored bearer when left empty.
+
+[normative · evidence: app/admin/templates/settings.html · conf: medium — driven in jsdom]
+
+#### Scenario: Leaving a bearer empty keeps it
+
+- **WHEN** the owner changes a route's URL and leaves its bearer field empty
+- **THEN** the route keeps its stored bearer
+
+### Requirement: The messenger JSON is readable and has an example
+
+`messenger_brands` and `messenger_limits` SHALL be shown indented when read from the store (as
+submitted after a refusal), in a monospace field, with a button that puts in an example and
+asks before replacing a non-empty value.
+
+[normative · evidence: app/admin/router.py (_format_json_for_display), app/admin/templates/settings.html · conf: medium]
+
+#### Scenario: The example does not silently overwrite
+
+- **WHEN** the owner presses the example button on a non-empty `messenger_limits`
+- **THEN** the page asks before replacing it
 
 ### Requirement: A route's bearer is never shown back from the store
 

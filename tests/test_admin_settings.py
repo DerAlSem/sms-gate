@@ -358,3 +358,29 @@ def test_routes_sharing_a_key_keep_their_own_bearers():
         assert [x["bearer"] for x in json.loads(store.inbound_dispatch)] == ["first", "second"]
     finally:
         asyncio.run(close_db())
+
+
+def test_the_brands_and_limits_insert_examples_are_a_pair_that_saves_together():
+    """Review of SG-33.3: the two "Insert example" buttons are meant to be pasted in
+    together, and `check_every_account_is_rate_bound` refuses a brand's account with no
+    matching key in the limit rule — the two examples must therefore name one account."""
+    from app.admin.router import _JSON_EXAMPLES
+    from app.routing import config as route_config
+
+    brands_raw = _JSON_EXAMPLES["messenger_brands"]
+    limits_raw = _JSON_EXAMPLES["messenger_limits"]
+    route_config.validate_brands(brands_raw)
+    route_config.validate_limits(limits_raw)
+    route_config.check_every_account_is_rate_bound(brands_raw, limits_raw)  # must not raise
+
+    _db()
+    try:
+        async def save():
+            await store.set_many({
+                "messenger_brands": brands_raw, "messenger_limits": limits_raw,
+            })
+        asyncio.run(save())
+        assert json.loads(store.messenger_brands)["brands"]["sokol"]["tg_user"]["account"] \
+            in json.loads(store.messenger_limits)["accounts"]
+    finally:
+        asyncio.run(close_db())

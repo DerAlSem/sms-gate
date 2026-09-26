@@ -123,6 +123,23 @@ def test_normalize_leaves_other_types_alone():
     assert normalize_raw("routes", "") == ""
 
 
+def test_validate_rungs_accepts_the_default_and_blank():
+    validate_raw("rungs", "call_in,sms_out,flash_call,tg_gateway,sms_in")
+    validate_raw("rungs", "")
+    validate_raw("rungs", "  ")
+    validate_raw("rungs", "call_in, , sms_out")   # blank parts (pasted commas) are skipped
+
+
+def test_validate_rungs_rejects_a_name_outside_all_routes():
+    with pytest.raises(ValueError):
+        validate_raw("rungs", "call_in,not_a_rung")
+
+
+def test_validate_rungs_rejects_a_repeated_rung():
+    with pytest.raises(ValueError):
+        validate_raw("rungs", "call_in,sms_out,call_in")
+
+
 def test_inbound_dispatch_parsed_strips_stored_whitespace():
     """Rows written before validation existed must still route (leading-space url bug)."""
     store = SettingsStore()
