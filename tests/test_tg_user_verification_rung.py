@@ -385,3 +385,26 @@ def test_another_unnamed_rung_is_still_carried_alone():
         return placement.ladder_from(TG_GATEWAY, None)
 
     assert _run(body) == [TG_GATEWAY]
+
+
+# --- SG-34 each rung writes its own words -----------------------------------------------
+
+def test_each_rung_writes_the_code_into_its_own_template(wired):
+    """Telegram reads the `tg_user` entry; after a miss the modem reads the `sms_out` one,
+    with the code spelled out — the owner's decision of 26.09.2026."""
+    wired.answers = [Attempt(Outcome.MISS, reason="no account")]
+
+    async def body():
+        await store.set_many({"verification_templates": json.dumps([
+            {"app_id": "gmp", "route": TG_USER, "template": "тг {code}"},
+            {"app_id": "gmp", "route": "sms_out", "template": "Код GM+: {code_words}"},
+        ], ensure_ascii=False)})
+        _, walk, _ = await _place(code="1204")
+        db = await get_db()
+        async with db.execute("SELECT text FROM messages") as cur:
+            return walk, [r["text"] for r in await cur.fetchall()]
+
+    walk, texts = _run(body)
+    assert "тг 1204" in wired.offers[0]["text"]
+    assert walk.carried_by == "sms_out", walk
+    assert texts == ["Код GM+: ОДИН ДВА НОЛЬ ЧЕТЫРЕ"]

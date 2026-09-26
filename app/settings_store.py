@@ -322,10 +322,12 @@ SETTINGS_SPEC: list[Spec] = [
     # alternative is wording nobody chose going out under somebody's name. Not carried by
     # `delivery_dispatch`, which requires a webhook URL on every entry.
     Spec("verification_templates", "templates", _shipped_templates(), "Verification", False,
-         'The text of an sms_out-carried code, per application: JSON list, e.g. '
-         '[{"app_id":"sp_app","template":"SokolParking: {code}"}] — exactly one '
-         "{code} per template, and an application with no entry is refused an "
-         "sms_out-carried code rather than given wording of the gateway's own"),
+         'The text a code arrives in, per application and optionally per rung '
+         '(sms_out, tg_user): JSON list, e.g. [{"app_id":"gmp_app","route":"sms_out",'
+         '"template":"GM+: {code_words}"},{"app_id":"gmp_app","template":"GM+: {code}"}] '
+         "— an entry with no route stands in for every rung. Exactly one {code} (digits) "
+         "or {code_words} (ОДИН ДВА ТРИ ЧЕТЫРЕ) per template; a rung with no template "
+         "is not used rather than given wording of the gateway's own"),
     # How long an entry of the routing rule may stay in force before the gateway says it
     # has not been revisited. The rule's own requirement asks for a way to observe
     # recovery, and this is the half that costs nothing: the other — a rate-bounded probe

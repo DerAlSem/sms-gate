@@ -3,7 +3,7 @@ id: doc-8
 title: verification-tg-user
 type: specification
 created_date: '2026-09-26 15:37'
-updated_date: '2026-09-26 15:37'
+updated_date: '2026-09-26 15:52'
 ---
 # verification-tg-user Specification
 
@@ -105,3 +105,22 @@ negated, so they never meet message ids in `rung_ledger` or `messenger_rate_clai
 #### Scenario: Restart between two sends
 - **WHEN** the service restarts after an account used its hourly allowance
 - **THEN** the next verification in that hour is still refused by the limit
+
+### Requirement: Each worded rung writes the code into its own template
+
+`verification_templates` entries SHALL carry `app_id`, `template` and an optional `route`
+(`sms_out` or `tg_user` — the rungs that carry a code inside our words; any other route is
+refused at save). A rung SHALL read the entry for `(app_id, route)`, else the application's
+entry with no `route`, else it has no template and is `INCAPABLE`. Two entries for one pair
+SHALL be refused at save. A template SHALL carry exactly one of `{code}` (digits) or
+`{code_words}` (capitals, one word per digit, space-separated: `1204` → `ОДИН ДВА НОЛЬ
+ЧЕТЫРЕ`). The accept door's `no_template` refusal SHALL ask each offered rung for its own
+template. Introduced by SG-34 (owner, 26.09.2026: SMS codes go spelled out).
+
+#### Scenario: GM+ with a template per rung
+- **WHEN** `gmp_app` has `{"route":"tg_user","template":"… {code}"}` and `{"route":"sms_out","template":"GM+: {code_words}"}`, and Telegram misses
+- **THEN** the Telegram offer carried `… 1204`, and the SMS the modem sends reads `GM+: ОДИН ДВА НОЛЬ ЧЕТЫРЕ`
+
+#### Scenario: Only a Telegram template, only the modem left
+- **WHEN** an application's only template names `tg_user` and the only offered rung is `sms_out`
+- **THEN** `POST /verifications` answers `422 no_template`

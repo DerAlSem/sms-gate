@@ -121,6 +121,9 @@ _CARRIES: dict[str, frozenset[str]] = {
 # subscriber is the one who sends.
 _NEEDS_OUR_WORDS = frozenset({SMS_OUT, TG_USER})
 
+# The same set, named for the readers outside this module that validate against it.
+WORDED_ROUTES = _NEEDS_OUR_WORDS
+
 
 def needs_our_words(route: str) -> bool:
     """Whether carrying a code by this route requires text this gateway composes.

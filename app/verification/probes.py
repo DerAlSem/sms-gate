@@ -297,7 +297,7 @@ def _tg_user_probe(app_id):
         if unwired is not None:
             return Proof(holds=False,
                          reason=unwired or f"{app_id} has no Telegram account")
-        if not template.for_app(app_id):
+        if not template.for_app(app_id, TG_USER):
             return Proof(holds=False,
                          reason=f"{app_id} has no verification template to write the "
                                 f"code into")
