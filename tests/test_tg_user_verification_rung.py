@@ -314,3 +314,43 @@ def test_a_code_gone_before_the_send_is_not_sent(wired):
     attempt = _run(body)
     assert attempt.outcome == ladder.FAILED
     assert not wired.offers
+
+
+# --- review of 26.09.2026 ------------------------------------------------------------
+
+def test_the_ladder_stops_waiting_without_cancelling_the_offer(wired):
+    """A cancellation inside the route's first connect skips its cleanup and leaves the
+    session file held — the next verification then meets `database is locked`."""
+    cancelled = []
+
+    async def slow(**kw):
+        try:
+            await asyncio.sleep(0.3)
+        except asyncio.CancelledError:
+            cancelled.append(True)
+            raise
+        return Attempt(Outcome.ACCEPTED)
+
+    async def body():
+        attempt = await tg_user_carrier._offer(
+            type("R", (), {"offer": staticmethod(slow)})(), seconds_left=0.05,
+            message_id=-1, phone=PHONE, text="x", brand="gmplus", account=ACCOUNT)
+        await asyncio.sleep(0.4)
+        return attempt
+
+    attempt = asyncio.run(body())
+    assert attempt.outcome is Outcome.INDETERMINATE
+    assert not cancelled, "the ladder's deadline cancelled the route mid-flight"
+
+
+def test_our_own_limit_is_not_reported_as_telegram_refusing(wired, alerts):
+    limits = {"accounts": {ACCOUNT: {"per_hour": 1, "per_day": 5}},
+              "recipient_window_seconds": 0}
+
+    async def body():
+        await _place(code="1111")
+        await _place(code="2222")
+
+    _run(body, limits=limits)
+    assert alerts and "Telegram was not contacted" in alerts[-1], alerts
+    assert not alerts[-1].startswith("Telegram refused")

@@ -205,7 +205,7 @@ def carrier(verification_id: int, *, app_id: str):
         claim = await bounds.claim(message_id=lid, route=TG_USER, account=account,
                                    phone=phone)
         if not claim.granted:
-            _alert(account, claim.reason)
+            _alert(account, claim.reason, ours=True)
             return ladder.Attempt(outcome=ladder.REFUSED, route=TG_USER,
                                   reason=f"{claim.reason} — account {account}")
 
@@ -236,18 +236,34 @@ def carrier(verification_id: int, *, app_id: str):
     return carry
 
 
+#: Offers the ladder stopped waiting for and did not cancel. See `_offer`.
+_outliving: set[asyncio.Task] = set()
+
+
 async def _offer(rung, *, seconds_left: float, **kw) -> RouteAttempt:
     """One offer, bounded by what is left of the ladder and contained in failure.
 
     A deadline that expires is `indeterminate`: the send may have left the process. A
     failure raised by the route is `unavailable`, as on the messengers branch — the route
     classifies everything it can name itself, and what escapes it happened on our side.
+
+    🔴 **The offer is shielded, never cancelled from here.** The route bounds itself — its
+    own budget is the rung deadline less a margin — but what is left of *this* ladder may
+    be shorter, and a cancellation that lands inside the route's first `connect()` or
+    `get_me()` skips its cleanup (`except Exception` does not see `CancelledError`): the
+    client stays open over the session file, is never cached, and the next verification
+    opens a second one and meets `database is locked` — the rung then answers
+    `unavailable` for every verification until a restart. Found by the review of
+    26.09.2026. So the ladder stops waiting and moves on, and the offer finishes on its
+    own bound and caches its client; a send it completes late is a second copy of the
+    same code, which the owner's decision of 25.09.2026 accepts.
     """
+    task = asyncio.ensure_future(rung.offer(message_class=_MESSAGE_CLASS, **kw))
     try:
-        return await asyncio.wait_for(
-            rung.offer(message_class=_MESSAGE_CLASS, **kw),
-            timeout=max(0.1, seconds_left))
+        return await asyncio.wait_for(asyncio.shield(task), timeout=max(0.1, seconds_left))
     except asyncio.TimeoutError:
+        _outliving.add(task)
+        task.add_done_callback(_settled_late)
         return RouteAttempt(Outcome.INDETERMINATE,
                             reason=f"tg_user did not answer within {seconds_left:.1f}s; "
                                    f"the send may have happened")
@@ -280,11 +296,34 @@ def _incapable(reason: str) -> ladder.Attempt:
     return ladder.Attempt(outcome=ladder.INCAPABLE, route=TG_USER, reason=reason)
 
 
-def _alert(account: str, reason: str) -> None:
+def _settled_late(task: asyncio.Task) -> None:
+    _outliving.discard(task)
+    if task.cancelled():
+        return
+    failure = task.exception()
+    if failure is not None:
+        logger.warning("a tg_user offer the ladder stopped waiting for raised %r", failure)
+    else:
+        logger.info("a tg_user offer the ladder stopped waiting for ended %s: %s",
+                    task.result().outcome.value, task.result().reason)
+
+
+def _alert(account: str, reason: str, *, ours: bool = False) -> None:
+    """Loud, naming the account — and naming whose refusal it was.
+
+    Our own bound refusing is not Telegram refusing: the first is fixed in
+    `messenger_limits`, the second in the account's session, and an operator paged about
+    one and sent to look at the other loses the time the alert was for.
+    """
     from app.alerting import notify
 
-    notify("routing",
-           f"Telegram refused the account {account} rather than the subscriber "
-           f"({reason}) — verification codes are going to the rung below it until the "
-           f"account is restored",
-           dedup_extra=f"tg_user:{account}")
+    if ours:
+        text = (f"the tg_user account {account} was not asked to send: this gateway's own "
+                f"limit refused it ({reason}); Telegram was not contacted. Verification "
+                f"codes are going to the rung below it until the limit allows it again or "
+                f"messenger_limits is changed")
+    else:
+        text = (f"Telegram refused the account {account} rather than the subscriber "
+                f"({reason}) — verification codes are going to the rung below it until the "
+                f"account is restored")
+    notify("routing", text, dedup_extra=f"tg_user:{account}:{'limit' if ours else 'vendor'}")
