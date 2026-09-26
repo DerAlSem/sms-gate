@@ -354,3 +354,34 @@ def test_our_own_limit_is_not_reported_as_telegram_refusing(wired, alerts):
     _run(body, limits=limits)
     assert alerts and "Telegram was not contacted" in alerts[-1], alerts
     assert not alerts[-1].startswith("Telegram refused")
+
+
+# --- tg_user stands in front of the rule, never inside it (26.09.2026) ----------------
+
+def test_a_rule_that_does_not_name_tg_user_still_continues_below_it(wired):
+    """The live rule names no `tg_user`, and must not: the modem sender refuses every
+    plain `/send` whose rule entry does not start with `sms_out`. A code Telegram missed
+    still goes down the operator's own entry."""
+    wired.answers = [Attempt(Outcome.MISS)]
+
+    async def body():
+        await store.set_many({"operator_routes": json.dumps(
+            [{"operator": "*", "routes": [SMS_OUT]},
+             {"operator": "?", "routes": [SMS_OUT]}])})
+        assert placement.ladder_from(TG_USER, None) == [TG_USER, SMS_OUT]
+        return await _place()
+
+    _, walk, row = _run(body)
+    assert _outcomes(walk) == [(TG_USER, ladder.DECLINED), (SMS_OUT, ladder.CARRIED)]
+    assert row["route"] == SMS_OUT
+
+
+def test_another_unnamed_rung_is_still_carried_alone():
+    """The owner's decision of 21.09.2026 stands for every other rung."""
+    async def body():
+        await store.set_many({"operator_routes": json.dumps(
+            [{"operator": "*", "routes": [SMS_OUT]},
+             {"operator": "?", "routes": [SMS_OUT]}])})
+        return placement.ladder_from(TG_GATEWAY, None)
+
+    assert _run(body) == [TG_GATEWAY]
