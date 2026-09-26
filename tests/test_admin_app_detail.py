@@ -699,3 +699,118 @@ def test_the_apps_list_encodes_ids_with_special_characters_in_their_links():
         assert f'href="/admin/apps/{quote("a#b", safe="/")}"' in page
     finally:
         asyncio.run(close_db())
+
+
+# ------------------------------------------------------- SG-33.5: a template per rung
+#
+# SG-34 keyed a template on (app_id, route): `sms_out`, `tg_user`, or none — the entry
+# that stands in for every worded rung. The page edits all three slots.
+
+
+def _set_templates(entries):
+    asyncio.run(store.set_many({"verification_templates": json.dumps(entries)}))
+
+
+def test_the_page_edits_each_rung_slot_on_its_own_pair():
+    _db()
+    try:
+        _seed_apps("gmp_app", "other")
+        _set_templates([
+            {"app_id": "other", "template": "O: {code}"},
+            {"app_id": "gmp_app", "route": "tg_user", "template": "TG: {code}"},
+            {"app_id": "gmp_app", "template": "Common: {code}"},
+        ])
+        c = _client()
+        r = c.post("/admin/apps/gmp_app/save", headers=_AUTH, data={
+            "_part": "template", "template": "Common: {code}",
+            "template_sms_out": "GM+: {code_words}", "template_tg_user": "TG2: {code}"},
+            follow_redirects=False)
+        assert r.status_code == 303
+        assert json.loads(store.verification_templates) == [
+            {"app_id": "other", "template": "O: {code}"},
+            {"app_id": "gmp_app", "route": "tg_user", "template": "TG2: {code}"},
+            {"app_id": "gmp_app", "template": "Common: {code}"},
+            {"app_id": "gmp_app", "route": "sms_out", "template": "GM+: {code_words}"},
+        ]
+        # a blank slot removes only its own entry
+        c.post("/admin/apps/gmp_app/save", headers=_AUTH, data={
+            "_part": "template", "template": "Common: {code}",
+            "template_sms_out": "GM+: {code_words}", "template_tg_user": ""})
+        assert [(x["app_id"], x.get("route")) for x in json.loads(store.verification_templates)] == [
+            ("other", None), ("gmp_app", None), ("gmp_app", "sms_out")]
+    finally:
+        asyncio.run(close_db())
+
+
+def test_saving_the_common_text_keeps_a_rung_entry_that_came_first():
+    """The SG-33.4 page rewrote the *first* entry with this app_id — a rung entry first
+    in the list turned into the common one, and the rung lost its own text."""
+    _db()
+    try:
+        _seed_apps("gmp_app")
+        _set_templates([
+            {"app_id": "gmp_app", "route": "sms_out", "template": "SMS: {code_words}"},
+        ])
+        c = _client()
+        c.post("/admin/apps/gmp_app/save", headers=_AUTH, data={
+            "_part": "template", "template": "Common: {code}"})
+        assert json.loads(store.verification_templates) == [
+            {"app_id": "gmp_app", "route": "sms_out", "template": "SMS: {code_words}"},
+            {"app_id": "gmp_app", "template": "Common: {code}"},
+        ]
+    finally:
+        asyncio.run(close_db())
+
+
+def test_the_page_says_which_text_each_rung_goes_with():
+    _db()
+    try:
+        _seed_apps("gmp_app")
+        _set_templates([
+            {"app_id": "gmp_app", "route": "sms_out", "template": "SMS: {code_words}"},
+        ])
+        page = _client("en").get("/admin/apps/gmp_app", headers=_AUTH).text
+        assert "SMS: {code_words}" in page
+        assert "SMS goes with its own text" in page
+        assert "no text — the Telegram account rung is not used" in page
+
+        _set_templates([{"app_id": "gmp_app", "template": "Common: {code}"}])
+        page = _client("en").get("/admin/apps/gmp_app", headers=_AUTH).text
+        assert "SMS goes with the common text" in page
+        assert "Telegram goes with the common text" in page
+    finally:
+        asyncio.run(close_db())
+
+
+def test_a_refused_rung_template_keeps_every_typed_field():
+    _db()
+    try:
+        _seed_apps("gmp_app")
+        c = _client()
+        r = c.post("/admin/apps/gmp_app/save", headers=_AUTH, data={
+            "_part": "template", "template": "Common: {code}",
+            "template_sms_out": "SMS: {kod}", "template_tg_user": "TG: {code}"})
+        assert r.status_code == 200
+        assert "field-error" in r.text
+        for typed in ("Common: {code}", "SMS: {kod}", "TG: {code}"):
+            assert typed in r.text
+        assert store.verification_templates == ""
+    finally:
+        asyncio.run(close_db())
+
+
+def test_the_apps_list_counts_a_rung_or_common_entry_as_an_sms_text():
+    _db()
+    try:
+        _seed_apps("with_sms", "with_common", "tg_only")
+        _set_templates([
+            {"app_id": "with_sms", "route": "sms_out", "template": "S: {code_words}"},
+            {"app_id": "with_common", "template": "C: {code}"},
+            {"app_id": "tg_only", "route": "tg_user", "template": "T: {code}"},
+        ])
+        page = _client("en").get("/admin/apps", headers=_AUTH).text
+        assert page.count("no — no code will be sent by SMS") == 1
+        row = page[page.index('href="/admin/apps/tg_only"'):]
+        assert row.index("no — no code will be sent by SMS") < row.index("</tr>")
+    finally:
+        asyncio.run(close_db())

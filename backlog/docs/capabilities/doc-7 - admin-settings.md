@@ -3,7 +3,7 @@ id: doc-7
 title: admin-settings
 type: specification
 created_date: '2026-09-26 05:59'
-updated_date: '2026-09-26 17:59'
+updated_date: '2026-09-26 18:16'
 ---
 # admin-settings Specification
 
@@ -183,7 +183,7 @@ asks before replacing a non-empty value.
 
 ### Requirement: A route's bearer is never shown back from the store
 
-In `inbound_dispatch` (and in `delivery_dispatch` on the application's page, doc-8) every stored non-blank `bearer` SHALL be
+In `inbound_dispatch` (and in `delivery_dispatch` on the application's page, doc-9) every stored non-blank `bearer` SHALL be
 shown as a fixed placeholder. On save, a placeholder SHALL be replaced by the stored bearer
 of the route with the same route key, matched in order among routes sharing that key; a
 placeholder with no such stored route SHALL be refused at the field. A refused save SHALL
@@ -257,7 +257,7 @@ guard for the others. A refused save SHALL bring its first error into view.
 
 `verification_templates` and `delivery_dispatch` SHALL NOT be editable on the settings screen;
 in their sections each SHALL be named with a pointer that it is set on the application's page
-(doc-8). `messenger_brands` SHALL be shown without its `apps` key; on save the stored `apps`
+(doc-9). `messenger_brands` SHALL be shown without its `apps` key; on save the stored `apps`
 SHALL be put back before validation, and a submitted `apps` SHALL be refused at the field.
 Clearing a brand an application still names SHALL be refused by `validate_brands`.
 

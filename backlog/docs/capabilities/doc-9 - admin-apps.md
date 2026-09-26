@@ -1,9 +1,9 @@
 ---
-id: doc-8
+id: doc-9
 title: admin-apps
 type: specification
-created_date: '2026-09-26 15:31'
-updated_date: '2026-09-26 18:13'
+created_date: '2026-09-26 18:16'
+updated_date: '2026-09-26 18:44'
 ---
 # admin-apps Specification
 
@@ -71,7 +71,7 @@ messages. Deleting SHALL remove the `apps` row only; entries keyed by its id in 
 ### Requirement: An application's own settings are edited on its page
 
 `GET /admin/apps/<id>` SHALL show the application and three blocks, each its own form: the
-SMS text a code arrives in (`verification_templates`), the delivery-report webhook
+text a code arrives in (`verification_templates`), the delivery-report webhook
 (`delivery_dispatch`) and the messenger brands it may send under (`messenger_brands` →
 `apps`). The id in the list SHALL link to this page. An id with no application SHALL be
 answered as not found. Storage is unchanged: each block edits this application's entry in
@@ -88,7 +88,7 @@ the same setting, through `validate_raw` and `store.set_many`.
 
 A block's save SHALL replace or remove this application's entry only; every other
 application's entries in the same setting, and their order, SHALL stay as they were. A blank
-SMS text or a blank webhook URL SHALL remove the entry; no brand ticked SHALL remove the
+text or a blank webhook URL SHALL remove the entry; no brand ticked SHALL remove the
 application from `apps`. When the application has several delivery routes, the page SHALL
 edit the first — the one `find_route` uses — keep the rest, and say that they do not act.
 
@@ -99,11 +99,30 @@ edit the first — the one `find_route` uses — keep the rest, and say that the
 - **WHEN** the owner saves `sokol`'s SMS text while `gmp` also has one
 - **THEN** `gmp`'s entry is stored exactly as before
 
+### Requirement: A text per rung, each on its own pair
+
+Since SG-34 a template is keyed on `(app_id, route)`. The text block SHALL show three fields
+— the common text (the entry with no `route`, which stands in for every worded rung), SMS
+only (`route: sms_out`) and Telegram only (`route: tg_user`) — and save them in one form.
+Each field SHALL replace or remove only the entry of its own pair: an entry of another pair,
+wherever it stands in the list, SHALL be kept. A field absent from the posted form SHALL
+leave its entry as stored. Under SMS and Telegram the page SHALL say which text goes out —
+its own, the common one, or none (then that rung is not used for this application).
+
+[normative · evidence: app/admin/router.py (_TEMPLATE_SLOTS, _app_templates, _replace_app_templates), app/admin/templates/app_detail.html, tests/test_admin_app_detail.py (SG-33.5) · conf: high]
+
+#### Scenario: A rung entry that came first survives a common-text save
+
+- **WHEN** `gmp_app` has only an `sms_out` entry and the owner saves a common text
+- **THEN** the `sms_out` entry is stored unchanged and a common entry is added after it
+
 ### Requirement: The SMS text says its length, and a refusal keeps it
 
-The SMS block SHALL say that the text carries exactly one `{code}` and that blank means no
-code by SMS, and SHALL count characters and SMS parts as typed (GSM-7 160/153, otherwise
-UCS-2 70/67; `{code}` counted as its own six characters). A refusal by any validator,
+The text block SHALL say that each text carries exactly one `{code}` or `{code_words}` and
+that blank means no entry, and SHALL count characters and SMS parts of the text an SMS would
+carry — its own, else the common one — as typed (GSM-7 160/153, otherwise UCS-2 70/67;
+`{code}` counted as the four digits the gateway draws, `{code_words}` as four spelled-out
+digits at the longest, which makes the text UCS-2). A refusal by any validator,
 `set_many`'s rate-bound check included, SHALL be shown at the block's field with what was
 typed kept and SHALL NOT answer with a server error.
 
@@ -111,8 +130,8 @@ typed kept and SHALL NOT answer with a server error.
 
 #### Scenario: Two codes are refused at the field
 
-- **WHEN** the owner saves «{code} и {code}» as the SMS text
-- **THEN** nothing is stored, the error stands at the SMS field, and the text is still there
+- **WHEN** the owner saves «{code} и {code}» as a text
+- **THEN** nothing is stored, the error stands under the text block, and every typed field is still there
 
 ### Requirement: The delivery webhook's bearer is write-only
 
@@ -128,8 +147,9 @@ only the «remove bearer» box SHALL clear it.
 
 ### Requirement: The list shows who gets no code by SMS
 
-The list SHALL show, per application, whether it has an SMS text, and an application
-without one SHALL be marked as getting no code by SMS. The gateway's own senders, `admin`
+The list SHALL show, per application, whether it has an SMS text — an `sms_out` entry or
+the common one — and an application without either SHALL be marked as getting no code by
+SMS; a `tg_user` entry alone does not count. The gateway's own senders, `admin`
 and `telegram`, send free text and never a code: without a text they SHALL be shown, muted,
 as not needing one. An unreadable setting SHALL be shown as such and SHALL NOT take the
 list down.
@@ -138,7 +158,7 @@ list down.
 
 #### Scenario: A missing text is marked
 
-- **WHEN** an application has no entry in `verification_templates`
+- **WHEN** an application has neither an `sms_out` nor a common entry in `verification_templates`
 - **THEN** its row says the code by SMS will not reach it
 
 #### Scenario: An internal sender is not flagged

@@ -477,7 +477,12 @@ async def _render_apps(request: Request, new_id=None, new_token=None):
             "token_masked": (a["token"][:6] + "…") if a["token"] else "",
             "msg_count": await queries.app_message_count(a["id"]),
             "protected": a["id"] == "admin",
-            "has_template": a["id"] in templates_by_app,
+            # SG-33.5: keyed on (app_id, route) since SG-34 — an SMS goes out when
+            # sms_out has its own entry or the application's entry with no route.
+            "has_template": (
+                (a["id"], "sms_out") in templates_by_app
+                or (a["id"], None) in templates_by_app
+            ),
             "internal": a["id"] in _INTERNAL_SENDERS,
             "templates_unreadable": templates_unreadable,
         })
@@ -703,6 +708,96 @@ def _load_brands_object_or_refuse(raw: str) -> dict:
     return data
 
 
+# SG-33.5: since SG-34 a template entry is keyed on (app_id, route) — `route` absent for
+# the entry that stands in for every worded rung. The page edits one slot per key, and
+# the form field each is posted as; the no-route slot keeps the name it had in SG-33.4.
+_TEMPLATE_SLOTS = (
+    ("template", None),
+    ("template_sms_out", "sms_out"),
+    ("template_tg_user", "tg_user"),
+)
+
+
+def _template_route(item: dict) -> str | None:
+    """The entry's route as `template.parse` reads it: blank and absent are both None."""
+    route = item.get("route")
+    route = str(route).strip() if route is not None else ""
+    return route or None
+
+
+def _app_templates(raw: str, app_id: str) -> dict[str | None, str]:
+    """This application's template text per route, first entry per slot winning —
+    tolerant of a broken store for the same reason `_find_app_entry` is."""
+    try:
+        data = json.loads(raw) if raw and raw.strip() else []
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, list):
+        return {}
+    out: dict[str | None, str] = {}
+    for item in data:
+        if isinstance(item, dict) and str(item.get("app_id", "")).strip() == app_id:
+            out.setdefault(_template_route(item), str(item.get("template", "")))
+    return out
+
+
+def _replace_app_templates(
+    raw: str, app_id: str, texts: dict[str | None, str]
+) -> str:
+    """The stored template list with this application's entries for the routes in
+    `texts` replaced in place (blank text removes the entry, a new one is appended).
+
+    Every other entry — another application's, or this one's for a route not in
+    `texts` — is kept as stored and where it stood. Refuses an unreadable store for the
+    reason `_replace_app_entry` does.
+    """
+    key = "verification_templates"
+    if raw and raw.strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"the stored {key} cannot be read ({exc}) — saving would erase every "
+                "other application's records in it"
+            ) from exc
+        if not isinstance(data, list):
+            raise ValueError(
+                f"the stored {key} is not a JSON list — saving would erase every "
+                "other application's records in it"
+            )
+    else:
+        data = []
+
+    def entry(route: str | None) -> dict | None:
+        text = texts[route]
+        if not text.strip():
+            return None
+        new = {"app_id": app_id}
+        if route is not None:
+            new["route"] = route
+        new["template"] = text
+        return new
+
+    out = []
+    done: set[str | None] = set()
+    for item in data:
+        if isinstance(item, dict) and str(item.get("app_id", "")).strip() == app_id:
+            route = _template_route(item)
+            if route in texts and route not in done:
+                done.add(route)
+                new = entry(route)
+                if new is not None:
+                    out.append(new)
+                continue
+        out.append(item)
+    for route in texts:
+        if route not in done:
+            new = entry(route)
+            if new is not None:
+                out.append(new)
+    return json.dumps(out, ensure_ascii=False)
+
+
 async def _save_app_entry_field(
     key: str, id_field: str, app_id: str, new_entry: dict | None
 ) -> str | None:
@@ -745,12 +840,13 @@ async def _render_app_detail(
     errors = errors or {}
     overrides = overrides or {}
 
-    tmpl_entry, _tmpl_extra = _find_app_entry(
-        store.get("verification_templates") or "", "app_id", app_id
+    stored_templates = _app_templates(
+        store.get("verification_templates") or "", app_id
     )
-    template_value = overrides.get(
-        "template", (tmpl_entry or {}).get("template", "")
-    )
+    template_values = {
+        field: overrides.get(field, stored_templates.get(route, ""))
+        for field, route in _TEMPLATE_SLOTS
+    }
 
     hook_entry, hook_extra = _find_app_entry(
         store.get("delivery_dispatch") or "", "app_id", app_id
@@ -777,7 +873,7 @@ async def _render_app_detail(
         "active": "apps",
         "app": app_row,
         "orphan": orphan,
-        "template_value": template_value,
+        "template_values": template_values,
         "webhook_url_value": webhook_url_value,
         "bearer_configured": bearer_configured,
         "webhook_extra": hook_extra,
@@ -823,14 +919,23 @@ async def admin_app_detail_save(
     overrides: dict[str, object] = {}
 
     if part == "template":
-        text = str(form.get("template", ""))
-        overrides["template"] = text
-        new_entry = {"app_id": app_id, "template": text} if text.strip() else None
-        error = await _save_app_entry_field(
-            "verification_templates", "app_id", app_id, new_entry
-        )
-        if error:
-            errors["template"] = error
+        # A slot absent from the form is left as stored; a blank one removes its entry.
+        texts: dict[str | None, str] = {}
+        for field, route in _TEMPLATE_SLOTS:
+            value = form.get(field)
+            if value is None:
+                continue
+            texts[route] = str(value)
+            overrides[field] = str(value)
+        spec = SPEC_BY_KEY["verification_templates"]
+        try:
+            new_raw = _replace_app_templates(
+                store.get("verification_templates") or "", app_id, texts
+            )
+            validate_raw(spec.type, new_raw, spec.route_key)
+            await store.set_many({"verification_templates": new_raw})
+        except ValueError as exc:
+            errors["template"] = str(exc)
 
     elif part == "webhook":
         url = str(form.get("webhook_url", "")).strip()
