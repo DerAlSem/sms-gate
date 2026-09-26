@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-20 14:38+0300\n"
+"POT-Creation-Date: 2026-09-26 09:08+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -249,7 +249,7 @@ msgid "%(count)s records"
 msgstr "%(count)s записей"
 
 #: app/admin/templates/messages.html:53 app/admin/templates/ranges.html:9
-#: app/admin/templates/stats.html:61 app/admin/templates/stats.html:91
+#: app/admin/templates/stats.html:61 app/admin/templates/stats.html:153
 msgid "Operator"
 msgstr "Оператор"
 
@@ -307,7 +307,7 @@ msgstr "В этой переписке пока пусто"
 msgid "Verifications for this number"
 msgstr "Верификации этого номера"
 
-#: app/admin/templates/messages.html:146
+#: app/admin/templates/messages.html:146 app/admin/templates/stats.html:125
 msgid "Application"
 msgstr "Приложение"
 
@@ -331,7 +331,7 @@ msgstr "Идентификатор у вендора"
 msgid "Cost"
 msgstr "Стоимость"
 
-#: app/admin/templates/messages.html:153
+#: app/admin/templates/messages.html:153 app/admin/templates/stats.html:98
 msgid "Refunded"
 msgstr "Возврат"
 
@@ -420,21 +420,37 @@ msgstr "Проверено"
 msgid "Cache is empty"
 msgstr "Кэш пуст"
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:10
+msgid "unsaved"
+msgstr "не сохранено"
+
+#: app/admin/templates/settings.html:13
+msgid "Saved"
+msgstr "Сохранено"
+
+#: app/admin/templates/settings.html:22
 msgid "configured (blank = keep)"
 msgstr "задано (пусто = не менять)"
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:22
 msgid "not set"
 msgstr "не задано"
 
-#: app/admin/templates/settings.html:32
+#: app/admin/templates/settings.html:38
+msgid "On"
+msgstr "Вкл"
+
+#: app/admin/templates/settings.html:38
+msgid "Off"
+msgstr "Выкл"
+
+#: app/admin/templates/settings.html:45
 msgid "error"
 msgstr "ошибка"
 
-#: app/admin/templates/settings.html:39
-msgid "Save"
-msgstr "Сохранить"
+#: app/admin/templates/settings.html:50
+msgid "Save section"
+msgstr "Сохранить раздел"
 
 #: app/admin/templates/stats.html:14
 msgid "received"
@@ -465,38 +481,6 @@ msgid "No data"
 msgstr "Нет данных"
 
 #: app/admin/templates/stats.html:55
-#: app/admin/templates/stats.html
-msgid "What verifications cost"
-msgstr "Во что обходятся верификации"
-
-#: app/admin/templates/stats.html
-msgid "Route"
-msgstr "Маршрут"
-
-#: app/admin/templates/stats.html
-msgid "Attempts"
-msgstr "Попыток"
-
-#: app/admin/templates/stats.html
-msgid "Spend"
-msgstr "Потрачено"
-
-#: app/admin/templates/stats.html
-msgid "Possibly charged"
-msgstr "Возможно списано"
-
-#: app/admin/templates/stats.html
-msgid "No paid rung has been attempted"
-msgstr "Платных рунгов не было"
-
-#: app/admin/templates/stats.html
-msgid "Who spent it"
-msgstr "Кто потратил"
-
-#: app/admin/templates/stats.html
-msgid "Nothing has been spent on a verification"
-msgstr "На верификации ничего не потрачено"
-
 msgid "Refused for want of a route"
 msgstr "Отказы: нет пригодного маршрута"
 
@@ -520,23 +504,55 @@ msgstr "Последний отказ"
 msgid "Nothing has been refused for want of a route"
 msgstr "Отказов по этой причине ещё не было"
 
-#: app/admin/templates/stats.html:85
+#: app/admin/templates/stats.html:89
+msgid "What verifications cost"
+msgstr "Во что обходятся верификации"
+
+#: app/admin/templates/stats.html:95
+msgid "Route"
+msgstr "Маршрут"
+
+#: app/admin/templates/stats.html:96 app/admin/templates/stats.html:126
+msgid "Attempts"
+msgstr "Попыток"
+
+#: app/admin/templates/stats.html:97 app/admin/templates/stats.html:127
+msgid "Spend"
+msgstr "Потрачено"
+
+#: app/admin/templates/stats.html:99 app/admin/templates/stats.html:128
+msgid "Possibly charged"
+msgstr "Возможно списано"
+
+#: app/admin/templates/stats.html:112
+msgid "No paid rung has been attempted"
+msgstr "Платных рунгов не было"
+
+#: app/admin/templates/stats.html:119
+msgid "Who spent it"
+msgstr "Кто потратил"
+
+#: app/admin/templates/stats.html:140
+msgid "Nothing has been spent on a verification"
+msgstr "На верификации ничего не потрачено"
+
+#: app/admin/templates/stats.html:147
 msgid "The rule in force"
 msgstr "Правило в силе"
 
-#: app/admin/templates/stats.html:92
+#: app/admin/templates/stats.html:154
 msgid "Routes"
 msgstr "Маршруты"
 
-#: app/admin/templates/stats.html:93
+#: app/admin/templates/stats.html:155
 msgid "In force since"
 msgstr "В силе с"
 
-#: app/admin/templates/stats.html:94
+#: app/admin/templates/stats.html:156
 msgid "Days"
 msgstr "Дней в силе"
 
-#: app/admin/templates/stats.html:106
+#: app/admin/templates/stats.html:168
 msgid "No entry has been seen in force yet"
 msgstr "Ни одной записи в силе ещё не было"
 

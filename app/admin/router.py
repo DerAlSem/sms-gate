@@ -1,3 +1,4 @@
+import json
 import logging
 import secrets
 from urllib.parse import urlencode, urlparse
@@ -12,7 +13,7 @@ from app.admin.i18n import render, resolve_locale, SUPPORTED
 from app.phone import country_choices, is_dialable
 from app.config import settings
 from app.db import queries
-from app.settings_store import store, SETTINGS_SPEC, SPEC_BY_KEY, validate_raw
+from app.settings_store import store, SETTINGS_SPEC, SPEC_BY_KEY, validate_raw, _TRUE
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -526,18 +527,149 @@ async def admin_apps_delete(
     return RedirectResponse(url="/admin/apps", status_code=303)
 
 
-def _settings_view_rows():
+# A route's bearer is write-only past this point: the page never carries it back out,
+# whether it is the stored value or one just typed for a brand-new route in the same
+# textarea. Chosen over blanking it outright because a route with a literal empty bearer
+# is indistinguishable, on this page, from one that has none — and the save-time repair
+# below (`_resolve_bearer_sentinel`) needs a value it can tell apart from "no bearer" and
+# from anything an operator would plausibly type.
+BEARER_SENTINEL = "••••••"
+
+
+def _mask_bearers(raw: str) -> str:
+    """Replace every non-blank `bearer` in a `routes`-typed value with the sentinel.
+
+    Applied to the stored value only. A refused save redisplays the operator's submission
+    as typed (see `_settings_view_rows`): what they just typed is already on their screen,
+    and masking it would turn the next save into a silent revert to the saved bearer.
+
+    Unparsable JSON is returned unchanged — there is nothing here to find a `bearer` in,
+    and reporting the syntax error is `validate_raw`'s job, not this one's.
+    """
+    if not raw or not raw.strip():
+        return raw
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if not isinstance(data, list):
+        return raw
+    changed = False
+    masked = []
+    for item in data:
+        if isinstance(item, dict) and item.get("bearer"):
+            item = dict(item)
+            item["bearer"] = BEARER_SENTINEL
+            changed = True
+        masked.append(item)
+    if not changed:
+        return raw
+    return json.dumps(masked, ensure_ascii=False)
+
+
+def _resolve_bearer_sentinel(key: str, raw: str) -> tuple[str, str | None]:
+    """Swap a still-sentinel bearer back for the saved one with the same route key.
+
+    Runs on the submitted text before validation. A route the operator did not touch
+    carries the sentinel back on save — masking is exactly what makes that page
+    indistinguishable from one where the bearer *was* edited — so this is what makes
+    "saved without a change" not overwrite the real bearer with six bullets. A route named
+    by the sentinel with no saved match is refused: silently storing the literal sentinel
+    as a bearer would be a route that fails at the vendor on the first call, which on the
+    dispatch routes lands as a webhook nobody can debug from this page.
+
+    Returns the resolved JSON text and an error message, or `None` if every sentinel
+    resolved (or there was none to resolve — unparsable/malformed input is passed through
+    for `validate_raw` to report as it always has).
+    """
+    spec = SPEC_BY_KEY[key]
+    if not raw or not raw.strip():
+        return raw, None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw, None                       # validate_raw reports the syntax error
+    if not isinstance(data, list):
+        return raw, None                       # validate_raw reports the shape error
+
+    # A list per key, consumed in order: nothing refuses two routes with one key, and a
+    # single slot would hand both sentinels the bearer of whichever came last.
+    saved_by_route: dict[str, list[dict]] = {}
+    saved_raw = store.get(key)
+    if saved_raw:
+        try:
+            saved_data = json.loads(saved_raw)
+        except json.JSONDecodeError:
+            saved_data = []
+        if isinstance(saved_data, list):
+            for item in saved_data:
+                if not isinstance(item, dict):
+                    continue
+                route_id = str(item.get(spec.route_key, "")).strip()
+                if route_id:
+                    saved_by_route.setdefault(route_id, []).append(item)
+
+    error: str | None = None
+    resolved = []
+    for item in data:
+        if isinstance(item, dict) and item.get("bearer") == BEARER_SENTINEL:
+            item = dict(item)
+            route_id = str(item.get(spec.route_key, "")).strip()
+            candidates = saved_by_route.get(route_id)
+            match = candidates.pop(0) if candidates else None
+            if match is not None:
+                item["bearer"] = match.get("bearer", "")
+            elif error is None:
+                error = (
+                    f"bearer is hidden, and no saved route has "
+                    f"{spec.route_key}={route_id!r} — enter the bearer"
+                )
+        resolved.append(item)
+    return json.dumps(resolved, ensure_ascii=False), error
+
+
+def _settings_view_rows(overrides: dict[str, str] | None = None):
+    """The rows `settings.html` renders, one list per section.
+
+    `overrides` carries the raw, as-submitted text for the keys of the one section a
+    refused save came from — every other section renders the stored value, which is what
+    keeps an error in one section from disturbing what another shows. A secret is never
+    taken from `overrides`: it is either blank (kept) or not validated at all (`str`), so
+    what changed, if anything, is exactly what is already stored, and the field says only
+    whether it is configured, never a value — submitted or stored.
+    """
+    overrides = overrides or {}
     sections: dict[str, list] = {}
     for spec in SETTINGS_SPEC:
-        current = store.get(spec.key)
+        if spec.is_secret:
+            current = store.get(spec.key)
+            value = ""
+            configured = bool(current)
+        elif spec.key in overrides:
+            raw = overrides[spec.key]
+            if spec.type == "bool":
+                value = raw.strip().lower() in _TRUE
+            elif spec.type == "routes":
+                # As submitted: an untouched bearer already arrives as the sentinel, and
+                # one just typed must come back as typed. Masking it here would put the
+                # sentinel in its place, and the next save would quietly resolve that to
+                # the OLD saved bearer — the edit lost behind a green save.
+                value = raw
+            else:
+                value = raw
+            configured = None
+        else:
+            current = store.get(spec.key)
+            value = _mask_bearers(current) if spec.type == "routes" else current
+            configured = None
         sections.setdefault(spec.section, []).append({
             "key": spec.key,
             "type": spec.type,
             "section": spec.section,
             "is_secret": spec.is_secret,
             "description": spec.description,
-            "value": "" if spec.is_secret else current,
-            "configured": bool(current) if spec.is_secret else None,
+            "value": value,
+            "configured": configured,
         })
     return sections
 
@@ -546,33 +678,54 @@ def _settings_view_rows():
 async def admin_settings(request: Request, _: str = Depends(admin_auth)):
     return render("settings.html", request, {
         "sections": _settings_view_rows(), "active": "settings", "errors": {},
+        "saved": request.query_params.get("saved", ""),
         "countries": country_choices(resolve_locale(request))})
 
 
 @router.post("/settings")
 async def admin_settings_save(request: Request, _: str = Depends(admin_auth)):
     form = await request.form()
-    changes: dict[str, str] = {}
+    section = str(form.get("_section", ""))
+    submitted: dict[str, str] = {}         # as typed, for redisplay on refusal
+    changes: dict[str, str] = {}           # to validate and save
+    errors: dict[str, str] = {}
     for spec in SETTINGS_SPEC:
         if spec.key not in form:
             continue
         raw = str(form[spec.key])
+        submitted[spec.key] = raw
         if spec.is_secret and raw == "":
             continue                       # blank secret = leave unchanged
+        if spec.type == "routes":
+            raw, bearer_error = _resolve_bearer_sentinel(spec.key, raw)
+            if bearer_error:
+                errors[spec.key] = bearer_error
+                continue                   # unresolved sentinel: nothing to validate yet
         changes[spec.key] = raw
-    errors: dict[str, str] = {}
     for key, raw in changes.items():
         try:
             spec = SPEC_BY_KEY[key]
             validate_raw(spec.type, raw, spec.route_key)
         except ValueError as exc:
             errors[key] = str(exc)
+    if not errors:
+        try:
+            # One transaction + section hooks (e.g. alerting reconfigure).
+            await store.set_many(changes)
+        except ValueError as exc:
+            # The one refusal `set_many` itself can raise: a brand with no rate bound.
+            # It names an account, not a field, so both settings that together decide the
+            # bound carry the message — neither is wrong on its own.
+            errors["messenger_brands"] = str(exc)
+            errors["messenger_limits"] = str(exc)
     if errors:
         return render("settings.html", request, {
-            "sections": _settings_view_rows(), "active": "settings", "errors": errors,
+            "sections": _settings_view_rows(submitted), "active": "settings",
+            "errors": errors, "saved": "",
             "countries": country_choices(resolve_locale(request))})
-    await store.set_many(changes)          # one transaction + section hooks (alerting reconfigure)
-    return RedirectResponse(url="/admin/settings", status_code=303)
+    query = ("?" + urlencode({"saved": section})) if section else ""
+    fragment = f"#{section}" if section else ""
+    return RedirectResponse(url=f"/admin/settings{query}{fragment}", status_code=303)
 
 
 @router.get("/modem")

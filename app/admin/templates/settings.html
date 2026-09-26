@@ -1,10 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>{% trans %}Settings{% endtrans %}</h2>
-<form method="post" action="/admin/settings">
-  {% for section, fields in sections.items() %}
-  <div class="card" style="margin-bottom:16px;">
-    <div class="label">{{ section }}</div>
+{% for section, fields in sections.items() %}
+<div class="card" id="{{ section }}" style="margin-bottom:16px;">
+  <form method="post" action="/admin/settings" class="settings-section" data-section="{{ section }}">
+    <input type="hidden" name="_section" value="{{ section }}">
+    <div class="label" style="display:flex;align-items:center;gap:8px;">
+      <span>{{ section }}</span>
+      {# A refused save leaves the submitted values on the page but not in the store — the
+         section is exactly as unsaved as one edited by hand. #}
+      <span class="dirty-mark muted" style="font-size:11px;font-weight:600;" {% if not (fields | selectattr('key', 'in', errors) | list) %}hidden{% endif %}>&#9679; {% trans %}unsaved{% endtrans %}</span>
+    </div>
+    {% if saved == section %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
     <table>
       {% for f in fields %}
       <tr>
@@ -20,22 +29,64 @@
               {% endfor %}
             </select>
           {% elif f.type == 'bool' %}
-            <select name="{{ f.key }}" id="set-{{ f.key }}">
-              <option value="true" {% if f.value %}selected{% endif %}>true</option>
-              <option value="false" {% if not f.value %}selected{% endif %}>false</option>
-            </select>
+            {# The hidden field carries "false" when the checkbox is unticked — a
+               checkbox absent from the form is simply not sent, so without it an
+               operator clearing the box would leave the setting unchanged rather than
+               off. Starlette's form keeps the last value for a repeated key, so a
+               ticked box (hidden "false" then checkbox "true") arrives as "true". #}
+            <input type="hidden" name="{{ f.key }}" value="false">
+            <label style="display:inline-flex;align-items:center;gap:6px;">
+              <input type="checkbox" name="{{ f.key }}" id="set-{{ f.key }}" value="true" {% if f.value %}checked{% endif %}>
+              <span data-on="{{ _('On') }}" data-off="{{ _('Off') }}">{{ _('On') if f.value else _('Off') }}</span>
+            </label>
           {% elif f.type in ('routes', 'templates', 'brands', 'limits') %}
             <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
           {% else %}
             <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
           {% endif %}
-          {% if errors.get(f.key) %}<div style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
+          {% if errors.get(f.key) %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
         </td>
       </tr>
       {% endfor %}
     </table>
-  </div>
-  {% endfor %}
-  <button type="submit">{% trans %}Save{% endtrans %}</button>
-</form>
+    <button type="submit">{% trans %}Save section{% endtrans %}</button>
+  </form>
+</div>
+{% endfor %}
+<script>
+(function () {
+  var dirtySections = new Set();
+  document.querySelectorAll("form.settings-section").forEach(function (form) {
+    var section = form.dataset.section;
+    var mark = form.querySelector(".dirty-mark");
+    form.addEventListener("input", function () {
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    if (mark && !mark.hidden) { dirtySections.add(section); }
+    form.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t.type === "checkbox" && t.nextElementSibling && t.nextElementSibling.dataset.on) {
+        t.nextElementSibling.textContent = t.checked ? t.nextElementSibling.dataset.on : t.nextElementSibling.dataset.off;
+      }
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    // Saving reloads the whole page, so only this section's edits are carried; the
+    // others' stay dirty and the unload prompt still guards them.
+    form.addEventListener("submit", function () {
+      dirtySections.delete(section);
+    });
+  });
+  // A refused save answers the POST with no anchor, so an error in a lower section would
+  // sit below the fold on a page that otherwise looks unchanged.
+  var firstError = document.querySelector(".field-error");
+  if (firstError) { firstError.scrollIntoView({block: "center"}); }
+  window.addEventListener("beforeunload", function (e) {
+    if (dirtySections.size === 0) { return; }
+    e.preventDefault();
+    e.returnValue = "";
+  });
+})();
+</script>
 {% endblock %}

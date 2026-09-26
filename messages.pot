@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-20 14:38+0300\n"
+"POT-Creation-Date: 2026-09-26 09:08+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -247,7 +247,7 @@ msgid "%(count)s records"
 msgstr ""
 
 #: app/admin/templates/messages.html:53 app/admin/templates/ranges.html:9
-#: app/admin/templates/stats.html:61 app/admin/templates/stats.html:91
+#: app/admin/templates/stats.html:61 app/admin/templates/stats.html:153
 msgid "Operator"
 msgstr ""
 
@@ -305,7 +305,7 @@ msgstr ""
 msgid "Verifications for this number"
 msgstr ""
 
-#: app/admin/templates/messages.html:146
+#: app/admin/templates/messages.html:146 app/admin/templates/stats.html:125
 msgid "Application"
 msgstr ""
 
@@ -329,7 +329,7 @@ msgstr ""
 msgid "Cost"
 msgstr ""
 
-#: app/admin/templates/messages.html:153
+#: app/admin/templates/messages.html:153 app/admin/templates/stats.html:98
 msgid "Refunded"
 msgstr ""
 
@@ -418,20 +418,36 @@ msgstr ""
 msgid "Cache is empty"
 msgstr ""
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:10
+msgid "unsaved"
+msgstr ""
+
+#: app/admin/templates/settings.html:13
+msgid "Saved"
+msgstr ""
+
+#: app/admin/templates/settings.html:22
 msgid "configured (blank = keep)"
 msgstr ""
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:22
 msgid "not set"
 msgstr ""
 
-#: app/admin/templates/settings.html:32
+#: app/admin/templates/settings.html:38
+msgid "On"
+msgstr ""
+
+#: app/admin/templates/settings.html:38
+msgid "Off"
+msgstr ""
+
+#: app/admin/templates/settings.html:45
 msgid "error"
 msgstr ""
 
-#: app/admin/templates/settings.html:39
-msgid "Save"
+#: app/admin/templates/settings.html:50
+msgid "Save section"
 msgstr ""
 
 #: app/admin/templates/stats.html:14
@@ -486,23 +502,55 @@ msgstr ""
 msgid "Nothing has been refused for want of a route"
 msgstr ""
 
-#: app/admin/templates/stats.html:85
+#: app/admin/templates/stats.html:89
+msgid "What verifications cost"
+msgstr ""
+
+#: app/admin/templates/stats.html:95
+msgid "Route"
+msgstr ""
+
+#: app/admin/templates/stats.html:96 app/admin/templates/stats.html:126
+msgid "Attempts"
+msgstr ""
+
+#: app/admin/templates/stats.html:97 app/admin/templates/stats.html:127
+msgid "Spend"
+msgstr ""
+
+#: app/admin/templates/stats.html:99 app/admin/templates/stats.html:128
+msgid "Possibly charged"
+msgstr ""
+
+#: app/admin/templates/stats.html:112
+msgid "No paid rung has been attempted"
+msgstr ""
+
+#: app/admin/templates/stats.html:119
+msgid "Who spent it"
+msgstr ""
+
+#: app/admin/templates/stats.html:140
+msgid "Nothing has been spent on a verification"
+msgstr ""
+
+#: app/admin/templates/stats.html:147
 msgid "The rule in force"
 msgstr ""
 
-#: app/admin/templates/stats.html:92
+#: app/admin/templates/stats.html:154
 msgid "Routes"
 msgstr ""
 
-#: app/admin/templates/stats.html:93
+#: app/admin/templates/stats.html:155
 msgid "In force since"
 msgstr ""
 
-#: app/admin/templates/stats.html:94
+#: app/admin/templates/stats.html:156
 msgid "Days"
 msgstr ""
 
-#: app/admin/templates/stats.html:106
+#: app/admin/templates/stats.html:168
 msgid "No entry has been seen in force yet"
 msgstr ""
 
