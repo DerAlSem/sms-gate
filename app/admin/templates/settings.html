@@ -1,55 +1,169 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>{% trans %}Settings{% endtrans %}</h2>
-{% for section, fields in sections.items() %}
-<div class="card" id="{{ section }}" style="margin-bottom:16px;">
-  <form method="post" action="/admin/settings" class="settings-section" data-section="{{ section }}">
-    <input type="hidden" name="_section" value="{{ section }}">
-    <div class="label" style="display:flex;align-items:center;gap:8px;">
-      <span>{{ section }}</span>
-      {# A refused save leaves the submitted values on the page but not in the store — the
-         section is exactly as unsaved as one edited by hand. #}
-      <span class="dirty-mark muted" style="font-size:11px;font-weight:600;" {% if not (fields | selectattr('key', 'in', errors) | list) %}hidden{% endif %}>&#9679; {% trans %}unsaved{% endtrans %}</span>
-    </div>
-    {% if saved == section %}
-      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
-    {% endif %}
+{# The header's `nav a` rule is for a dark bar and would paint these light grey on white. #}
+<style>
+  nav.settings-toc a { color: #1d4ed8; margin-right: 0; padding: 2px 0; }
+  nav.settings-toc a:hover { color: #1e3a8a; text-decoration: underline; }
+</style>
+<nav class="settings-toc"style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;font-size:13px;">
+  {% for section in sections %}
+  <a href="#{{ section.id }}">{{ _(section.title) }}</a>
+  {% endfor %}
+</nav>
+
+{% macro dirty_mark(has_error) %}
+{# A refused save leaves the submitted values on the page but not in the store —
+   the section is exactly as unsaved as one edited by hand. #}
+<span class="dirty-mark muted" style="font-size:11px;font-weight:600;" {% if not has_error %}hidden{% endif %}>&#9679; {% trans %}unsaved{% endtrans %}</span>
+{% endmacro %}
+
+{% macro changed_badge(n) %}
+{% if n %}
+<span class="muted" style="font-size:11px;font-weight:600;margin-left:6px;">{% trans n=n %}changed: {{ n }}{% endtrans %}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro settings_table(section) %}
+<div class="table-wrap">
+<table>
+  {% for f in section.fields %}
+  <tr id="row-{{ f.key }}">
+    <td style="width:280px;">
+      <label for="set-{{ f.key }}" style="font-weight:600;">{{ _(f.label) }}</label><br>
+      <span class="muted" style="font-size:12px;">{{ _(f.help) }}</span><br>
+      <code class="muted" style="font-size:10px;">{{ f.key }}</code>
+    </td>
+    <td>
+      {% if f.is_secret %}
+        <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
+      {% elif f.key == 'phone_region' %}
+        <select name="{{ f.key }}" id="set-{{ f.key }}">
+          {% for code, label in countries %}
+            <option value="{{ code }}" {% if f.value == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      {% elif f.type == 'bool' %}
+        {# The hidden field carries "false" when the checkbox is unticked — a
+           checkbox absent from the form is simply not sent, so without it an
+           operator clearing the box would leave the setting unchanged rather than
+           off. Starlette's form keeps the last value for a repeated key, so a
+           ticked box (hidden "false" then checkbox "true") arrives as "true". #}
+        <input type="hidden" name="{{ f.key }}" value="false">
+        <label style="display:inline-flex;align-items:center;gap:6px;">
+          <input type="checkbox" name="{{ f.key }}" id="set-{{ f.key }}" value="true" {% if f.value %}checked{% endif %}>
+          <span data-on="{{ _('On') }}" data-off="{{ _('Off') }}">{{ _('On') if f.value else _('Off') }}</span>
+        </label>
+      {% elif f.type in ('routes', 'templates', 'brands', 'limits') %}
+        <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+      {% else %}
+        <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
+      {% endif %}
+      {% if errors.get(f.key) %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endmacro %}
+
+{% macro tg_account_card(tg_account) %}
+<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;">
+  <div class="label" style="margin-bottom:8px;">{% trans %}Telegram account{% endtrans %}</div>
+  {% if tg_account.error %}
+    <div class="muted" style="font-size:12px;">{% trans %}could not be read{% endtrans %}</div>
+  {% else %}
     <table>
-      {% for f in fields %}
       <tr>
-        <td style="width:240px;"><label for="set-{{ f.key }}"><code>{{ f.key }}</code></label><br>
-            <span class="muted" style="font-size:11px;">{{ f.description }}</span></td>
+        <td style="width:280px;"><code class="muted" style="font-size:11px;">TG_API_ID</code></td>
+        <td>{{ _('set') if tg_account.api_id_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td><code class="muted" style="font-size:11px;">TG_API_HASH</code></td>
+        <td>{{ _('set') if tg_account.api_hash_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td><code class="muted" style="font-size:11px;">TG_SESSION_DIR</code></td>
+        <td>{{ _('set') if tg_account.session_dir_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td>{% trans %}tg_user in the rung order{% endtrans %}</td>
+        <td>{{ _('yes') if tg_account.route_order_has_tg_user else _('no') }}</td>
+      </tr>
+      {% for app in tg_account.apps %}
+      <tr>
+        <td><code style="font-size:11px;">{{ app.app_id }}</code></td>
         <td>
-          {% if f.is_secret %}
-            <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
-          {% elif f.key == 'phone_region' %}
-            <select name="{{ f.key }}" id="set-{{ f.key }}">
-              {% for code, label in countries %}
-                <option value="{{ code }}" {% if f.value == code %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          {% elif f.type == 'bool' %}
-            {# The hidden field carries "false" when the checkbox is unticked — a
-               checkbox absent from the form is simply not sent, so without it an
-               operator clearing the box would leave the setting unchanged rather than
-               off. Starlette's form keeps the last value for a repeated key, so a
-               ticked box (hidden "false" then checkbox "true") arrives as "true". #}
-            <input type="hidden" name="{{ f.key }}" value="false">
-            <label style="display:inline-flex;align-items:center;gap:6px;">
-              <input type="checkbox" name="{{ f.key }}" id="set-{{ f.key }}" value="true" {% if f.value %}checked{% endif %}>
-              <span data-on="{{ _('On') }}" data-off="{{ _('Off') }}">{{ _('On') if f.value else _('Off') }}</span>
-            </label>
-          {% elif f.type in ('routes', 'templates', 'brands', 'limits') %}
-            <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+          {% if app.reason is none %}
+            <span style="color:#065f46;">{% trans %}connected{% endtrans %}</span>
           {% else %}
-            <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
+            <span style="color:#991b1b;">{{ app.reason }}</span>
           {% endif %}
-          {% if errors.get(f.key) %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
         </td>
       </tr>
       {% endfor %}
     </table>
-    <button type="submit">{% trans %}Save section{% endtrans %}</button>
+    <div style="margin-top:8px;font-weight:600;">
+      {% if tg_account.ok and tg_account.wired_count == tg_account.apps | length %}
+        {% trans %}Stage tg_user is enabled{% endtrans %}
+      {% elif tg_account.ok %}
+        {% trans wired=tg_account.wired_count, total=tg_account.apps | length %}Stage tg_user is enabled for {{ wired }} of {{ total }} applications — the reasons for the rest are above{% endtrans %}
+      {% elif not tg_account.route_order_has_tg_user %}
+        {% trans %}Stage tg_user is not enabled: it is not in the order of verification rungs{% endtrans %}
+      {% elif tg_account.blocking_reason %}
+        {% trans reason=tg_account.blocking_reason %}Stage tg_user is not enabled: {{ reason }}{% endtrans %}
+      {% else %}
+        {% trans %}Stage tg_user is not enabled: no application has a tg_user account configured{% endtrans %}
+      {% endif %}
+    </div>
+  {% endif %}
+  <details style="margin-top:10px;">
+    <summary style="cursor:pointer;font-size:12px;">{% trans %}How to set it up{% endtrans %}</summary>
+    <div style="font-size:12px;margin-top:8px;">
+      <p>{% trans %}The three variables above are set in the file named by EnvironmentFile= in deploy/sms-gate.service — on the production host, /opt/sms-gate/.env.{% endtrans %}</p>
+      <p>{% trans %}TG_SESSION_DIR must be an absolute path; it holds one &lt;account&gt;.session file per sender account.{% endtrans %}</p>
+      <p>{% trans %}Signing an account in for the first time is deploy/tg-sign-in.py — see its own docstring for the environment variables it needs.{% endtrans %}</p>
+      <p>{% trans %}After editing .env, the service must be restarted:{% endtrans %}</p>
+      <pre style="white-space:pre-wrap;">sudo systemctl restart sms-gate</pre>
+    </div>
+  </details>
+</div>
+{% endmacro %}
+
+{% for section in sections %}
+{% set has_error = (section.fields | selectattr('key', 'in', errors) | list) %}
+<div class="card" id="{{ section.id }}" style="margin-bottom:16px;">
+  <form method="post" action="/admin/settings" class="settings-section" data-section="{{ section.id }}">
+    <input type="hidden" name="_section" value="{{ section.id }}">
+    {% if section.collapsed %}
+    {# `advanced`: closed by default, opened by a refusal inside it or by a just-saved
+       redirect back to it — an operator who just fixed something in here must not have
+       the page fold it away again. #}
+    <details {% if has_error or saved == section.id %}open{% endif %}>
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:600;">{{ _(section.title) }}</span>
+        {{ changed_badge(section.changed_count) }}
+        {{ dirty_mark(has_error) }}
+      </summary>
+      {% if saved == section.id %}
+        <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+      {% endif %}
+      {{ settings_table(section) }}
+      {% if section.id == 'vendors' %}{{ tg_account_card(tg_account) }}{% endif %}
+      <button type="submit" style="margin-top:12px;">{% trans %}Save section{% endtrans %}</button>
+    </details>
+    {% else %}
+    <div class="label" style="display:flex;align-items:center;gap:8px;">
+      <span>{{ _(section.title) }}</span>
+      {{ dirty_mark(has_error) }}
+    </div>
+    {% if saved == section.id %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
+    {{ settings_table(section) }}
+    {% if section.id == 'vendors' %}{{ tg_account_card(tg_account) }}{% endif %}
+    <button type="submit" style="margin-top:12px;">{% trans %}Save section{% endtrans %}</button>
+    {% endif %}
   </form>
 </div>
 {% endfor %}
@@ -78,10 +192,28 @@
       dirtySections.delete(section);
     });
   });
-  // A refused save answers the POST with no anchor, so an error in a lower section would
-  // sit below the fold on a page that otherwise looks unchanged.
+  // A refused save answers the POST with no anchor, so an error in a lower section (or
+  // inside a closed `advanced`) would sit below the fold, or invisible, on a page that
+  // otherwise looks unchanged. The server already opens `advanced`'s <details> when the
+  // error is inside it; this only has to find the element to scroll to.
   var firstError = document.querySelector(".field-error");
-  if (firstError) { firstError.scrollIntoView({block: "center"}); }
+  if (firstError) {
+    var host = firstError.closest("details");
+    if (host) { host.open = true; }
+    firstError.scrollIntoView({block: "center"});
+  } else if (window.location.hash) {
+    // A bookmarked or shared link into a field that lives inside `advanced` must open
+    // it too — the server has no way to know the fragment at render time.
+    // By id rather than `querySelector`: a fragment that is no valid selector (`#1`)
+    // would throw there and take the unload guard below down with it.
+    var target = null;
+    try { target = document.getElementById(decodeURIComponent(window.location.hash.slice(1))); } catch (e) {}
+    if (target) {
+      var targetHost = target.closest("details");
+      if (targetHost) { targetHost.open = true; }
+      target.scrollIntoView({block: "center"});
+    }
+  }
   window.addEventListener("beforeunload", function (e) {
     if (dirtySections.size === 0) { return; }
     e.preventDefault();

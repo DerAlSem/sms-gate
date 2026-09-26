@@ -184,7 +184,10 @@ def test_brand_without_a_rate_bound_errors_both_fields_and_saves_nothing():
 def test_saving_one_section_does_not_touch_another_and_redirects_with_saved():
     """SG-33.1 #4/#5: each section is its own form and its own save; a successful save
     redirects back to that section with `?saved=<section>`, and only that section's
-    settings changed."""
+    settings changed.
+
+    SG-33.2: sections are now `settings_layout`'s display groups (`voxlink_timeout`
+    lives under `advanced`), not `Spec.section` — the id used here is the layout's."""
     _db()
     try:
         async def baseline():
@@ -192,15 +195,15 @@ def test_saving_one_section_does_not_touch_another_and_redirects_with_saved():
         asyncio.run(baseline())
         c = _client()
         r = c.post("/admin/settings", headers=_AUTH, follow_redirects=False, data={
-            "_section": "Voxlink",
+            "_section": "advanced",
             "voxlink_timeout": "9.5",
         })
         assert r.status_code == 303
-        assert r.headers["location"] == "/admin/settings?saved=Voxlink#Voxlink"
+        assert r.headers["location"] == "/admin/settings?saved=advanced#advanced"
         assert store.voxlink_timeout == 9.5
         assert store.blacklist_threshold == 5, "a different section must stand untouched"
 
-        page = c.get("/admin/settings?saved=Voxlink", headers=_AUTH)
+        page = c.get("/admin/settings?saved=advanced", headers=_AUTH)
         assert page.status_code == 200
         assert "Сохранено" in page.text
     finally:
@@ -287,17 +290,23 @@ def test_bearer_sentinel_on_a_new_route_is_refused():
 
 
 def test_a_refused_section_is_marked_unsaved():
-    """The values a refused save shows back are not stored: the section says so."""
+    """The values a refused save shows back are not stored: the section says so.
+
+    SG-33.2: `blacklist_threshold` (valid) now lives under `sending`, and
+    `delivery_report_max_age_hours` (refused) under `advanced` — two different
+    display sections. Only the one holding the refused field is marked unsaved, and
+    it — being `advanced` — opens its `<details>`."""
     _db()
     try:
         r = _client().post("/admin/settings", headers=_AUTH, data={
-            "_section": "Limits", "blacklist_threshold": "9",
+            "_section": "sending", "blacklist_threshold": "9",
             "delivery_report_max_age_hours": "0"})
         assert r.status_code == 200
-        limits = r.text.split('id="Limits"', 1)[1].split('class="card"', 1)[0]
-        assert 'class="dirty-mark muted" style="font-size:11px;font-weight:600;" >' in limits
-        voxlink = r.text.split('id="Voxlink"', 1)[1].split('class="card"', 1)[0]
-        assert "hidden>" in voxlink.split("dirty-mark", 1)[1][:80]
+        advanced = r.text.split('id="advanced"', 1)[1].split('class="card"', 1)[0]
+        assert "<details open" in advanced
+        assert 'class="dirty-mark muted" style="font-size:11px;font-weight:600;" >' in advanced
+        sending = r.text.split('id="sending"', 1)[1].split('class="card"', 1)[0]
+        assert "hidden>" in sending.split("dirty-mark", 1)[1][:80]
     finally:
         asyncio.run(close_db())
 

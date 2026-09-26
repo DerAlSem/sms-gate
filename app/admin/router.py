@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from app import periods
+from app.admin import settings_layout
 from app.admin.i18n import render, resolve_locale, SUPPORTED
 from app.phone import country_choices, is_dialable
 from app.config import settings
@@ -629,7 +630,7 @@ def _resolve_bearer_sentinel(key: str, raw: str) -> tuple[str, str | None]:
 
 
 def _settings_view_rows(overrides: dict[str, str] | None = None):
-    """The rows `settings.html` renders, one list per section.
+    """The sections `settings.html` renders, in `settings_layout.SECTIONS` order.
 
     `overrides` carries the raw, as-submitted text for the keys of the one section a
     refused save came from — every other section renders the stored value, which is what
@@ -637,9 +638,13 @@ def _settings_view_rows(overrides: dict[str, str] | None = None):
     taken from `overrides`: it is either blank (kept) or not validated at all (`str`), so
     what changed, if anything, is exactly what is already stored, and the field says only
     whether it is configured, never a value — submitted or stored.
+
+    The grouping itself — which section a key falls in, its label and its help text —
+    comes entirely from `settings_layout`; `Spec.section` here is only ever used to look
+    a spec up, never to group it.
     """
     overrides = overrides or {}
-    sections: dict[str, list] = {}
+    rows_by_key: dict[str, dict] = {}
     for spec in SETTINGS_SPEC:
         if spec.is_secret:
             current = store.get(spec.key)
@@ -662,14 +667,26 @@ def _settings_view_rows(overrides: dict[str, str] | None = None):
             current = store.get(spec.key)
             value = _mask_bearers(current) if spec.type == "routes" else current
             configured = None
-        sections.setdefault(spec.section, []).append({
+        field_layout = settings_layout.FIELD_BY_KEY[spec.key]
+        rows_by_key[spec.key] = {
             "key": spec.key,
             "type": spec.type,
-            "section": spec.section,
             "is_secret": spec.is_secret,
-            "description": spec.description,
+            "label": field_layout.label,
+            "help": field_layout.help,
             "value": value,
             "configured": configured,
+            "changed": settings_layout.is_changed(spec),
+        }
+    sections = []
+    for section in settings_layout.SECTIONS:
+        fields = [rows_by_key[f.key] for f in section.fields]
+        sections.append({
+            "id": section.id,
+            "title": section.title,
+            "collapsed": section.collapsed,
+            "fields": fields,
+            "changed_count": sum(1 for f in fields if f["changed"]),
         })
     return sections
 
@@ -679,7 +696,8 @@ async def admin_settings(request: Request, _: str = Depends(admin_auth)):
     return render("settings.html", request, {
         "sections": _settings_view_rows(), "active": "settings", "errors": {},
         "saved": request.query_params.get("saved", ""),
-        "countries": country_choices(resolve_locale(request))})
+        "countries": country_choices(resolve_locale(request)),
+        "tg_account": settings_layout.tg_account_overview()})
 
 
 @router.post("/settings")
@@ -722,7 +740,8 @@ async def admin_settings_save(request: Request, _: str = Depends(admin_auth)):
         return render("settings.html", request, {
             "sections": _settings_view_rows(submitted), "active": "settings",
             "errors": errors, "saved": "",
-            "countries": country_choices(resolve_locale(request))})
+            "countries": country_choices(resolve_locale(request)),
+            "tg_account": settings_layout.tg_account_overview()})
     query = ("?" + urlencode({"saved": section})) if section else ""
     fragment = f"#{section}" if section else ""
     return RedirectResponse(url=f"/admin/settings{query}{fragment}", status_code=303)

@@ -3,7 +3,7 @@ id: doc-7
 title: admin-settings
 type: specification
 created_date: '2026-09-26 05:59'
-updated_date: '2026-09-26 06:26'
+updated_date: '2026-09-26 16:03'
 ---
 # admin-settings Specification
 
@@ -11,22 +11,77 @@ updated_date: '2026-09-26 06:26'
 The admin console's settings screen: how the runtime settings in `SETTINGS_SPEC`
 (`app/settings_store.py`) are shown to the owner and saved. First described from the code at
 `ea3e04f` (26.09.2026); SG-33.1 made saving per section and stopped a refusal from
-discarding what was typed.
+discarding what was typed; SG-33.2 grouped the screen by the owner's tasks,
+named each setting in the interface language and added the Telegram account card.
 
 ## Requirements
-### Requirement: Every setting in SETTINGS_SPEC is shown, grouped by its section
+### Requirement: Every setting is shown once, in a section named for the owner's task
 
-`GET /admin/settings` SHALL list every entry of `SETTINGS_SPEC`, grouped under the entry's
-`section`, each with its key and its `description`. A secret's stored value SHALL NOT appear
-in the page; the field SHALL say only whether it is configured.
+`GET /admin/settings` SHALL list every entry of `SETTINGS_SPEC` exactly once, in the section
+`app/admin/settings_layout.py` places it in: Modem and sending, Telegram notifications, Number
+verification, Routes by operator, Vendors, Limits and money protection, Webhooks, and
+Advanced. The grouping is display only: `Spec.section` SHALL stay what `store.set_many`
+keys its change hooks on. The page SHALL open with a list of links to every section. A
+secret's stored value SHALL NOT appear in the page; the field SHALL say only whether it is
+configured.
 
-[descriptive · evidence: app/admin/router.py:529-550, app/admin/templates/settings.html · conf: high]
+[normative · evidence: app/admin/settings_layout.py (SECTIONS), app/admin/router.py (_settings_view_rows), tests/test_admin_settings_layout.py · conf: high]
+
+#### Scenario: A setting added to SETTINGS_SPEC without a place is caught
+
+- **WHEN** a key is in `SETTINGS_SPEC` but in no section of the layout, or in two
+- **THEN** the test suite fails, naming the key
 
 #### Scenario: A secret is shown as configured, never by value
 
 - **WHEN** `alert_bot_token` is stored and the settings page is opened
 - **THEN** the page names the field and says it is configured, and the token's value is
   nowhere in the page
+
+### Requirement: A setting is named in the interface language, its key only in small print
+
+Each setting SHALL be shown with a human name and an explanation that states its units and
+what blank or zero means, both in the interface language (RU and EN through babel). The key
+SHALL be shown in small monospace for whoever knows it. `Spec.description` SHALL NOT be shown.
+
+[normative · evidence: app/admin/settings_layout.py, app/admin/translations/ru/LC_MESSAGES/messages.po · conf: high]
+
+#### Scenario: The owner finds settings without reading keys
+
+- **WHEN** the owner opens the page in Russian
+- **THEN** «Куда приходят алерты — чат Телеграма» and «Лимит платных проверок в час» are on it
+
+### Requirement: Rare settings are folded away, and say when they are not at their defaults
+
+The Advanced section SHALL be closed by default. Its heading SHALL show «изменено: N» when N
+of its settings differ from their defaults (a secret counts when set), and nothing when none
+do. It SHALL open by itself when a refused save put an error inside it, when it was the
+section just saved, or when the page's address points into it.
+
+[normative · evidence: app/admin/settings_layout.py (is_changed), app/admin/templates/settings.html · conf: medium — opening by address driven in jsdom, not a real browser]
+
+#### Scenario: An error in a folded section is not hidden
+
+- **WHEN** a save in Advanced is refused
+- **THEN** the page comes back with Advanced open and the error in view
+
+### Requirement: The Telegram account's environment is reported, never shown
+
+The Vendors section SHALL carry a Telegram account card that says, for `TG_API_ID`,
+`TG_API_HASH` and `TG_SESSION_DIR`, only whether each is set — never a value; whether
+`tg_user` is in `verification_route_order`; for each application with a `tg_user` account,
+whether the rung is wired or why not (`tg_user_carrier.unwired_reason`); one line on whether
+the `tg_user` rung is enabled and, if not, the first reason; and a folded explanation of how
+to set the three in the `.env` named by the service unit. The three stay in `.env` by the
+owner's decision of 26.09.2026. A failure to read any of this SHALL be shown on the card and
+SHALL NOT take the page down.
+
+[normative · evidence: app/admin/settings_layout.py (tg_account_overview), app/admin/templates/settings.html, tests/test_admin_settings_layout.py · conf: high]
+
+#### Scenario: The API hash never reaches the page
+
+- **WHEN** `TG_API_HASH` is set and the settings page is opened
+- **THEN** the card says it is set, and its value is nowhere in the page
 
 ### Requirement: The editor follows the setting's type
 

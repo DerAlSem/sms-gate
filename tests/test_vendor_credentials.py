@@ -120,7 +120,7 @@ def test_the_value_never_reaches_the_template_at_all():
         secret = {key: f"SECRET-VALUE-{i}" for i, key in enumerate(keys)}
         asyncio.run(store.set_many(secret))
 
-        rows = {row["key"]: row for fields in _settings_view_rows().values() for row in fields}
+        rows = {row["key"]: row for section in _settings_view_rows() for row in section["fields"]}
         for key in keys:
             row = rows[key]
             assert row["value"] != secret[key], f"{key}: the view hands its value to the page"
