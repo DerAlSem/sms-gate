@@ -320,6 +320,36 @@ def test_the_same_estate_with_a_template_opens_one(app, client):
     assert [o["route"] for o in r.json()["routes"]] == [SMS_OUT]
 
 
+def test_a_template_for_another_rung_does_not_serve_the_modem(app, client):
+    """SG-34: the template belongs to the rung. An application whose only template names
+    `tg_user` has no words for `sms_out`, and when the modem is all that is left the
+    request is refused exactly as if it had none."""
+    _only_the_modem(app)
+
+    async def configure():
+        await store.set_many({"verification_templates":
+                              '[{"app_id":"app1","route":"tg_user","template":"c {code}"}]'})
+
+    asyncio.run(configure())
+    r = _create(client)
+    assert r.status_code == 422, r.text
+    assert "template" in r.text.lower(), r.text
+
+
+def test_a_template_naming_the_modem_serves_it(app, client):
+    """The positive control: the same estate, the template naming `sms_out`."""
+    _only_the_modem(app)
+
+    async def configure():
+        await store.set_many({"verification_templates":
+                              '[{"app_id":"app1","route":"sms_out",'
+                              '"template":"КОД {code_words}"}]'})
+
+    asyncio.run(configure())
+    r = _create(client)
+    assert r.status_code == 200, r.text
+
+
 def test_no_template_does_not_refuse_a_verification_a_paid_rung_can_carry(app, client):
     """The requirement's second scenario, and the reason the refusal follows the **rung**.
 

@@ -67,6 +67,11 @@ logger = logging.getLogger(__name__)
 # Telegram account, so it is a rung the gateway acts on like the others.
 PLACED_HERE = frozenset({TG_GATEWAY, FLASH_CALL, SMS_OUT, TG_USER})
 
+# Rungs a consumer may select that stand in front of the rule rather than inside it: when
+# the rule does not name one for this operator, the walk continues with the rule's own
+# entry behind it. See `ladder_from`.
+_AHEAD_OF_THE_RULE = frozenset({TG_USER})
+
 # Who refused, when the refusal is the rule itself rather than a gate. It travels the same
 # channel a gate's refusal travels — `Walk.refused_by`, a 422 at the door and an ending on
 # the verification — because to a consumer the two are the same event: nothing was placed,
@@ -157,6 +162,14 @@ def ladder_from(route: str, operator: str | None) -> list[str]:
     named = rule.route_for(operator)
     if route in named:
         return named[named.index(route):]
+    if route in _AHEAD_OF_THE_RULE:
+        # The owner's decision of 25.09.2026 (SG-32): a code that did not reach the person
+        # in Telegram goes down to what the rule gives this operator. It cannot be said by
+        # naming `tg_user` in the rule instead — the modem sender reads the rule's *first*
+        # route for plain `/send` traffic and refuses anything that is not `sms_out`, so a
+        # `tg_user` at the head of `*` would refuse every ordinary message of every
+        # application. So the rung stands in front of the rule rather than inside it.
+        return [route] + [r for r in named if r != route]
     # The rule does not name this rung for this operator. Honoured alone, by the owner's
     # decision of 21.09.2026, and alone is the whole of it: there is no continuation to
     # borrow from an entry that does not mention where we started.

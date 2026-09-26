@@ -176,7 +176,7 @@ def carrier(verification_id: int, *, app_id: str):
             # The assembly checked this; the map is a setting and may have changed since.
             return _incapable(f"{app_id} has no Telegram account to write from")
 
-        wording = template.for_app(app_id)
+        wording = template.for_app(app_id, TG_USER)
         if not wording:
             return _incapable(f"no verification template is available for {app_id}, and "
                               f"this gateway composes no wording of its own")

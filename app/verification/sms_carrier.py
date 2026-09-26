@@ -55,7 +55,7 @@ def carrier(verification_id: int, *, app_id: str, modem, operator: str | None):
         # stored templates cannot be read", and it alerts on the second itself. Both are
         # the same answer here — there is no wording to put a code in — and the rung must
         # not compose around either.
-        wording = template.for_app(app_id)
+        wording = template.for_app(app_id, SMS_OUT)
         if not wording:
             logger.info("verification %d: no verification template is available for %s, "
                         "so the modem rung has nothing for a code to arrive in",

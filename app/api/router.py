@@ -153,8 +153,8 @@ async def create_verification(
             detail={"error": "no_route_available",
                     "message": "no route can prove it can carry this number now"},
         )
-    if not any(routes_vocab.carries_a_code_without_our_words(o.route) for o in offers) \
-            and not template.for_app(app_id):
+    if not any(routes_vocab.carries_a_code_without_our_words(o.route)
+               or template.for_app(app_id, o.route) for o in offers):
         # 4.47. Every rung left to this verification carries a code only inside wording
         # this gateway composes, and this application has configured none — so the code
         # could never be written down, whichever rung the consumer picks. Refused here
