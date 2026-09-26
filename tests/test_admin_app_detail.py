@@ -68,6 +68,25 @@ def test_the_apps_list_shows_no_template_in_red():
         asyncio.run(close_db())
 
 
+def test_the_apps_list_does_not_alarm_about_internal_senders():
+    """`admin` and `telegram` send free text (a resend, a reply), never a code — no
+    template is their normal state, and a red row for them is noise that teaches the
+    owner to skip the column."""
+    _db()
+    try:
+        _seed_apps("sp_app")
+        c = _client("en")
+        page = c.get("/admin/apps", headers=_AUTH).text
+        rows = {r.split("</code>")[0].rsplit(">", 1)[-1]: r
+                for r in page.split("<tr>")[2:]}
+        assert "not needed — internal sender" in rows["admin"]
+        assert "not needed — internal sender" in rows["telegram"]
+        assert "no — no code will be sent by SMS" in rows["sp_app"]
+        assert "no — no code will be sent by SMS" not in rows["admin"]
+    finally:
+        asyncio.run(close_db())
+
+
 def test_the_apps_list_shows_an_unreadable_template_store_without_crashing():
     _db()
     try:

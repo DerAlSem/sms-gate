@@ -404,6 +404,12 @@ async def admin_ranges_backfill(
     return RedirectResponse(url="/admin/ranges", status_code=303)
 
 
+
+# The gateway's own senders: `admin` (a resend from this console) and `telegram` (a reply
+# to a notification). They send free text, never a verification code, so having no SMS
+# template is their normal state rather than a gap to flag in red.
+_INTERNAL_SENDERS = frozenset({"admin", "telegram"})
+
 @router.get("/stats")
 async def admin_stats(
     request: Request,
@@ -472,6 +478,7 @@ async def _render_apps(request: Request, new_id=None, new_token=None):
             "msg_count": await queries.app_message_count(a["id"]),
             "protected": a["id"] == "admin",
             "has_template": a["id"] in templates_by_app,
+            "internal": a["id"] in _INTERNAL_SENDERS,
             "templates_unreadable": templates_unreadable,
         })
     # review #1: an id with a leftover record in one of the three app-owned settings,

@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-26 20:34+0300\n"
+"POT-Creation-Date: 2026-09-26 21:12+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -666,15 +666,15 @@ msgstr ""
 
 #: app/admin/templates/app_detail.html:12
 #: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
-#: app/admin/templates/apps.html:41 app/admin/templates/apps.html:42
+#: app/admin/templates/apps.html:43 app/admin/templates/apps.html:44
 #: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
 #: app/admin/templates/settings.html:132
 msgid "yes"
 msgstr ""
 
 #: app/admin/templates/app_detail.html:12
-#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:41
-#: app/admin/templates/apps.html:42 app/admin/templates/settings.html:132
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:43
+#: app/admin/templates/apps.html:44 app/admin/templates/settings.html:132
 msgid "no"
 msgstr ""
 
@@ -833,45 +833,49 @@ msgid "unreadable"
 msgstr ""
 
 #: app/admin/templates/apps.html:38
+msgid "not needed — internal sender"
+msgstr ""
+
+#: app/admin/templates/apps.html:40
 msgid "no — no code will be sent by SMS"
 msgstr ""
 
-#: app/admin/templates/apps.html:48
+#: app/admin/templates/apps.html:50
 msgid "Deactivate"
 msgstr ""
 
-#: app/admin/templates/apps.html:48
+#: app/admin/templates/apps.html:50
 msgid "Activate"
 msgstr ""
 
-#: app/admin/templates/apps.html:51
+#: app/admin/templates/apps.html:53
 #, python-format
 msgid ""
 "Allow %(app_id)s to spend money on paid verifications? Calls and Telegram"
 " are billed to our own prepaid accounts."
 msgstr ""
 
-#: app/admin/templates/apps.html:54
+#: app/admin/templates/apps.html:56
 msgid "Revoke spending"
 msgstr ""
 
-#: app/admin/templates/apps.html:54
+#: app/admin/templates/apps.html:56
 msgid "Allow spending"
 msgstr ""
 
-#: app/admin/templates/apps.html:58
+#: app/admin/templates/apps.html:60
 msgid "Delete app"
 msgstr ""
 
-#: app/admin/templates/apps.html:60 app/admin/templates/messages.html:124
+#: app/admin/templates/apps.html:62 app/admin/templates/messages.html:124
 msgid "Delete"
 msgstr ""
 
-#: app/admin/templates/apps.html:63
+#: app/admin/templates/apps.html:65
 msgid "internal"
 msgstr ""
 
-#: app/admin/templates/apps.html:71
+#: app/admin/templates/apps.html:73
 msgid "Records of deleted applications remain"
 msgstr ""
 

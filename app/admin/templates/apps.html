@@ -34,6 +34,8 @@
         <span class="muted">{% trans %}unreadable{% endtrans %}</span>
       {% elif r.has_template %}
         {% trans %}yes{% endtrans %}
+      {% elif r.internal %}
+        <span class="muted">{% trans %}not needed — internal sender{% endtrans %}</span>
       {% else %}
         <span style="color:#991b1b;font-weight:600;">{% trans %}no — no code will be sent by SMS{% endtrans %}</span>
       {% endif %}

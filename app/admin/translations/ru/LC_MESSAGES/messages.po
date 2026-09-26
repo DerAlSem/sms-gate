@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-26 20:34+0300\n"
+"POT-Creation-Date: 2026-09-26 21:12+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -750,15 +750,15 @@ msgstr "Активно"
 
 #: app/admin/templates/app_detail.html:12
 #: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
-#: app/admin/templates/apps.html:41 app/admin/templates/apps.html:42
+#: app/admin/templates/apps.html:43 app/admin/templates/apps.html:44
 #: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
 #: app/admin/templates/settings.html:132
 msgid "yes"
 msgstr "да"
 
 #: app/admin/templates/app_detail.html:12
-#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:41
-#: app/admin/templates/apps.html:42 app/admin/templates/settings.html:132
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:43
+#: app/admin/templates/apps.html:44 app/admin/templates/settings.html:132
 msgid "no"
 msgstr "нет"
 
@@ -920,18 +920,22 @@ msgid "unreadable"
 msgstr "не читается"
 
 #: app/admin/templates/apps.html:38
+msgid "not needed — internal sender"
+msgstr "не нужен — внутренний отправитель"
+
+#: app/admin/templates/apps.html:40
 msgid "no — no code will be sent by SMS"
 msgstr "нет — код по SMS не уйдёт"
 
-#: app/admin/templates/apps.html:48
+#: app/admin/templates/apps.html:50
 msgid "Deactivate"
 msgstr "Деактивировать"
 
-#: app/admin/templates/apps.html:48
+#: app/admin/templates/apps.html:50
 msgid "Activate"
 msgstr "Активировать"
 
-#: app/admin/templates/apps.html:51
+#: app/admin/templates/apps.html:53
 #, python-format
 msgid ""
 "Allow %(app_id)s to spend money on paid verifications? Calls and Telegram"
@@ -940,27 +944,27 @@ msgstr ""
 "Разрешить приложению %(app_id)s тратить деньги на платные подтверждения? "
 "Звонок и Telegram оплачиваются с наших счетов."
 
-#: app/admin/templates/apps.html:54
+#: app/admin/templates/apps.html:56
 msgid "Revoke spending"
 msgstr "Запретить траты"
 
-#: app/admin/templates/apps.html:54
+#: app/admin/templates/apps.html:56
 msgid "Allow spending"
 msgstr "Разрешить траты"
 
-#: app/admin/templates/apps.html:58
+#: app/admin/templates/apps.html:60
 msgid "Delete app"
 msgstr "Удалить приложение"
 
-#: app/admin/templates/apps.html:60 app/admin/templates/messages.html:124
+#: app/admin/templates/apps.html:62 app/admin/templates/messages.html:124
 msgid "Delete"
 msgstr "Удалить"
 
-#: app/admin/templates/apps.html:63
+#: app/admin/templates/apps.html:65
 msgid "internal"
 msgstr "внутреннее"
 
-#: app/admin/templates/apps.html:71
+#: app/admin/templates/apps.html:73
 msgid "Records of deleted applications remain"
 msgstr "Остались записи удалённых приложений"
 

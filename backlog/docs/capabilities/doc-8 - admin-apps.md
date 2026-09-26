@@ -3,7 +3,7 @@ id: doc-8
 title: admin-apps
 type: specification
 created_date: '2026-09-26 15:31'
-updated_date: '2026-09-26 16:42'
+updated_date: '2026-09-26 18:13'
 ---
 # admin-apps Specification
 
@@ -129,15 +129,22 @@ only the «remove bearer» box SHALL clear it.
 ### Requirement: The list shows who gets no code by SMS
 
 The list SHALL show, per application, whether it has an SMS text, and an application
-without one SHALL be marked as getting no code by SMS. An unreadable setting SHALL be shown
-as such and SHALL NOT take the list down.
+without one SHALL be marked as getting no code by SMS. The gateway's own senders, `admin`
+and `telegram`, send free text and never a code: without a text they SHALL be shown, muted,
+as not needing one. An unreadable setting SHALL be shown as such and SHALL NOT take the
+list down.
 
-[normative · evidence: app/admin/router.py (_render_apps), app/admin/templates/apps.html · conf: high]
+[normative · evidence: app/admin/router.py (_render_apps, _INTERNAL_SENDERS), app/admin/templates/apps.html, tests/test_admin_app_detail.py · conf: high]
 
 #### Scenario: A missing text is marked
 
 - **WHEN** an application has no entry in `verification_templates`
 - **THEN** its row says the code by SMS will not reach it
+
+#### Scenario: An internal sender is not flagged
+
+- **WHEN** `admin` or `telegram` has no entry in `verification_templates`
+- **THEN** its row says a text is not needed, without the red mark
 
 ### Requirement: Entries left by a deleted application stay reachable
 
