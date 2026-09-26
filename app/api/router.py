@@ -80,7 +80,7 @@ async def get_sms_status(
     return SmsStatusResponse(**dict(row))
 
 
-def _registry(request: Request) -> Registry:
+def _registry(request: Request, app_id: str) -> Registry:
     """The ladder, built per request from the settings in force right now.
 
     Per request rather than once at startup, because the order and membership are
@@ -91,7 +91,8 @@ def _registry(request: Request) -> Registry:
     return Registry(
         probes=build_probes(modem, ims_proof=getattr(request.app.state, "ims_proof", None),
                             tg_token=store.tg_gateway_token,
-                            ucaller_bearer=ucaller.configured_bearer() or ""),
+                            ucaller_bearer=ucaller.configured_bearer() or "",
+                            app_id=app_id),
         order=[name.strip() for name in store.verification_route_order.split(",")
                if name.strip()],
         probe_timeout=store.verification_probe_timeout,
@@ -142,7 +143,7 @@ async def create_verification(
             status_code=422,
             detail={"error": "number_blacklisted", "phone": body.phone},
         )
-    offers = await _registry(request).offer(body.phone)
+    offers = await _registry(request, app_id).offer(body.phone)
     if unavailable(offers):
         # Refused in the same answer rather than opened. A verification whose only
         # possible outcome is to expire is worse than a refusal: the person waits out the
@@ -240,7 +241,7 @@ async def select_verification_route(
                     "message": "a verification is carried by one route at a time"},
         )
 
-    offers = {o.route for o in await _registry(request).offer(row["phone"])}
+    offers = {o.route for o in await _registry(request, app_id).offer(row["phone"])}
     if body.route not in offers:
         raise HTTPException(
             status_code=422,
@@ -411,7 +412,7 @@ async def get_verification_status(
     offers: list = []
     if row["status"] == "failed":
         without = {row["route"]} if row["route"] else set()
-        offers = await _registry(request).offer(row["phone"], without=without)
+        offers = await _registry(request, app_id).offer(row["phone"], without=without)
 
     return VerificationStatusResponse(
         id=row["id"], phone=row["phone"], status=row["status"], route=row["route"],

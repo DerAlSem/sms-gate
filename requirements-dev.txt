@@ -13,3 +13,6 @@ pytest-timeout==2.*
 # modem tests (PDU send, CDS aggregation) import app.modem.at_commands → serial_asyncio
 pyserial==3.5.*
 pyserial-asyncio==0.6.*
+# tests/test_tg_user_wrapper.py builds its queries with the real TL constructors, so a
+# version that renames a field fails a test instead of failing a send.
+kurigram==2.2.26

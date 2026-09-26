@@ -2296,3 +2296,189 @@ async def rungs_for_verifications(
         async for row in cursor:
             grouped[row["verification_id"]].append(row)
     return grouped
+
+
+# --- Ported from the messengers branch (reach-people-in-messengers) for the `tg_user`
+# verification rung. SG-32. Only the six functions the rung actually calls are brought
+# over — `record_reachability_question`, `last_reach_per_route`, `routes_ever_offered`,
+# `route_health`, `withhold_from_messengers`/`allow_messengers` and `disclosures_for`
+# belong to the reachability door and the aggregate alert, neither of which exists on
+# this branch, and porting them here would be code with no caller. ---
+
+
+async def record_rung(
+    *,
+    message_id: int | None,
+    phone: str,
+    route: str,
+    outcome: str,
+    reason: str = "",
+    brand: str = "",
+    account: str = "",
+    offered: bool,
+) -> None:
+    """Append one rung's outcome. Task 2.8 on the messengers branch, append-only by
+    construction.
+
+    The source of the rate windows, of the route alerting, and of the answer to a person
+    who asks how their number was used.
+
+    `offered` has no default on purpose. Every value it could default to is a lie for some
+    caller — `miss` means the route was asked, `unavailable` may mean either — and a
+    silent default would put the lie in the one column the reachability door trusts to
+    tell "we never tried" from "it did not answer". The writer is made to say which.
+    """
+    db = await get_db()
+    await db.execute(
+        """
+        INSERT INTO rung_ledger
+            (message_id, phone, route, brand, account, outcome, offered, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (message_id, phone, route, brand or None, account or None, outcome,
+         1 if offered else 0, reason or None),
+    )
+    await db.commit()
+
+
+async def accounts_that_have_written_to(phone: str) -> set[tuple[str, str]]:
+    """Task 5.3 on the messengers branch — the (route, account) pairs that have had a
+    message *accepted* to this number, which is the set of conversations this person has
+    already seen opened.
+
+    **The predicate is `outcome = 'accepted'`, not `offered = 1`.** `offered` is the unit
+    of the reachability door and of the aggregate alert, and it is the wrong unit here
+    twice over. A rung that resolved the number and missed was offered, disclosed the
+    number to the vendor and wrote nothing — read as "already written to", the person
+    would receive every future code bare from an account they have never heard from. The
+    disclosure ledger has the same defect for the same reason: it records the *offer*,
+    before any verdict exists.
+
+    `indeterminate` is deliberately absent too. It means the send may have left the
+    process, and treating "may have" as "did" is the direction that never introduces at
+    all; the other direction costs one redundant sentence to a person who already had it.
+
+    **The key is the pair, never the route alone and never the brand.** A recipient sees
+    an account. The account behind a brand is replaced the day one is banned, and that
+    replacement opens a conversation the person has never seen — keyed on the brand it
+    would open with a bare payment code.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT DISTINCT route, account FROM rung_ledger "
+        "WHERE phone = ? AND outcome = 'accepted' AND account IS NOT NULL AND account <> ''",
+        (phone,),
+    ) as cursor:
+        return {(row["route"], row["account"]) async for row in cursor}
+
+
+async def is_withheld_from_messengers(phone: str) -> bool:
+    """Whether this number is withheld from messenger lookup.
+
+    Kept apart from `is_phone_blocked` deliberately, and the two must never be folded: a
+    refusal to be written to in Telegram is not consent to stop receiving SMS, and a
+    blacklisted number is not a person who asked a messenger account to leave them alone.
+    Folding either into the other cuts somebody off from their codes entirely.
+
+    A boolean here and not in the reachability door, which forbids them, because these are
+    different kinds of fact. Reachability is an observation about the world that decays as
+    SIMs change hands; this is a decision we recorded, and it is true until it is revoked.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM messenger_suppressions WHERE phone = ? LIMIT 1", (phone,)
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def record_disclosure(*, phone: str, route: str, account: str | None = None) -> None:
+    """A number was sent to a vendor. Whatever the outcome — resolution discloses it
+    before any verdict is reached, so a miss is a disclosure too."""
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO messenger_disclosures (phone, route, account) VALUES (?, ?, ?)",
+        (phone, route, account),
+    )
+    await db.commit()
+
+
+async def claim_rate_allowance(
+    *,
+    message_id: int,
+    route: str,
+    account: str,
+    phone: str,
+    per_hour: int,
+    per_day: int,
+    recipient_window_seconds: int,
+) -> bool:
+    """Consume one unit of `account`'s allowance for this send. Task 3.4 on the
+    messengers branch.
+
+    True when the claim was granted and the route may be offered the message; False when
+    any bound is already spent, which the ladder reports as `unavailable`.
+
+    **One statement, and that is the mechanism rather than a tidiness.** A count read in
+    one await and an insert written in the next hands the last remaining slot to both of
+    two concurrent sends: the second coroutine reads an allowance the first has claimed
+    and not yet written. Everything the decision rests on is therefore evaluated inside
+    the insert, where no other coroutine can run.
+
+    Three bounds, two of them about us and one about the person:
+
+    - the rolling hour and the rolling day on the account, counting **every** claim,
+      settled or not. The vendor is asked to resolve the number before it is asked to
+      send, so a lookup that found nobody still spent the budget this bound holds down;
+    - the recipient window, counting only claims that **may have reached** somebody and
+      only from *another* account. One account writing twice is one conversation; two
+      accounts inside the window is the pattern that gets both of them reported.
+
+    `ON CONFLICT DO NOTHING` carries the "cannot be granted twice for the same send" half
+    of the rule. It is not an integrity error deliberately: an exception here would escape
+    the ladder's per-route containment and lose the message entirely, where a refusal
+    costs it only this rung.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        INSERT INTO messenger_rate_claims (message_id, route, account, phone)
+        SELECT ?, ?, ?, ?
+        WHERE (SELECT COUNT(*) FROM messenger_rate_claims
+               WHERE account = ? AND claimed_at > datetime('now', ?)) < ?
+          AND (SELECT COUNT(*) FROM messenger_rate_claims
+               WHERE account = ? AND claimed_at > datetime('now', ?)) < ?
+          AND NOT EXISTS (
+               SELECT 1 FROM messenger_rate_claims
+               WHERE phone = ? AND account <> ? AND may_have_reached = 1
+                 AND claimed_at > datetime('now', ?))
+        ON CONFLICT (message_id, route) DO NOTHING
+        """,
+        (
+            message_id, route, account, phone,
+            account, "-3600 seconds", per_hour,
+            account, "-86400 seconds", per_day,
+            phone, account, f"-{int(recipient_window_seconds)} seconds",
+        ),
+    ) as cursor:
+        granted = cursor.rowcount == 1
+    await db.commit()
+    return granted
+
+
+async def settle_rate_claim(*, message_id: int, route: str, may_have_reached: bool) -> None:
+    """Record whether the send this claim paid for may have reached the person.
+
+    Only the recipient window reads it. The account's own bound counts the claim either
+    way, because the account was put in front of the vendor either way.
+
+    A settlement for a claim that was never granted is a no-op rather than an error: the
+    ladder settles the rung it claimed, and a route refused at the bound has nothing to
+    settle.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE messenger_rate_claims SET may_have_reached = ? "
+        "WHERE message_id = ? AND route = ?",
+        (1 if may_have_reached else 0, message_id, route),
+    )
+    await db.commit()

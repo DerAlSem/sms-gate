@@ -43,9 +43,10 @@ import logging
 from app.db import queries
 from app.settings_store import store
 from app.verification import (
-    flash_carrier, gates, ladder, rule, sms_carrier, tg_callback, tg_carrier, ucaller,
+    flash_carrier, gates, ladder, rule, sms_carrier, tg_callback, tg_carrier,
+    tg_user_carrier, ucaller,
 )
-from app.verification.routes import FLASH_CALL, SMS_OUT, TG_GATEWAY
+from app.verification.routes import FLASH_CALL, SMS_OUT, TG_GATEWAY, TG_USER
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ logger = logging.getLogger(__name__)
 # withholding rule of 20.09.2026 are a branch about the modem rung standing **inside** a
 # ladder, and under the old reading they were unreachable. So the modem is placed here
 # like every other rung the gateway acts on, and nothing else places it.
-PLACED_HERE = frozenset({TG_GATEWAY, FLASH_CALL, SMS_OUT})
+#
+# `tg_user` joined on 25.09.2026 (SG-32): the gateway writes from an application's own
+# Telegram account, so it is a rung the gateway acts on like the others.
+PLACED_HERE = frozenset({TG_GATEWAY, FLASH_CALL, SMS_OUT, TG_USER})
 
 # Who refused, when the refusal is the rule itself rather than a gate. It travels the same
 # channel a gate's refusal travels — `Walk.refused_by`, a 422 at the door and an ending on
@@ -132,6 +136,16 @@ def carriers_for(
         # bounded there rather than here.
         carriers[FLASH_CALL] = flash_carrier.carrier(
             verification_id, app_id=app_id, bearer=bearer)
+    unwired = tg_user_carrier.unwired_reason(app_id)
+    if unwired is None:
+        carriers[TG_USER] = tg_user_carrier.carrier(verification_id, app_id=app_id)
+    elif unwired:
+        # Absent rather than present and refusing, which is task 3.6's invariant on the
+        # messengers branch: the carrier claims the account's allowance before it asks
+        # Telegram anything, so a rung wired without its keys or its session would spend
+        # a live account's hourly quota to say `unavailable`. An application with no
+        # account at all is the ordinary case and says nothing.
+        logger.warning("tg_user route is configured but not wired: %s", unwired)
     return carriers
 
 

@@ -84,11 +84,14 @@ PAID_ROUTES = frozenset({FLASH_CALL, TG_GATEWAY})
 # with no message body at all. `call_in` and `sms_in` are the subscriber reaching us,
 # which is a code by construction.
 #
-# 🔴 **The three messenger routes are absent deliberately, and absent means "cannot".**
-# No adapter carries them yet, and what a messenger user account may put in front of a
-# person is a wire contract nobody here has read. Guessing them into this map would be
-# guessing in the one direction that cannot be taken back: an item let out over a route
-# on a supposition is an item delivered.
+# 🔴 `tg_user` is carried by SG-32, read against the contract captured in
+# `openspec/changes/reach-people-in-messengers/captures/kurigram-2.2.26.json` on the
+# messengers branch (capture 3.1). `max_user` and `app_bot` are absent deliberately, and
+# absent still means "cannot": no adapter carries either one yet, and what a MAX user
+# account or an application's own bot may put in front of a person is a wire contract
+# nobody here has read. Guessing them into this map would be guessing in the one direction
+# that cannot be taken back: an item let out over a route on a supposition is an item
+# delivered.
 ARBITRARY_TEXT = "arbitrary text"
 VERIFICATION_CODE = "a verification code"
 
@@ -98,20 +101,25 @@ _CARRIES: dict[str, frozenset[str]] = {
     SMS_OUT: frozenset({ARBITRARY_TEXT, VERIFICATION_CODE}),
     FLASH_CALL: frozenset({VERIFICATION_CODE}),
     TG_GATEWAY: frozenset({VERIFICATION_CODE}),
+    TG_USER: frozenset({VERIFICATION_CODE}),
 }
 
 
-# The rungs that carry a code only inside wording of **ours**. One today, and it is here
+# The rungs that carry a code only inside wording of **ours**. Two now, and this is here
 # beside `_CARRIES` for the same reason that map is: it is a property of the route rather
 # than a branch inside whoever happens to be asking, and the two questions it answers —
 # may this application be offered this rung, and may this verification be accepted at all
 # — must not be able to disagree.
 #
-# The two paid rungs are absent because there is nowhere in them to put words:
-# `sendVerificationMessage` takes a `code` and a `code_length` and no message body, and a
-# flash call's whole payload is the last four digits of the calling number. `call_in` and
-# `sms_in` are absent because the subscriber is the one who sends.
-_NEEDS_OUR_WORDS = frozenset({SMS_OUT})
+# `sms_out` composes free text around the code; `tg_user` composes the brand's introduction
+# (task 5.3 on the messengers branch) around the application's own template — both are
+# words this gateway puts together rather than a vendor's fixed wording, and both are
+# refused for want of a template exactly the same way. The two paid rungs are absent
+# because there is nowhere in them to put words: `sendVerificationMessage` takes a `code`
+# and a `code_length` and no message body, and a flash call's whole payload is the last
+# four digits of the calling number. `call_in` and `sms_in` are absent because the
+# subscriber is the one who sends.
+_NEEDS_OUR_WORDS = frozenset({SMS_OUT, TG_USER})
 
 
 def needs_our_words(route: str) -> bool:
@@ -163,6 +171,12 @@ _INSTRUCTIONS = {
     # nothing — and the capability requires the answer to say what they must do.
     TG_GATEWAY: "Open Telegram on the number being verified and read the code from the "
                 "message that arrives there.",
+    # No address to give either, for the same reason `tg_gateway`'s has none: the message
+    # arrives in the Telegram account registered to the number being verified. Which brand
+    # account wrote it — a person's own Telegram user account, not the vendor's own sender
+    # — is the identity, and stays unsaid, exactly as it does for the Gateway rung above.
+    TG_USER: "Open Telegram on the number being verified and read the code from the "
+             "message the application's support account sends there.",
     # No address to give: the call comes **to** the number being verified, and the whole
     # payload is the last four digits of the number it comes from. Said as "do not answer"
     # because a person who answers pays nothing and learns nothing, and because a call

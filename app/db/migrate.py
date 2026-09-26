@@ -426,6 +426,90 @@ async def run_migrations() -> None:
             value      TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- Every rung offered a message, append-only. Ported from the messengers branch
+        -- (task 2.8 there) for the `tg_user` verification rung: it is the source of the
+        -- rate windows, the aggregate route alerting, and the answer to a person who asks
+        -- how their number was used. Without it the two states with opposite remedies —
+        -- *our account is dead* and *this recipient has no messenger account* — are
+        -- indistinguishable, because both appear only as an absence of acceptances.
+        --
+        -- `message_id` is deliberately NOT a foreign key, for the same reason
+        -- `delivery_reports.message_id` is not: `PRAGMA foreign_keys` is ON, and a
+        -- declared reference would turn every deletion of a message into a refusal on an
+        -- operator surface. This is an account of what we did; it outlives the row it
+        -- names. For `tg_user`, `message_id` is the *negated* verification id (see
+        -- `app/verification/tg_user_carrier.py`), so it never collides with a genuine
+        -- outbound message id either.
+        CREATE TABLE IF NOT EXISTS rung_ledger (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            message_id  INTEGER,
+            phone       TEXT NOT NULL,
+            route       TEXT NOT NULL,
+            brand       TEXT,
+            account     TEXT,
+            -- accepted | miss | unavailable | indeterminate | skipped | withheld
+            outcome     TEXT NOT NULL,
+            -- Whether this route was actually put in front of this number. Not derivable
+            -- from `outcome`: `unavailable` covers both a client that failed after it had
+            -- already resolved the recipient and a brand that owns no account here, where
+            -- nobody was asked anything.
+            offered     INTEGER NOT NULL DEFAULT 0,
+            reason      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_phone ON rung_ledger(phone);
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_at    ON rung_ledger(occurred_at);
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_msg   ON rung_ledger(message_id);
+
+        -- An allowance is consumed by a claim that cannot be granted twice for the same
+        -- send. The primary key is the whole mechanism: two concurrent sends racing on
+        -- one account both try to insert, and exactly one succeeds.
+        --
+        -- Durable rather than an in-memory window, because this process exits by design:
+        -- a restart would otherwise hand the account a fresh allowance inside the same
+        -- hour. The row is never deleted; `may_have_reached` is the recipient's side of
+        -- the same row, starting at 1 (an unfinished send may have arrived) and set to 0
+        -- only by an outcome that states nothing was sent.
+        CREATE TABLE IF NOT EXISTS messenger_rate_claims (
+            message_id       INTEGER NOT NULL,
+            route            TEXT NOT NULL,
+            account          TEXT NOT NULL,
+            phone            TEXT NOT NULL DEFAULT '',
+            may_have_reached INTEGER NOT NULL DEFAULT 1,
+            claimed_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (message_id, route)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rate_claims_account
+            ON messenger_rate_claims(account, claimed_at);
+        CREATE INDEX IF NOT EXISTS idx_rate_claims_phone
+            ON messenger_rate_claims(phone, claimed_at);
+
+        -- Numbers sent to a vendor, whatever the outcome. Resolution sends the number
+        -- before any verdict, so a miss is a disclosure too — and the record of the route
+        -- that *accepted* is exactly the set of disclosures that is not the interesting
+        -- one.
+        CREATE TABLE IF NOT EXISTS messenger_disclosures (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone        TEXT NOT NULL,
+            route        TEXT NOT NULL,
+            account      TEXT,
+            disclosed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_disclosures_phone ON messenger_disclosures(phone);
+
+        -- Numbers withheld from messenger lookup — because the person asked us to stop,
+        -- or because an operator withheld them. Kept apart from `bad_numbers` on purpose:
+        -- a refusal to be written to in Telegram is not consent to stop receiving SMS,
+        -- and folding the two would silently cut a person off from their codes entirely.
+        CREATE TABLE IF NOT EXISTS messenger_suppressions (
+            phone      TEXT PRIMARY KEY,
+            reason     TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
     """)
 
     # Added after `messages` shipped, so it comes as an ALTER rather than a column in

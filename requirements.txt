@@ -9,3 +9,17 @@ python-multipart==0.0.*
 httpx==0.28.*
 babel==2.*
 phonenumbers==8.*
+# The Telegram user-account rung (`tg_user`). kurigram installs under the import name
+# `pyrogram`: it is the live fork, not the archived original — Telethon, pyrogram and
+# pyrofork were all archived in 2026, and of the four Python MTProto clients this is the
+# one still being pushed to.
+#
+# Pinned exactly, not to a series. The wrapper's budget is derived from this library's own
+# constants (`MAX_RETRIES`, `WAIT_TIMEOUT`, `RETRY_DELAY`) and the captured error contract
+# is layer 229 of this build; a patch release that moves either is a thing to read before
+# it ships, not after.
+#
+# TgCrypto is deliberately NOT added alongside it. The library warns once at import and
+# falls back to pure-Python AES; at six messages a day that is of no consequence, while a
+# compiled extension is a build toolchain on a host that has none.
+kurigram==2.2.26

@@ -52,3 +52,34 @@ def country_choices(locale: str) -> list[tuple[str, str]]:
         name = loc.territories.get(code) or code
         out.append((code, f"{name} ({code})"))
     return sorted(out, key=lambda t: t[1].lower())
+
+
+# --- Ported from the messengers branch (reach-people-in-messengers) for SG-32.
+# `app/routing/config.py` imports this at module scope for validating a brand's own
+# account number, and is otherwise unchanged from that branch — flagged in the task
+# report as a dependency outside the file list in ТЗ section 1, since `app/phone.py`
+# itself was not named there. ---
+def normalize_e164(value: str) -> str:
+    """Return the E.164 form of an already-international number, else raise ValueError.
+
+    Used where the number is **ours** rather than a recipient's — a sender account's own
+    number, written once by hand into configuration. There is deliberately no region to
+    default to: `validate_and_normalize` takes one from `store.phone_region`, and a
+    settings validator that read the store would be reading the very thing it guards.
+
+    The `+` is required rather than guessed at for a second reason. Two spellings of one
+    number are two numbers to any check that compares them, and the check that one number
+    carries one brand would be evaded by spacing alone.
+    """
+    text = (value or "").strip()
+    if not text.startswith("+"):
+        raise ValueError(
+            f"{value!r} is not in E.164 form — write it as +<country code><number>"
+        )
+    try:
+        parsed = phonenumbers.parse(text, None)
+    except phonenumbers.NumberParseException:
+        raise ValueError(f"{value!r} is not a valid phone number")
+    if not phonenumbers.is_valid_number(parsed):
+        raise ValueError(f"{value!r} is not a valid phone number")
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)

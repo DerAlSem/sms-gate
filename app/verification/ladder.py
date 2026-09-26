@@ -179,14 +179,26 @@ async def walk(
                         verification_id, route)
             break
 
-        if route in _MODEM_ROUTES and any(a.outcome == REFUSED for a in attempts):
-            # Decided by the owner, 20.09.2026. A vendor refusing *us* — a rotated token,
-            # an empty account — is gateway-wide: it will refuse every verification until
-            # somebody fixes it, and it refuses them all within the same minute. Carrying
-            # them over the modem then turns one vendor's outage into a flood of traffic
-            # on the route this capability exists to route *away* from, and for a МегаФон
-            # subscriber that route has been refusing — so it would read to the
+        if route in _MODEM_ROUTES and any(
+            a.outcome == REFUSED and a.route in PAID_ROUTES for a in attempts
+        ):
+            # Decided by the owner, 20.09.2026, narrowed to a paid rung's refusal by the
+            # owner's decision of 25.09.2026. A *paid* vendor refusing *us* — a rotated
+            # token, an empty account — is gateway-wide: it will refuse every verification
+            # until somebody fixes it, and it refuses them all within the same minute.
+            # Carrying them over the modem then turns one vendor's outage into a flood of
+            # traffic on the route this capability exists to route *away* from, and for a
+            # МегаФон subscriber that route has been refusing — so it would read to the
             # application as a delivery and behave to the person as a silence.
+            #
+            # `tg_user` is deliberately excluded from this trigger, and it is excluded by
+            # not being in `PAID_ROUTES` rather than by a second check here — one vocabulary
+            # for "which rungs are the gateway's own money" everywhere it is read. Its
+            # account is a GM+ support account, not a vendor this gateway pays: a refusal
+            # there is one dead session, not an outage, and the owner's decision of
+            # 25.09.2026 is that the modem still carries — a rung named for the whole
+            # gateway must not be able to be silenced by one account somebody forgot to
+            # renew.
             #
             # A rung the **subscriber** declined is the opposite case and still advances
             # here: that is a statement about one person, not about the gateway.
@@ -307,8 +319,13 @@ async def _attempt(
 
 
 def _refused_by(attempts: Sequence[Attempt]) -> str:
-    """Which rung's vendor refused us, for the line that says why the modem was withheld."""
-    return ", ".join(a.route or "?" for a in attempts if a.outcome == REFUSED) or "a rung"
+    """Which paid rung's vendor refused us, for the line that says why the modem was
+    withheld. Filtered to `PAID_ROUTES`, matching the condition above exactly: naming a
+    `tg_user` refusal here would blame the modem's withholding on the one route that,
+    by the owner's decision of 25.09.2026, is not allowed to cause it."""
+    return ", ".join(
+        a.route or "?" for a in attempts if a.outcome == REFUSED and a.route in PAID_ROUTES
+    ) or "a rung"
 
 
 def _why_nothing_carried(attempts: Sequence[Attempt]) -> str:

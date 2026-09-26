@@ -1748,7 +1748,10 @@ class ModemManager:
             probes=build_probes(self, ims_proof=getattr(self, "ims_proof", None),
                                 excluding=excluding,
                                 tg_token=store.tg_gateway_token,
-                                ucaller_bearer=ucaller.configured_bearer() or ""),
+                                ucaller_bearer=ucaller.configured_bearer() or "",
+                                # The sweep re-proves only rungs nothing is placed for,
+                                # and `tg_user` is placed: there is no application to ask.
+                                app_id=None),
             order=[name.strip()
                    for name in store.verification_route_order.split(",")
                    if name.strip()],

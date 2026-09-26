@@ -68,6 +68,7 @@ def _probe(name, modem=None, ims_proof=None, **kw):
     which is why `build_probes` itself has no default for either."""
     kw.setdefault("tg_token", "")
     kw.setdefault("ucaller_bearer", "")
+    kw.setdefault("app_id", None)
     return build_probes(modem or FakeModem(), ims_proof=ims_proof, **kw)[name]
 
 
@@ -369,7 +370,7 @@ def test_the_ladder_built_for_an_api_request_carries_the_configured_token():
         await store.set_many({"tg_gateway_token": "AAExample:token"})
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             modem=FakeModem(), ims_proof=None)))
-        registry = router._registry(request)
+        registry = router._registry(request, "app")
         return {offer.route for offer in await registry.offer(PHONE)}
 
     assert TG_GATEWAY in _run(body)
@@ -397,7 +398,7 @@ def test_the_rung_is_absent_from_both_ladders_when_no_token_is_configured():
     async def body():
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             modem=FakeModem(), ims_proof=None)))
-        from_api = {o.route for o in await router._registry(request).offer(PHONE)}
+        from_api = {o.route for o in await router._registry(request, "app").offer(PHONE)}
         from_modem = {o.route for o in
                       await ModemManager._verification_registry(FakeModem()).offer(PHONE)}
         return from_api, from_modem
@@ -428,7 +429,7 @@ def test_the_ladder_built_for_an_api_request_carries_the_configured_credential()
         await store.set_many({"ucaller_key": "SECRET", "ucaller_service_id": "1692"})
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             modem=FakeModem(), ims_proof=None)))
-        registry = router._registry(request)
+        registry = router._registry(request, "app")
         return {offer.route for offer in await registry.offer(PHONE)}
 
     assert FLASH_CALL in _run(body)
@@ -459,7 +460,7 @@ def test_the_call_rung_is_absent_from_both_ladders_when_no_credential_is_configu
     async def body():
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
             modem=FakeModem(), ims_proof=None)))
-        from_api = {o.route for o in await router._registry(request).offer(PHONE)}
+        from_api = {o.route for o in await router._registry(request, "app").offer(PHONE)}
         from_modem = {o.route for o in
                       await ModemManager._verification_registry(FakeModem()).offer(PHONE)}
         return from_api, from_modem

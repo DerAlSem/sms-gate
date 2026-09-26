@@ -42,14 +42,14 @@ assumed — see its probe below.
 from __future__ import annotations
 
 from app.db import queries
-from app.verification import rule
+from app.verification import rule, template, tg_user_carrier
 from app.verification.routes import (
-    CALL_IN, FLASH_CALL, SMS_IN, SMS_OUT, TG_GATEWAY, Proof,
+    CALL_IN, FLASH_CALL, SMS_IN, SMS_OUT, TG_GATEWAY, TG_USER, Proof,
 )
 
 
 def build_probes(
-    modem, *, tg_token: str, ucaller_bearer: str,
+    modem, *, tg_token: str, ucaller_bearer: str, app_id: str | None,
     ims_proof=None, excluding: int | None = None, tg_reachability=None,
 ) -> dict:
     """The probes the gateway can actually run today, ready for the registry.
@@ -82,6 +82,11 @@ def build_probes(
     for the reader that treats "not offered" as "not chosen"; this set has two readers and
     the other one reads it as "revoked".
 
+    `app_id` carries no default for the same reason, and `None` is a legitimate answer
+    that has to be given: the `tg_user` rung is an application's own account, so whether
+    it can be offered depends on who is asking. The manager's sweep passes `None` — it
+    never re-proves a rung the gateway places, and `tg_user` is one.
+
     `tg_reachability` is the seam onto `carry-telegram-on-any-uplink`, on the same terms as
     `ims_proof`: absent, it is not consulted, and neither of them is a credential.
     """
@@ -91,6 +96,7 @@ def build_probes(
         SMS_OUT: _sms_out_probe(modem),
         TG_GATEWAY: _tg_gateway_probe(tg_token, tg_reachability),
         FLASH_CALL: _flash_call_probe(ucaller_bearer),
+        TG_USER: _tg_user_probe(app_id),
     }
 
 
@@ -264,6 +270,37 @@ def _flash_call_probe(bearer):
     async def probe(phone: str) -> Proof:
         if not bearer:
             return Proof(holds=False, reason="no uCaller credential is held")
+        return Proof(holds=True)
+
+    return probe
+
+
+def _tg_user_probe(app_id):
+    """The application's own Telegram account, offered on configuration alone.
+
+    Configuration is not evidence, and this is the one rung where nothing better is
+    available without paying for it in the wrong currency: the only question Telegram
+    answers about a subscriber is `ResolvePhone`, and asking it discloses the number and
+    spends the account's allowance during an offer the consumer may never select. Like the
+    Gateway rung, this one dies loudly and inside the ladder's bound — `unavailable` is
+    alerted with the account named and the ladder advances — so the failure is handled where
+    it happens rather than pre-empted here.
+
+    What *is* asked is everything that would make the rung incapable for this application
+    whatever the number: an account in the brand map, the keys and the session file, and a
+    template to put the code in.
+    """
+    async def probe(phone: str) -> Proof:
+        if not app_id:
+            return Proof(holds=False, reason="no application to write for")
+        unwired = tg_user_carrier.unwired_reason(app_id)
+        if unwired is not None:
+            return Proof(holds=False,
+                         reason=unwired or f"{app_id} has no Telegram account")
+        if not template.for_app(app_id):
+            return Proof(holds=False,
+                         reason=f"{app_id} has no verification template to write the "
+                                f"code into")
         return Proof(holds=True)
 
     return probe

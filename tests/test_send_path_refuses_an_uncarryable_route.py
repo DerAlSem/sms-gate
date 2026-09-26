@@ -476,13 +476,16 @@ def test_neither_paid_rung_declares_itself_able_to_carry_words():
 
 
 def test_a_route_nothing_has_declared_carries_nothing():
-    """Absent means "cannot", and the three messenger routes are absent on purpose.
+    """Absent means "cannot", and the two messenger routes left are absent on purpose.
 
     They are names in the vocabulary with no adapter behind them and no wire contract
     anybody here has read. Answering yes by default is the one direction that cannot be
     taken back: an item let out over a route on a supposition is an item delivered.
+    `tg_user` left this list with SG-32, read against capture 3.1, and carries a code only.
     """
-    for undeclared in ("tg_user", "max_user", "app_bot", "not_a_route_at_all"):
+    assert routes.carries("tg_user", routes.VERIFICATION_CODE)
+    assert not routes.carries("tg_user", routes.ARBITRARY_TEXT)
+    for undeclared in ("max_user", "app_bot", "not_a_route_at_all"):
         assert not routes.carries(undeclared, routes.ARBITRARY_TEXT), undeclared
         assert not routes.carries(undeclared, routes.VERIFICATION_CODE), undeclared
 

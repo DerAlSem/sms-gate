@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.db.connection import get_db
+from app.routing import config as route_config
 
 logger = logging.getLogger(__name__)
 
@@ -337,6 +338,24 @@ SETTINGS_SPEC: list[Spec] = [
     Spec("operator_route_review_days", "posint", 30, "Routing", False,
          "Report a routing-rule entry that has been in force this many days without "
          "being revisited — a rule set during an outage outlives the outage"),
+    # Ported from the messengers branch (reach-people-in-messengers) for the `tg_user`
+    # verification rung. SG-32. Only these two settings are brought over — `route_order`,
+    # `route_deadlines`, `message_class_rule`, `route_alert_*` and `notify_route_stopped`
+    # belong to that branch's own outbound ladder over `app/routing`, which does not exist
+    # here: this ladder is `app/verification/ladder.py`, and it is not driven by any of
+    # those settings.
+    Spec("messenger_brands", "brands", "", "Routing", False,
+         'Which application may send under which brand, and the account per brand: JSON '
+         'with "apps" and "brands". Each account records the number it lives on, in E.164, '
+         'and the "intro" it sends as its first message to a number — who is writing and '
+         'why — {"brands": {"sokol": {"tg_user": {"account": "@name", "number": '
+         '"+79990000000", "intro": "Это Сокол Паркинг, вы запросили код"}}}}. One account '
+         'may carry one brand only, one number is one account on a messenger, and a rung '
+         'with no introduction is not offered a number it has never written to'),
+    Spec("messenger_limits", "limits", "", "Routing", False,
+         'Per-account hourly and daily maxima and the per-recipient window: JSON, e.g. '
+         '{"accounts": {"sokol_tg": {"per_hour": 5, "per_day": 20}}, '
+         '"recipient_window_seconds": 600}'),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93
@@ -456,6 +475,12 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
     if type_ == "callbackbase":
         from app.verification import tg_callback
         tg_callback.validate_base(raw)
+        return
+    if type_ == "brands":
+        route_config.validate_brands(raw)
+        return
+    if type_ == "limits":
+        route_config.validate_limits(raw)
         return
     if type_ == "msisdn":
         # Blank is the shipped state and refusing it would make an unconfigured estate
@@ -616,6 +641,14 @@ class SettingsStore:
         return self._routes("delivery_dispatch")
 
     @property
+    def messenger_brands_parsed(self) -> dict:
+        return route_config.parse_brands(self.get("messenger_brands") or "")
+
+    @property
+    def messenger_limits_parsed(self) -> dict:
+        return route_config.parse_limits(self.get("messenger_limits") or "")
+
+    @property
     def send_retry_backoff_parsed(self) -> list[int]:
         """Delays before each retry. Empty means a message gets a single attempt."""
         raw = self.get("send_retry_backoff") or ""
@@ -629,6 +662,14 @@ class SettingsStore:
         for key, raw in changes.items():
             spec = SPEC_BY_KEY[key]
             validate_raw(spec.type, raw, spec.route_key)
+        # A relation between two settings, so it cannot live in `validate_raw`: either one
+        # can be the one being saved, and the other has to be read as it will stand *after*
+        # this save. Raised before the transaction opens, so a refusal leaves the stored
+        # rules exactly as they were.
+        route_config.check_every_account_is_rate_bound(
+            changes.get("messenger_brands", self.get("messenger_brands") or ""),
+            changes.get("messenger_limits", self.get("messenger_limits") or ""),
+        )
         db = await get_db()
         try:
             for key, raw in changes.items():
