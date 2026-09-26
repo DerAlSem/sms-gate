@@ -1,11 +1,11 @@
 ---
 id: SG-32
 title: Ступень tg_user в лестнице верификации — коды ГМ+ с аккаунта @gmplus_support
-status: In Progress
+status: Done
 assignee:
   - '@S·tg-верификация'
 created_date: '2026-09-25 17:05'
-updated_date: '2026-09-26 05:40'
+updated_date: '2026-09-26 15:38'
 labels: []
 dependencies:
   - SG-24
@@ -20,7 +20,7 @@ ordinal: 31000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Код верификации приложения, в правиле которого стоит tg_user, уходит сообщением с аккаунта @gmplus_support, если номер есть в Телеграме
+- [x] #1 Код верификации приложения, в правиле которого стоит tg_user, уходит сообщением с аккаунта @gmplus_support, если номер есть в Телеграме
 - [x] #2 Номер без Телеграма: ступень отвечает declined, лестница переходит к следующей ступени правила
 - [x] #3 Сообщение могло дойти, но ответа нет (unanswered): лестница спускается к следующей ступени
 - [x] #4 Без ключей TG_* или без файла сессии ступень не вписана: квота аккаунта не тратится, в журнале route is configured but not wired
@@ -61,4 +61,12 @@ ordinal: 31000
 26.09 08:37 MSK выкачено ea3e04f скиллом ship-sms-gate: миграция прогнана дважды на боевой схеме, бэкап sms.db.pre-SG-32-20260926-083652 сверен (2590=2590), kurigram поставлен хуком, NRestarts=0, ошибок в журнале нет.
 
 НАХОДКА после выката: gmp_app шлёт коды через /send обычным текстом (SG-6.1), а ступень tg_user живёт в лестнице ВЕРИФИКАЦИИ. Пока gmp_app не перейдёт на дверь /verifications (SG-6.1 AC 2, код вне репо), tg_user не доставит ГМ+ ни одного кода. Шаблон verification_templates на проде есть только у test; у gmp_app его нет, без него проба tg_user не держится. Аккаунт в brands по заготовке SG-24 — числовой id 8788987307, файл сессии тогда 8788987307.session.
+
+26.09 18:27 MSK выкачено af6cb6c (ship-sms-gate): ff ea3e04f..af6cb6c, бэкап sms.db.pre-sg32-ladder-20260926-182630 (ok, 2608=2608), NRestarts=0, журнал без not wired/ошибок, /admin/stats 401. Живая проба владельца приложением test на +79851600019: верификация 7 предложила tg_user первым (без not wired → ключи и сессия видны), select tg_user → 200 route=tg_user pending; rung_ledger id 1: message_id -7, brand gmplus, account 8788987307, accepted, offered 1; сообщение пришло в 18:35: «Это Сервисный Аккаунт GM+.» + пустая строка + «s-g: 7329». /check владелец не звал. sms_out не предлагался: правило не шлёт МегаФон на модем (старая настройка). Дока: backlog/docs/capabilities doc-8 verification-tg-user.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Ждёт тебя: убрать test из messenger_brands (админка); мерж ветки в master — основной чекаут занят сестринской сессией; переход gmp_app на дверь /verifications (SG-6.1 AC#2) по docs/contracts/gmp-verification.md и шаблон verification_templates для gmp_app — без них tg_user не доставит ГМ+ ни одного кода. НЕ проверено живьём: исходы miss/unavailable/indeterminate и спуск по лестнице оператора — только тестами. Сделано: срез tg_user из ветки мессенджеров на master (клиент kurigram, классификатор ошибок, durable-лимиты, представление, носитель), ступень стоит перед правилом оператора; выкачено ea3e04f и af6cb6c. Проверено живой пробой 26.09 (верификация 7, accepted, код доставлен) и набором (1461 зелёных, 7 известных падений базы). Найдено: gmp_app пока шлёт коды через /send текстом; отмена внутри первого connect() в tg_user.py оставляет сессию запертой — на ветке мессенджеров дыра живёт (SG-24).
+<!-- SECTION:FINAL_SUMMARY:END -->
