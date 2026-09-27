@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-27 06:16'
-updated_date: '2026-09-27 06:34'
+updated_date: '2026-09-27 08:10'
 labels:
   - tests
 dependencies: []
@@ -44,6 +44,8 @@ ordinal: 38000
 Дока не менялась: поведение системы не менялось: вывод alert-send.sh на Linux прежний, фикс cds — только тест, verification-api.md — внешний контракт, не capability-дока; ни одна capability-дока не описывает alert-send
 
 Выкат 27.09.2026 71e70c6 (09:33:01 MSK, NRestarts=0). Проверено НА КОРОБКЕ: Ubuntu 24.04.5, /bin/sh=dash, awk=gawk (не mawk, как в контейнерах); установленный /usr/local/sbin/sms-gate-alert = deploy/alert-send.sh по sha256; encode() из установленного файла: 'one line'→[one line], 'a\nb'→[a\\nb], обратный слэш удвоен, пустое→[]. Бэкап ~/sms-gate-backups/sms.db.pre-SG-38-20260927-093233 (integrity ok, 2620=2620).
+
+Живая отправка 27.09.2026 11:09 MSK (владелец, sudo sms-gate-alert на коробке): однострочный 'SG-38: проверка отправки' и двухстрочный пришли в Telegram целиком, перенос строки восстановлен; спул после — 0 байт.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
