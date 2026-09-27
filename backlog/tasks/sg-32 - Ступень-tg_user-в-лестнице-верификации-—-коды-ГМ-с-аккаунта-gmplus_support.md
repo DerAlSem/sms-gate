@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@S·tg-верификация'
 created_date: '2026-09-25 17:05'
-updated_date: '2026-09-26 15:38'
+updated_date: '2026-09-27 04:08'
 labels: []
 dependencies:
   - SG-24
@@ -63,6 +63,8 @@ ordinal: 31000
 НАХОДКА после выката: gmp_app шлёт коды через /send обычным текстом (SG-6.1), а ступень tg_user живёт в лестнице ВЕРИФИКАЦИИ. Пока gmp_app не перейдёт на дверь /verifications (SG-6.1 AC 2, код вне репо), tg_user не доставит ГМ+ ни одного кода. Шаблон verification_templates на проде есть только у test; у gmp_app его нет, без него проба tg_user не держится. Аккаунт в brands по заготовке SG-24 — числовой id 8788987307, файл сессии тогда 8788987307.session.
 
 26.09 18:27 MSK выкачено af6cb6c (ship-sms-gate): ff ea3e04f..af6cb6c, бэкап sms.db.pre-sg32-ladder-20260926-182630 (ok, 2608=2608), NRestarts=0, журнал без not wired/ошибок, /admin/stats 401. Живая проба владельца приложением test на +79851600019: верификация 7 предложила tg_user первым (без not wired → ключи и сессия видны), select tg_user → 200 route=tg_user pending; rung_ledger id 1: message_id -7, brand gmplus, account 8788987307, accepted, offered 1; сообщение пришло в 18:35: «Это Сервисный Аккаунт GM+.» + пустая строка + «s-g: 7329». /check владелец не звал. sms_out не предлагался: правило не шлёт МегаФон на модем (старая настройка). Дока: backlog/docs/capabilities doc-8 verification-tg-user.
+
+27.09: GM+ включил sms_gate_verification_enabled. Первая живая верификация gmp_app (26.09 20:26 UTC): tg_user miss (нет Телеграма, rung_ledger outcome miss) → sms_out carried, delivered → confirmed. AC #2 (спуск после declined) подтверждён живьём. Старый /send с кодами GM+ после включения не ходил.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
