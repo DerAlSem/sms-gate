@@ -1,11 +1,11 @@
 ---
 id: SG-34
 title: Шаблон кода верификации на пару приложение+ступень; в SMS код прописью
-status: In Progress
+status: Done
 assignee:
   - '@S·tg-верификация'
 created_date: '2026-09-26 15:48'
-updated_date: '2026-09-27 04:08'
+updated_date: '2026-09-27 06:06'
 labels: []
 dependencies: []
 ordinal: 32000
@@ -32,4 +32,6 @@ ordinal: 32000
 Сделано: template.py — ключ (app_id, route), запасная запись без route, {code_words} (spell: ОДИН ДВА НОЛЬ ЧЕТЫРЕ), отказ при сохранении: дубль пары, route вне WORDED_ROUTES (sms_out, tg_user), 0 или 2 подстановки. Попутно: «{ code }» с пробелами раньше проходило сохранение, но не подставлялось — теперь отказ. Читатели: sms_carrier → for_app(app, SMS_OUT), tg_user_carrier и проба tg_user → TG_USER, отказ no_template в router — по шаблону каждой предложенной ступени. AC4 уточнён: пробы sms_out по шаблону нет (это SG-30), проверяется отказ no_template. Подсказка настройки в админке обновлена. Набор: 1475 зелёных (+14), те же 7 известных падений. Дока: doc-8, требование Each worded rung.
 
 27.09: GM+ ходит в дверь; первое SMS ушло общим шаблоном цифрами (68 знаков) — записи sms_out с {code_words} в verification_templates на проде ещё нет. Закрытие ждёт её и первого SMS прописью.
+
+27.09: живое подтверждение — владелец получил SMS «GM+ ЧЕТЫРЕ ШЕСТЬ ЧЕТЫРЕ ВОСЕМЬ» от шаблона gmp_app/sms_out «GM+ {code_words}» (запись в админке сделана владельцем). Шаблон sp_app — общий «SP: {code_words}».
 <!-- SECTION:NOTES:END -->
