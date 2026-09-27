@@ -1,0 +1,69 @@
+{
+  "account": {
+    "id": 8788987307,
+    "username": "gmplus_support"
+  },
+  "client": "kurigram 2.2.26",
+  "question": "does contacts.ImportContacts find a person that contacts.ResolvePhone missed",
+  "answer": "no — in every case import found exactly whom resolve found",
+  "why": "Telegram answers a number whose 'find me by phone number' is 'My contacts' only to an account the person keeps in their own contacts; @gmplus_support is in nobody's contacts and keeps none itself. Owner, 27.09: the number ending 9888 is set to 'My contacts'",
+  "cases": [
+    {
+      "case": "open",
+      "captured_at": "2026-09-22T09:07:19.470740+00:00",
+      "source": "3.1 capture",
+      "phone": "+798…19",
+      "resolve_phone": {
+        "users": [
+          368905113
+        ]
+      },
+      "import_contacts": {
+        "users": 1,
+        "imported": 1
+      }
+    },
+    {
+      "case": "no_account",
+      "captured_at": "2026-09-22T09:07:19.470740+00:00",
+      "source": "3.1 capture",
+      "phone": "+790…03",
+      "resolve_phone": {
+        "raised": "PHONE_NOT_OCCUPIED"
+      },
+      "import_contacts": {
+        "users": 0,
+        "imported": 0
+      }
+    },
+    {
+      "case": "hidden",
+      "captured_at": "2026-09-22T09:07:19.470740+00:00",
+      "source": "3.1 capture",
+      "phone": "+792…88",
+      "resolve_phone": {
+        "raised": "PHONE_NOT_OCCUPIED"
+      },
+      "import_contacts": {
+        "users": 0,
+        "imported": 0
+      }
+    },
+    {
+      "case": "hidden",
+      "captured_at": "2026-09-27",
+      "source": "SG-36 probe: the person behind the live gmp_app miss of 26.09 (rung_ledger); their privacy setting is not known",
+      "phone": "+798…64",
+      "resolve_phone": {
+        "raised": "PHONE_NOT_OCCUPIED"
+      },
+      "import_contacts": {
+        "users": 0,
+        "imported": 0,
+        "popular_invites": 1
+      },
+      "account_contacts_before": 0,
+      "account_contacts_after": 0
+    }
+  ]
+}

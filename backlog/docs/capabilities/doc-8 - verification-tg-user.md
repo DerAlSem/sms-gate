@@ -3,7 +3,7 @@ id: doc-8
 title: verification-tg-user
 type: specification
 created_date: '2026-09-26 15:37'
-updated_date: '2026-09-26 15:52'
+updated_date: '2026-09-27 05:21'
 ---
 # verification-tg-user Specification
 
@@ -68,7 +68,7 @@ anything. An application with no verification template SHALL likewise be `INCAPA
 | wire outcome | ladder | effect |
 |---|---|---|
 | `accepted` | `CARRIED` | the verification is carried by `tg_user` |
-| `miss` (no Telegram on the number) | `DECLINED` | the ladder moves to the next rung |
+| `miss` (no Telegram on the number, or hidden from lookup by phone) | `DECLINED` | the ladder moves to the next rung |
 | `unavailable` (session, ban, flood, our failure) | `REFUSED` | loud alert naming the account; the ladder moves on |
 | `indeterminate` (no answer in time) | `UNANSWERED` | the ladder moves on; a duplicate code is accepted |
 
@@ -83,6 +83,19 @@ offer finishes on its own bound, so the session file is never left locked.
 #### Scenario: Our own limit refuses
 - **WHEN** the account's hourly allowance is spent
 - **THEN** the rung answers `REFUSED`, the alert says the limit is ours (fixed in `messenger_limits`), not Telegram's
+
+### Requirement: A miss is final — no contact is imported to get past it
+
+After `ResolvePhone` answers `PHONE_NOT_OCCUPIED`, the rung SHALL answer `miss` without
+calling `ImportContacts` and SHALL leave no contact on the account. Telegram answers a
+number hidden from lookup by phone ("My contacts") only to an account the person keeps in
+their own contacts; the support account is in nobody's, so an import finds exactly whom
+resolve found (`tests/fixtures/tg_contact_import.json`, SG-36: open, absent and two hidden
+numbers, one of them the live `gmp_app` miss of 26.09).
+
+#### Scenario: The number hides from lookup by phone
+- **WHEN** a number with a Telegram account and "find me by phone: My contacts" is offered `tg_user`
+- **THEN** the rung answers `miss`, the account's contact list is unchanged, and the code goes by the next rung
 
 ### Requirement: A selected tg_user continues into the operator's ladder
 
