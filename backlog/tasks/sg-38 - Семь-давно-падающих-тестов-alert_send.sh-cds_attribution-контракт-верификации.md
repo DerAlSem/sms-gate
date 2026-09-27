@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@claude'
 created_date: '2026-09-27 06:16'
-updated_date: '2026-09-27 06:20'
+updated_date: '2026-09-27 06:34'
 labels:
   - tests
 dependencies: []
@@ -42,6 +42,8 @@ ordinal: 38000
 Полный набор macOS: 1545 passed, 0 failed.
 
 Дока не менялась: поведение системы не менялось: вывод alert-send.sh на Linux прежний, фикс cds — только тест, verification-api.md — внешний контракт, не capability-дока; ни одна capability-дока не описывает alert-send
+
+Выкат 27.09.2026 71e70c6 (09:33:01 MSK, NRestarts=0). Проверено НА КОРОБКЕ: Ubuntu 24.04.5, /bin/sh=dash, awk=gawk (не mawk, как в контейнерах); установленный /usr/local/sbin/sms-gate-alert = deploy/alert-send.sh по sha256; encode() из установленного файла: 'one line'→[one line], 'a\nb'→[a\\nb], обратный слэш удвоен, пустое→[]. Бэкап ~/sms-gate-backups/sms.db.pre-SG-38-20260927-093233 (integrity ok, 2620=2620).
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
