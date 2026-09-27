@@ -318,7 +318,7 @@ def test_a_recency_choice_does_not_count_toward_the_blacklist(monkeypatch):
         b = await _sent_message(phone=PHONE, ref=42, age_seconds=600)
         db = await get_db()
         # the same instant on both, so nothing separates them
-        await db.execute("UPDATE message_parts SET sent_at = '2026-09-02 11:00:00'")
+        await db.execute("UPDATE message_parts SET sent_at = datetime('now', '-600 seconds')")
         await db.commit()
         await m._on_cds_line(_cds(42, st=64, scts="not a timestamp"))
         return a, b, await _records(), await queries.is_phone_blocked(PHONE), \
@@ -500,7 +500,7 @@ def test_the_recency_carve_out_holds_on_the_late_negative_path(monkeypatch):
         await _sent_message(phone=PHONE, ref=42, age_seconds=600)
         await m._expire_step()                     # both messages reach `expired`
         db = await get_db()
-        await db.execute("UPDATE message_parts SET sent_at = '2026-09-02 11:00:00'")
+        await db.execute("UPDATE message_parts SET sent_at = datetime('now', '-600 seconds')")
         await db.commit()
 
         await m._on_cds_line(_cds(42, st=64, scts="not a timestamp"))

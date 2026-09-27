@@ -404,6 +404,12 @@ fixed and flat. Every name the gateway knows:
 | `tg_gateway` | the code arrives in Telegram | **yes** — carried a code on production on 22.09.2026 |
 | `tg_user`, `max_user`, `app_bot` | messenger accounts | named, and carried by nothing |
 
+`gateway_msisdn` is the gateway's own number, a deployment setting that ships **blank**.
+Production has it configured, and it still appears nowhere in this document: read it from
+`number` in the answer. A deployment that has not been given one simply does not offer the
+two routes that need it. **We will never quote you digits here that a deployment has not
+been configured to hold.**
+
 Which of these a particular number is offered is decided per request, by what can prove
 itself for that number at that moment — you learn it from `routes`, never from this table.
 
