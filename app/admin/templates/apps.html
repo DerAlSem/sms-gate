@@ -22,13 +22,24 @@
 </form>
 
 <table>
-  <tr><th>ID</th><th>{% trans %}Description{% endtrans %}</th><th>{% trans %}Token{% endtrans %}</th><th>{% trans %}Messages{% endtrans %}</th><th>{% trans %}Active{% endtrans %}</th><th>{% trans %}May spend{% endtrans %}</th><th></th></tr>
+  <tr><th>ID</th><th>{% trans %}Description{% endtrans %}</th><th>{% trans %}Token{% endtrans %}</th><th>{% trans %}Messages{% endtrans %}</th><th>{% trans %}SMS text{% endtrans %}</th><th>{% trans %}Active{% endtrans %}</th><th>{% trans %}May spend{% endtrans %}</th><th></th></tr>
   {% for r in rows %}
   <tr>
-    <td><code>{{ r.id }}</code></td>
+    <td><a href="/admin/apps/{{ r.id | urlencode }}"><code>{{ r.id }}</code></a></td>
     <td>{{ r.description }}</td>
     <td><code>{{ r.token_masked }}</code></td>
     <td>{{ r.msg_count }}</td>
+    <td>
+      {% if r.templates_unreadable %}
+        <span class="muted">{% trans %}unreadable{% endtrans %}</span>
+      {% elif r.has_template %}
+        {% trans %}yes{% endtrans %}
+      {% elif r.internal %}
+        <span class="muted">{% trans %}not needed — internal sender{% endtrans %}</span>
+      {% else %}
+        <span style="color:#991b1b;font-weight:600;">{% trans %}no — no code will be sent by SMS{% endtrans %}</span>
+      {% endif %}
+    </td>
     <td>{% if r.is_active %}{% trans %}yes{% endtrans %}{% else %}<span class="muted">{% trans %}no{% endtrans %}</span>{% endif %}</td>
     <td>{% if r.may_spend %}{% trans %}yes{% endtrans %}{% else %}<span class="muted">{% trans %}no{% endtrans %}</span>{% endif %}</td>
     <td>
@@ -56,4 +67,11 @@
   </tr>
   {% endfor %}
 </table>
+
+{% if leftover_ids %}
+<p class="muted" style="font-size:13px;margin-top:12px;">
+  {% trans %}Records of deleted applications remain{% endtrans %}:
+  {% for lid in leftover_ids %}<a href="/admin/apps/{{ lid | urlencode }}"><code>{{ lid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}
+</p>
+{% endif %}
 {% endblock %}
