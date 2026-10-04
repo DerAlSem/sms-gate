@@ -1,0 +1,10 @@
+# Pins the backup modem's netdev name. Without it the name is whatever systemd's
+# predictable-naming policy picks, and the 26.04 upgrade picked wwp0s20f0u4i4 — wwan-backup
+# then waits forever for wwan0. Matching on the driver rather than a MAC or a path survives
+# the modem being re-seated into another port. Applies when the netdev is next created
+# (reboot or re-enumeration); renaming a live one is `ip link set <name> name wwan0`.
+[Match]
+Driver=qmi_wwan
+
+[Link]
+Name=wwan0

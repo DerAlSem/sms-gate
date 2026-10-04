@@ -70,6 +70,27 @@ alert() {
         || log "alert held for later delivery (default: $(ip route show default | head -1))"
 }
 
+# Names the netdev the qmi_wwan driver actually created, because the usual reason $IFACE is
+# absent is that systemd called it something else (wwp0s20f0u4i4 after the 26.04 upgrade,
+# 2026-10-04) and the fix is a rename rule, not a modem restart. Empty when none exists.
+qmi_netdevs() {
+    local d
+    for d in "$SYS_NET"/*; do
+        [ "$(basename "$(readlink -f "$d/device/driver" 2>/dev/null)")" = qmi_wwan ] \
+            && basename "$d"
+    done
+}
+
+iface_missing_hint() {
+    local found
+    found=$(qmi_netdevs | tr '\n' ' ')
+    if [ -n "$found" ]; then
+        echo "$IFACE not present, but qmi_wwan created: ${found% } — the name is not pinned (see deploy/wwan-backup/10-wwan0.link)"
+    else
+        echo "$IFACE not present and no qmi_wwan netdev exists — the modem has not re-enumerated"
+    fi
+}
+
 mask2prefix() {
     # 255.255.255.252 -> 30
     local x bits=0 IFS=.
@@ -245,7 +266,18 @@ cmd_up() {
     # absent for a while or come back under another name. Addressing applied to an absent
     # interface fails quietly, leaving a session we believe is up and no traffic path —
     # indistinguishable in the logs from a working backup channel.
-    [ -d "$SYS_NET/$IFACE" ] || { log "$IFACE not present — netdev has not reappeared?"; return 1; }
+    if [ ! -d "$SYS_NET/$IFACE" ]; then
+        local hint; hint=$(iface_missing_hint)
+        log "$hint"
+        # Once per absence: the unit retries every 30s and an alert per retry would bury the
+        # one that matters. The marker lives in /run, so a reboot re-arms it.
+        if [ ! -e "$STATE_DIR/iface_missing_alerted" ]; then
+            : > "$STATE_DIR/iface_missing_alerted"
+            alert "backup uplink cannot start: $hint"
+        fi
+        return 1
+    fi
+    rm -f "$STATE_DIR/iface_missing_alerted"
     setup_src_routing
 
     # idempotency: session already connected (unit restart) — just re-apply addressing
@@ -477,7 +509,17 @@ session_step() {
 cmd_up_supervised() {
     mkdir -p "$STATE_DIR"
     exec 9>"$STATE_DIR/lock"
-    flock -n 9 || { log "another wwan-backup run holds the lock — leaving the session to it"; return 0; }
+    if ! flock -n 9; then
+        # Standing down is only honest while there is a channel for the holder to manage. With
+        # the interface absent the holder has nothing to hold, and a green unit would say the
+        # backup is up when it is not — it did, for hours, on 2026-10-04.
+        if [ ! -d "$SYS_NET/$IFACE" ]; then
+            log "another run holds the lock, but $(iface_missing_hint)"
+            return 1
+        fi
+        log "another wwan-backup run holds the lock — leaving the session to it"
+        return 0
+    fi
     session_step
 }
 
@@ -534,6 +576,9 @@ cmd_status() {
     # A channel that has given up looks identical to a healthy one from the outside; say so.
     if [ "$(read_counter session_fails)" -ge "$MAX_SESSION_FAILS" ]; then
         echo ">>> GAVE UP after $(read_counter session_fails) consecutive failures — retrying slowed to 1 in $SLOW_RETRY_EVERY passes <<<"
+    fi
+    if [ ! -d "$SYS_NET/$IFACE" ]; then
+        echo ">>> $(iface_missing_hint) <<<"
     fi
     echo "=== routes ==="
     ip route show default

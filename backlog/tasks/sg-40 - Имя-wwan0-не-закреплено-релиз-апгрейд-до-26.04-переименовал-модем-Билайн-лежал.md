@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-04 18:22'
+updated_date: '2026-10-04 18:26'
 labels:
   - wwan
 dependencies: []
@@ -21,6 +22,14 @@ ordinal: 40000
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Закрепление имени wwan0 (.link по драйверу qmi_wwan) ставится штатным deploy/install-units.sh и описано в deploy/wwan-backup/README.md
-- [ ] #2 Отсутствие wwan0 видно как отказ в status/алерте с подсказкой про имя интерфейса, а не только строкой в журнале
-- [ ] #3 Решено и записано, может ли wwan-backup стоять active, уступив блокировку, когда watchdog сессию не держит
+- [x] #2 Отсутствие wwan0 видно как отказ в status/алерте с подсказкой про имя интерфейса, а не только строкой в журнале
+- [x] #3 Решено и записано, может ли wwan-backup стоять active, уступив блокировку, когда watchdog сессию не держит
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC3 решено: wwan-backup может стоять active, уступив блокировку, только пока интерфейс есть; без него юнит падает. Тесты tests/test_wwan_backup.sh (docker debian, 36 проверок): новые красные на старом скрипте, зелёные на новом. Руками на ВДС НЕ делалось: install-units.sh в /usr/local/sbin обновляется вручную (root), .link там уже стоит.
+
+AC1 не отмечен: install-units.sh на хосте не прогонялся (пути /opt/sms-gate, root). Проверка — при выкате: после установки cmp /etc/systemd/network/10-wwan0.link с репо. Копия install-units.sh в /usr/local/sbin обновляется вручную.
+<!-- SECTION:NOTES:END -->

@@ -26,6 +26,24 @@ systemctl enable --now wwan-backup.service wwan-watchdog.timer
 
 Config (APN, thresholds, interfaces) can be overridden in `/etc/default/wwan-backup`.
 
+### Pinning the interface name
+
+The scripts expect the modem's netdev to be called `wwan0`. systemd does not promise that: the
+upgrade to Ubuntu 26.04 renamed it `wwp0s20f0u4i4` and the backup uplink sat dead without a
+single failed unit (SG-40, 2026-10-04). `10-wwan0.link` pins the name by driver (`qmi_wwan`),
+and `deploy/install-units.sh` installs it to `/etc/systemd/network/`. It takes effect when the
+netdev is next created — reboot, or re-plug; to fix a live one:
+
+```bash
+ip link set wwp0s20f0u4i4 name wwan0   # the name `wwan-backup status` printed
+systemctl restart wwan-backup
+```
+
+When `wwan0` is absent, `wwan-backup status` prints a `>>> … <<<` line naming the `qmi_wwan`
+netdev that does exist, the unit fails instead of standing down, and one alert goes out per
+absence. Standing down to a lock holder (the watchdog owns the session) is allowed only while
+the interface is there.
+
 ## Verification
 
 ```bash

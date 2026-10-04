@@ -3,7 +3,7 @@ id: doc-2
 title: backup-uplink
 type: specification
 created_date: '2026-09-25 11:58'
-updated_date: '2026-09-25 11:58'
+updated_date: '2026-10-04 18:26'
 ---
 # backup-uplink Specification
 
@@ -161,6 +161,30 @@ path — a state indistinguishable, from the logs, from a working backup channel
 #### Scenario: The interface has not reappeared yet
 - **WHEN** the uplink runs while its network interface is absent
 - **THEN** it reports the interface as missing rather than proceeding to configure it
+
+### Requirement: The modem's interface name is pinned and its absence is a visible failure
+
+The deployment SHALL pin the modem's network interface to `wwan0` by driver (`qmi_wwan`) with
+a systemd `.link` file installed by `deploy/install-units.sh`. When the interface is absent
+the uplink SHALL report it as a failure — in `status`, as a failed unit and as one alert per
+absence — naming the `qmi_wwan` netdev that does exist, if any.
+
+The name is not stable on its own: the upgrade to Ubuntu 26.04 renamed the modem
+`wwp0s20f0u4i4` and the backup sat dead behind a green unit (SG-40, 2026-10-04). The unit MAY
+stand down to a lock holder (the watchdog owns the session) only while the interface exists;
+with it absent there is no channel for the holder to manage.
+
+#### Scenario: The interface exists under another name
+- **WHEN** the uplink runs and `wwan0` is absent but a `qmi_wwan` netdev exists
+- **THEN** the log, `status` and one alert name that netdev, and the unit fails
+
+#### Scenario: The same absence is retried
+- **WHEN** the unit retries while the interface is still absent
+- **THEN** no further alert is raised until the interface has been seen again
+
+#### Scenario: Another run holds the lock and the interface is absent
+- **WHEN** the supervised run loses the lock while the interface is absent
+- **THEN** it fails rather than standing down
 
 ### Requirement: Retrying is bounded and reports itself
 
