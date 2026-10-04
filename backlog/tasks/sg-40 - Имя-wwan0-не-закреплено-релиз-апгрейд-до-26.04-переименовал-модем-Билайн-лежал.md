@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-10-04 18:22'
-updated_date: '2026-10-04 18:26'
+updated_date: '2026-10-04 18:35'
 labels:
   - wwan
 dependencies: []
@@ -32,4 +32,6 @@ ordinal: 40000
 AC3 решено: wwan-backup может стоять active, уступив блокировку, только пока интерфейс есть; без него юнит падает. Тесты tests/test_wwan_backup.sh (docker debian, 36 проверок): новые красные на старом скрипте, зелёные на новом. Руками на ВДС НЕ делалось: install-units.sh в /usr/local/sbin обновляется вручную (root), .link там уже стоит.
 
 AC1 не отмечен: install-units.sh на хосте не прогонялся (пути /opt/sms-gate, root). Проверка — при выкате: после установки cmp /etc/systemd/network/10-wwan0.link с репо. Копия install-units.sh в /usr/local/sbin обновляется вручную.
+
+Выкат 04.10.2026 21:34 MSK, 952cbd2 (fast-forward с 736cd08), бэкап sms.db.pre-sg40-* сверен 2819=2819, очередь была пуста, NRestarts=0, /admin/stats 401, ошибок в журнале 0. Скрипт /usr/local/sbin/wwan-backup обновлён post-receive. Проверено на коробке: IFACE=wwan-nope wwan-backup status печатает >>> … qmi_wwan created: wwan0 <<<. НЕ доделано: хост-копия /usr/local/sbin/sms-gate-install-units от 01.08 старая (root) — .link через неё не ставится, пока владелец не обновит её с sudo.
 <!-- SECTION:NOTES:END -->
