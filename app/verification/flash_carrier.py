@@ -21,11 +21,17 @@ orderings are the whole of it.
    a placed call nor a failure, and the ladder stops rather than advancing, because the
    call has been placed and advancing would buy the same code at the other vendor.
 
-4. **The digits are the vendor's, and they are checked.** Nothing in the reference
-   promises the vendor can allocate a number ending in the four digits we asked for, and a
-   verification matched against digits nobody dialled is indistinguishable, from the
-   outside, from every subscriber suddenly typing the wrong code — while every instance of
-   it is paid for. Both places the vendor states a code are read.
+4. **The vendor's `code` report is read and trusted with nothing.** Measured 08.10 over
+   every flash_call rung to date: the `code` field — in `initCall`'s echo, in `getInfo`
+   and in the vendor's own cabinet — is systematically not the digits that were dialled.
+   All six rungs where it disagreed with the request were confirmed by this gateway's own
+   `/check` 9–23 s after placement, and all eight where it agreed expired unconfirmed.
+   A disagreement therefore decides nothing: while nothing else is known the outcome is
+   recorded as unknown with the disagreement named, and once the vendor reports the call
+   placed the rung is carried with the disagreement named; either way the ladder does not
+   advance to buy the same code elsewhere, and the person confirms against the code this
+   gateway asked for. Both places the vendor states a code are still read — as evidence,
+   not as authority.
 
 🟢 **The outcome that arrives after the bound is read by `resolve_outstanding` at the foot
 of this module** (task 4.17e), from the one sweep that already sees every way a
@@ -139,7 +145,16 @@ def carrier(
             reason="the authorisation was allocated and is billable")
 
         if _digits_changed(placed.code, code):
-            return _mismatch(verification_id, vendor_ref, ours=code, theirs=placed.code)
+            # The echo has named other digits, and the report is not the dialled digits
+            # (point 4 of this module's docstring), so it settles nothing — least of all
+            # what became of the call, which nobody has said yet. Unknown, with the
+            # disagreement named, and `resolve_outstanding` asks the vendor later.
+            _report_disagrees(verification_id, vendor_ref, theirs=placed.code)
+            return ladder.Attempt(
+                outcome=ladder.UNRESOLVED, vendor_ref=vendor_ref,
+                reason=f"the vendor's echo named code {placed.code} against the one "
+                       f"requested; the report is not the dialled digits, so nothing is "
+                       f"known about the call yet")
 
         info = await _await_outcome(placed.ucaller_id, bearer=bearer, deadline=deadline,
                                     poll_interval=poll_interval)
@@ -154,16 +169,27 @@ def carrier(
         # charged, so a floor held against it as it stands fires one verification late.
         balance.observe(FLASH_CALL, info.balance_after)
 
-        if _digits_changed(info.code, code):
-            return _mismatch(verification_id, vendor_ref, ours=code, theirs=info.code,
-                             cost=info.cost)
+        disagrees = _digits_changed(info.code, code)
+        if disagrees:
+            # Journal only, and the digits are named: the report is the evidence the
+            # claim against the vendor rests on, and a disagreement line without the
+            # digits reported proves nothing after the journal has rotated.
+            _report_disagrees(verification_id, vendor_ref, theirs=info.code)
 
         if info.call_status == ucaller.PLACED:
             # The analogue of a message having been sent, and nothing more. The
             # verification is confirmed by a correct code at `/check` and by nothing the
             # vendor says: uCaller never learns whether the person read the digits.
+            # A disagreeing report names itself in the reason and settles nothing else:
+            # the vendor has said what became of the call, and recording that now saves
+            # the sweep a second question to a vendor that rate-limits per IP.
+            reason = ""
+            if disagrees:
+                reason = (f"the vendor reported the call placed and named code "
+                          f"{info.code} against the one requested; the report is not "
+                          f"the dialled digits, so the disagreement settles nothing")
             return ladder.Attempt(outcome=ladder.CARRIED, vendor_ref=vendor_ref,
-                                  cost=info.cost)
+                                  cost=info.cost, reason=reason)
 
         return ladder.Attempt(
             outcome=ladder.FAILED, vendor_ref=vendor_ref, cost=info.cost,
@@ -203,31 +229,18 @@ def _digits_changed(theirs: str | None, ours: str) -> bool:
     return bool(theirs) and theirs != ours
 
 
-def _mismatch(verification_id, vendor_ref, *, ours, theirs, cost=None) -> ladder.Attempt:
-    """The vendor will dial digits the person cannot be matched against.
+def _report_disagrees(verification_id, vendor_ref, *, theirs) -> None:
+    """The journal line for a code report that disagrees with the request.
 
-    Failed rather than adopted, which is the branch this change chose of the two the
-    requirement allows: adopting would mean rewriting a live verification's code from a
-    vendor's word, and the code is the one value in this gateway that is never written
-    twice.
-
-    The operator is woken because the alternative is invisible: from the outside this is
-    indistinguishable from every subscriber suddenly typing the wrong code, and every
-    instance of it has been paid for.
+    A line rather than an alert — measured 08.10 this fires on deliverable calls, and an
+    operator woken by every one of them buries the refusals that do need one. The digits
+    the vendor named are in the line because the report is the evidence the claim against
+    the vendor (SG-39) rests on, and they are not this gateway's secret: a report that
+    agreed would never reach this line.
     """
-    from app.alerting import notify
-
-    logger.warning("verification %d: %s dialled digits other than the ones requested "
-                   "(authorisation %s)", verification_id, VENDOR, vendor_ref)
-    notify("routing",
-           f"{VENDOR} allocated a call whose digits are not the ones this gateway asked "
-           f"for (authorisation {vendor_ref}). The verification was failed rather than "
-           f"matched against digits the vendor never dialled — the call was paid for, and "
-           f"if this repeats the rung is spending money it cannot complete",
-           dedup_extra=f"flash_call:code-mismatch")
-    return ladder.Attempt(
-        outcome=ladder.FAILED, vendor_ref=vendor_ref, cost=cost,
-        reason="the vendor allocated different digits from the ones requested")
+    logger.warning("verification %d: %s reported code %s against the one requested for "
+                   "authorisation %s; the report is not the dialled digits, so it "
+                   "settles nothing", verification_id, VENDOR, theirs, vendor_ref)
 
 
 def _alert(call) -> None:
@@ -303,23 +316,53 @@ async def _settle(row, *, bearer: str) -> int:
     still_open = row["status"] == "pending"
     code = row["code"]
 
-    if info.call_status == ucaller.PLACED and not _digits_changed(info.code, code or ""):
+    if row["status"] == "confirmed":
+        # A confirmation at `/check` is this gateway's own evidence: the person typed the
+        # code this gateway asked for, so the call was placed and heard. Whatever the
+        # vendor reports now cannot outrank it — and on a confirmed verification the code
+        # is already spent, so reading its absence as a disagreement would let a late
+        # report fail a rung minutes after the fact proved it carried (v118, 08.10).
+        # What the report *did* say is kept: a vendor reporting a call unconnected while
+        # its own digits were confirmed is evidence for the claim against it.
+        said = ("the vendor later reported the call was not connected"
+                if info.call_status != ucaller.PLACED else
+                "the vendor later reported the call placed")
         await queries.set_rung_outcome(
             row["rung_id"], outcome=ladder.CARRIED, cost=info.cost,
-            reason="the vendor reported the call placed after the ladder stopped waiting")
+            reason=f"the verification was confirmed by this gateway's own code check; "
+                   f"{said}, and the report cannot outrank it")
+        if info.call_status != ucaller.PLACED:
+            logger.warning("verification %s: confirmed by this gateway's own code, yet "
+                           "the vendor reports authorisation %s was not connected — kept "
+                           "as evidence against the vendor",
+                           row["verification_id"], uid)
+        else:
+            logger.info("verification %s: the call rung %s settled as carried by a "
+                        "confirmation of ours", row["verification_id"], uid)
+        return 1
+
+    if info.call_status == ucaller.PLACED:
+        # The call was placed, whatever its `code` report says: the report is not the
+        # dialled digits (measured 08.10, 6/6 such rungs confirmed by this gateway's own
+        # code), so a disagreement is named in the reason and settles nothing. The
+        # comparison is made only while the verification still holds its code — every
+        # ending spends it, and a spent code read as a disagreement would cry wolf on
+        # the ordinary expired rung. The verification is deliberately left open: the
+        # person may be reading the digits off their screen this minute, and the window,
+        # not this sweep, ends it.
+        reason = "the vendor reported the call placed after the ladder stopped waiting"
+        if code and _digits_changed(info.code, code):
+            _report_disagrees(row["verification_id"], str(uid), theirs=info.code)
+            reason = (f"the vendor reported the call placed and named code {info.code} "
+                      f"against the one requested; the report is not the dialled digits, "
+                      f"so the disagreement settles nothing")
+        await queries.set_rung_outcome(
+            row["rung_id"], outcome=ladder.CARRIED, cost=info.cost, reason=reason)
         logger.info("verification %s: the call rung %s resolved as placed",
                     row["verification_id"], uid)
         return 1
 
-    if info.call_status == ucaller.PLACED:
-        # Placed, and dialling digits the person cannot be matched against. The same
-        # branch the carrier takes, reached a minute later.
-        reason = "the vendor allocated different digits from the ones requested"
-        _mismatch(row["verification_id"], str(uid), ours=code or "", theirs=info.code,
-                  cost=info.cost)
-    else:
-        reason = "the vendor could not connect the call to this subscriber"
-
+    reason = "the vendor could not connect the call to this subscriber"
     await queries.set_rung_outcome(row["rung_id"], outcome=ladder.FAILED, cost=info.cost,
                                    reason=reason)
     if still_open:

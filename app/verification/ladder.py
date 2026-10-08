@@ -257,13 +257,18 @@ async def walk(
             return Walk(carried_by=route, attempts=tuple(attempts))
 
         if attempt.outcome in _TAKEN_AND_PENDING:
-            # The rung placed it and the answer has not come. The verification keeps its
-            # route and its own deadline; what is **not** written is an outcome, because
-            # the one thing known here is that nothing is known. Whoever learns the
-            # outcome afterwards learns it from the vendor by the reference recorded on
-            # this rung's row.
-            reason = (f"{route} placed this verification and the vendor had not reported "
-                      f"its outcome within the ladder's bound")
+            # The rung placed it and the answer has not come — or, on the call rung, the
+            # answer that came carries no authority over the outcome. The verification
+            # keeps its route and its own deadline; what is **not** written is an
+            # outcome, because the one thing known here is that nothing is known.
+            # Whoever learns the outcome afterwards learns it from the vendor by the
+            # reference recorded on this rung's row. The reason says which of the two it
+            # was, because "the vendor had not reported" is a claim about the vendor, and
+            # a journal that asserts the opposite of what happened sends an incident down
+            # the wrong trail.
+            detail = attempt.reason or (
+                "the vendor had not reported its outcome within the ladder's bound")
+            reason = f"{route} placed this verification and {detail}"
             logger.info("verification %d: %s", verification_id, reason)
             return Walk(carried_by=None, reason=reason, attempts=tuple(attempts))
 
