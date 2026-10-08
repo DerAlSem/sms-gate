@@ -3,7 +3,7 @@ id: doc-10
 title: verification-flash-call
 type: specification
 created_date: '2026-10-08 16:02'
-updated_date: '2026-10-08 16:20'
+updated_date: '2026-10-08 16:28'
 ---
 # verification-flash-call Specification
 
@@ -12,8 +12,10 @@ The `flash_call` rung of the verification ladder: a paid flash call by uCaller, 
 code is the last four digits of the calling number the person sees on their screen. Code:
 `app/verification/flash_carrier.py` (ladder semantics and the late sweep),
 `app/verification/ucaller.py` (the wire), driven by `app/verification/ladder.py`.
-Introduced by the `route-sends-by-operator` claim (SG-6); the code-report norm here was
-re-measured and inverted 08.10 (SG-42; the evidence trail lives in SG-29's notes).
+Introduced by the `route-sends-by-operator` claim (SG-6). The comparison norm here was
+re-measured 08.10 (SG-42): the vendor's `code` report is an honest echo, and the six
+production "different digits" rungs were this gateway's sweep comparing it against a code
+the verification had already spent (evidence: `HANDOFF-sg42.md`, control probes v121/v122).
 
 Scope: only the `flash_call` rung and the sweep that settles it. Route selection, the
 check door and the other rungs are not described here.
@@ -29,67 +31,61 @@ and SHALL NOT read `status: false` without an `error` as a refusal.
 - **WHEN** `initCall` answers `status: false` carrying a `ucaller_id` and no `error`
 - **THEN** the rung records the id and the vendor is asked later what became of the call
 
-### Requirement: The vendor's `code` report is not the dialled digits
+### Requirement: The digits are compared where they are comparable
 
-The verification SHALL be matched only against the code this gateway requested. The
-vendor's `code` — on `initCall`, on `getInfo`, in the cabinet — SHALL NOT be treated as
-the digits that were dialled: measured 08.10 over every rung to date, all six where the
-report disagreed were confirmed by this gateway's own `/check` within seconds, and all
-eight where it agreed expired unconfirmed. The report is evidence for the claim against
-the vendor, not authority over the outcome. The digits the vendor named SHALL be written
-wherever the disagreement is named.
+The carrier SHALL read the vendor's `code` at both places it is stated — `initCall`'s
+echo and `getInfo` — and compare it against the code the verification holds live. A
+genuine disagreement — the vendor will dial digits the person cannot be matched against —
+SHALL fail the rung and the verification with that reason and wake the operator: every
+instance of it is paid for, and the carrier's comparison cannot produce the artefact
+below. The digits check SHALL sit after the call's own outcome, so a call the vendor
+could not connect is failed for that reason and not for digits nobody saw.
 
-#### Scenario: The report disagrees while the call's outcome is unknown
-- **WHEN** `initCall`'s echo names a `code` other than the one requested
-- **THEN** the rung says `unresolved` with the disagreement and the digits named
-- **AND** the verification stays confirmable against the requested code for the rest of its window
-- **AND** the ladder does not advance to buy the code again
+#### Scenario: The echo names other digits
+- **WHEN** `initCall`'s echo reports a `code` other than the one requested
+- **THEN** the rung is failed with the different-digits reason and the operator is woken
+- **AND** the paid authorisation's id stays on the rung
 
-#### Scenario: The report disagrees once the vendor has spoken about the call
-- **WHEN** `getInfo` names a `code` other than the one requested
-- **THEN** a call reported placed is carried with the disagreement and the digits named in the reason
-- **AND** a call reported not connected is failed for that reason alone — a known delivery failure is not silenced by a report that cannot be trusted about the digits
-- **AND** no alert wakes the operator; the journal line is the whole record
+#### Scenario: A call that never connected
+- **WHEN** `getInfo` says the call was not connected, whatever its `code` says
+- **THEN** the rung is failed for the connection, not for the digits
 
 ### Requirement: An unresolved outcome is unknown, not an ending
 
 The rung SHALL bound its wait by the ladder's bound and record an undecided vendor as
-`unresolved` with the vendor reference kept, failing nothing. The reason the walk records
-SHALL say what actually left the rung unresolved rather than asserting the vendor was
-silent.
+`unresolved` with the vendor reference kept, failing nothing.
 
 #### Scenario: The vendor is still deciding at the bound
 - **WHEN** `call_status` is still `-1` when the ladder's bound runs out
 - **THEN** the rung says `unresolved` and the verification stays pending
 
-### Requirement: The late settle records facts and cannot outrank a confirmation
+### Requirement: The late settle compares only a code that is still alive
 
-`resolve_outstanding` SHALL ask the vendor about every unresolved rung within the
-verification's own lifetime and record the placement and the cost it learns. A
-verification confirmed by this gateway's own code check SHALL have its rung recorded as
-carried whatever the vendor reports afterwards, with what the report said kept in the
-reason — a vendor denying the call under a live confirmation is evidence against it. A
-`code` disagreement SHALL NOT fail the rung or the verification, and SHALL be decided
-only while the verification still holds its code: every ending spends it, and a spent
-code is not compared. Only a call the vendor says it could not connect ends an open
-verification, and it ends with that reason.
+The sweep SHALL compare the report against the verification's code only while the
+verification still holds it: every ending — confirmation, failure, expiry — spends the
+code, a person confirms within seconds while the vendor reports within a minute, and a
+report read against a spent code manufactures a disagreement out of an honest echo. That
+artefact failed six delivered, paid-for rungs on verifications this gateway's own code
+had already confirmed (08.10). A rung whose verification is already confirmed SHALL be
+recorded as carried whatever the late report says — the confirmation is this gateway's
+own evidence and outranks it — with what the report did say kept in the reason, for a
+denial of the call under a live confirmation is evidence against the vendor.
 
 #### Scenario: Confirmed, then the sweep runs
-- **WHEN** a verification is confirmed at `/check` and the sweep later reads a report that disagrees
+- **WHEN** a verification is confirmed at `/check` and the sweep later reads the rung
 - **THEN** the rung is recorded as carried with the confirmation named and the verification stays confirmed
 
 #### Scenario: The vendor denies the call under a confirmation
 - **WHEN** a confirmed verification's rung is settled and the vendor reports the call was not connected
 - **THEN** the rung is carried by the confirmation and the reason names the vendor's denial as kept evidence
 
-#### Scenario: Placed with a disagreeing report, nobody confirmed yet
-- **WHEN** the sweep reads `call_status` as placed and a `code` other than the one requested
-- **THEN** the rung is recorded as carried with the disagreement named and its cost
-- **AND** the verification is left pending until its own window ends it
-
 #### Scenario: The verification has ended and spent its code
 - **WHEN** the sweep settles the rung of a failed or expired verification and reads the call as placed
-- **THEN** the rung is carried with the plain placement reason and no disagreement is claimed
+- **THEN** the rung is carried with its cost and a reason saying the digits are not comparable
+
+#### Scenario: A genuine disagreement while the code is alive
+- **WHEN** the sweep reads `call_status` as placed and a `code` other than the one the open verification still holds
+- **THEN** the rung is failed with the different-digits reason and the open verification fails with it
 
 #### Scenario: The vendor could not connect
 - **WHEN** the sweep reads a `call_status` saying the call was not connected and the verification is still open
