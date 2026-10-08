@@ -317,13 +317,29 @@ The rest of this requirement governs the `flash_call` route alone, and SHALL NOT
 the other routes. On `tg_gateway` and on `sms_out` the code is the gateway's own from end to end,
 and a rule that prefers a vendor-reported code there would prefer a value no vendor sets.
 
-The code a verification is matched against SHALL be the one the vendor reports for that call,
-not the one requested. `code` is optional on `initCall` and `getInfo` reports a `code` of its
-own; nothing in the reference promises the vendor can always allocate a number ending in the
-four digits we asked for. Where the reported code differs from the requested one the gateway
-SHALL adopt the reported code or fail the verification with that reason, and SHALL NOT match
-against digits the vendor never dialled — that failure is indistinguishable, from the outside,
-from every subscriber suddenly typing the wrong code, and every instance of it is paid for.
+The code a verification is matched against SHALL be the one this gateway requested, and the
+vendor's reported `code` SHALL NOT be treated as the digits that were dialled. Measured
+08.10 over every flash_call rung to date: the `code` field — on `initCall`, on `getInfo` and
+in the vendor's cabinet — is systematically not the dialled digits; all six rungs where it
+disagreed with the request were confirmed by this gateway's own `/check` 9–23 s after
+placement, and all eight where it agreed expired unconfirmed. The report is evidence for the
+claim against the vendor, not authority over the outcome.
+
+Where the reported code differs from the requested one the gateway SHALL NOT fail the rung
+or the verification on the strength of the report and SHALL NOT advance the ladder to buy
+the code again: while the call's own outcome is still unknown the rung is recorded as
+unresolved with the disagreement named, and once the vendor reports the call placed the
+rung is recorded as carried with the disagreement named — a known failure to connect stays
+a failure whatever the report's `code` says. The digits the vendor named SHALL be written
+where the disagreement is named, for the report is the evidence the claim against the
+vendor rests on; and on an ended verification the code is already spent, so the sweep
+SHALL NOT read its absence as a disagreement. The verification stays confirmable against
+the requested code for the rest of its window. An outcome arriving after the ladder
+stopped waiting SHALL NOT change the rung of a verification this gateway's own code check
+has already confirmed — the confirmation is this gateway's own evidence and outranks the
+vendor's later report, and what that report did say is kept as evidence. A disagreement
+SHALL NOT wake the operator: it fires on deliverable calls, and the journal line is its
+whole record.
 
 **The vendor's refusal is told apart by the presence of an `error`, and SHALL NOT be told
 apart by `status` alone.** Measured 22.09.2026: `initCall` for an unreachable subscriber
