@@ -283,58 +283,50 @@ def test_a_pending_outcome_that_resolves_inside_the_bound_is_the_resolved_one(mo
     assert _run(body)
 
 
-# --- the vendor's code report is not the dialled digits ------------------------------------
+# --- the code the vendor actually dialled -------------------------------------------------
 
-def test_a_code_report_that_disagrees_leaves_the_outcome_unknown(monkeypatch):
-    """The vendor's `code` is systematically not the digits it dialled — measured 08.10
-    over every flash_call rung to date: all six where the report disagreed with the
-    request were confirmed by this gateway's own `/check` 9–23 s after placement, and all
-    eight where it agreed expired unconfirmed. A disagreement therefore decides nothing:
-    the outcome is unknown, the ladder does not advance to buy the code again, and the
-    person confirms against the code this gateway asked for."""
+def test_a_code_the_vendor_changed_fails_rather_than_matching_digits_it_never_dialled(
+        monkeypatch):
+    """"nothing in the reference promises the vendor can always allocate a number ending
+    in the four digits we asked for". Matching ours would be indistinguishable, from the
+    outside, from every subscriber suddenly typing the wrong code — and every instance
+    of it is paid for. The carrier holds the code live, so a disagreement here is real:
+    settled by the control probes of 08.10 (v121/v122) the report is an honest echo, and
+    the false "different digits" production saw was the sweep's spent-code comparison."""
     def body():
         async def run():
             vid = await _open(code="1234")
             _patch(monkeypatch, call=_accepted(code="9876"), infos=[_info()])
             attempt, _ = await _carry(vid)()
-            assert attempt.outcome == ladder.UNRESOLVED
+            assert attempt.outcome == ladder.FAILED
+            assert "digits" in attempt.reason or "code" in attempt.reason
             assert attempt.vendor_ref == "57251313", "the paid authorisation lost its id"
-            row = await queries.get_verification(vid, "app1")
-            assert row["status"] == "pending", (
-                "a report that carries no information ended the verification")
             return True
         return run()
     assert _run(body)
 
 
-def test_a_disagreement_first_seen_at_getinfo_still_carries_the_placed_call(monkeypatch):
-    """The vendor states a `code` twice — on taking the call and on reporting it — and
-    both are read. By the time of `getInfo` the vendor has also said what became of the
-    call, and a report that cannot be trusted about the digits is no reason to throw
-    that away: placed stays placed, the cost stays with it, and the disagreement names
-    itself in the reason. Throwing it away would leave the sweep to ask the same
-    question again of a vendor that rate-limits per IP."""
+def test_a_code_that_changed_only_by_the_time_of_getinfo_is_caught_too(monkeypatch):
+    """The vendor reports a `code` twice — once when it takes the call and once when it
+    reports on it. Both are read, because a check at one end only is a check that the
+    other end can walk past. The digits check sits after the call's own outcome, so the
+    cost of the paid call is carried by the failure too."""
     def body():
         async def run():
             vid = await _open(code="1234")
             _patch(monkeypatch, call=_accepted(code="1234"), infos=[_info(code="9876")])
             attempt, _ = await _carry(vid)()
-            assert attempt.outcome == ladder.CARRIED
-            assert attempt.cost == 0.8
-            assert "9876" in attempt.reason, (
-                "the disagreement was not named where the rung records it")
-            row = await queries.get_verification(vid, "app1")
-            assert row["status"] == "pending"
+            assert attempt.outcome == ladder.FAILED
+            assert attempt.cost == 0.8, "a paid call's cost was lost with the outcome"
             return True
         return run()
     assert _run(body)
 
 
 def test_a_known_failure_to_connect_is_not_silenced_by_a_disagreeing_report(monkeypatch):
-    """`getInfo` has said the call was not connected — that is a delivery failure this
-    gateway knows, and a `code` report it cannot trust must not turn it into "unknown"
-    for the minute the sweep takes to ask the same question again. The person is
-    standing at the barrier for all of that minute."""
+    """A call the vendor could not connect showed its digits to nobody, whatever they
+    were — "could not connect" is the reason that ends the verification, and the digits
+    check sits after the call's own outcome so it cannot bury it."""
     def body():
         async def run():
             vid = await _open(code="1234")
@@ -348,35 +340,12 @@ def test_a_known_failure_to_connect_is_not_silenced_by_a_disagreeing_report(monk
     assert _run(body)
 
 
-def test_the_walk_names_what_actually_left_the_call_unresolved():
-    """The walk's reason for a taken-and-pending rung says "the vendor had not
-    reported" — a claim about the vendor, and on the code-report branch the opposite of
-    what happened: the vendor answered, with a code it could not account for. A journal
-    that asserts the opposite sends an incident down the wrong trail."""
-    def body():
-        async def run():
-            vid = await _open(code="1234")
-
-            async def echo_disagreed(phone, *, seconds_left, rung_id):
-                return ladder.Attempt(
-                    outcome=ladder.UNRESOLVED, vendor_ref="57251313",
-                    reason="the vendor's echo named code 9876 against the one requested")
-
-            walk = await ladder.walk(
-                vid, app_id="app1", operator="МегаФон", phone=PHONE,
-                rungs=[FLASH_CALL], gates=[],
-                carriers={FLASH_CALL: echo_disagreed}, bound=5.0)
-            assert "named code" in walk.reason, walk.reason
-            assert "had not reported" not in walk.reason, walk.reason
-            return True
-        return run()
-    assert _run(body)
-
-
-def test_a_disagreeing_code_report_does_not_wake_the_operator(monkeypatch):
-    """A disagreement is not a routing fault and not a spend the gateway cannot account
-    for — measured 08.10 it fires on deliverable calls — so it is a journal line rather
-    than an alert: an operator woken by every one of them buries the real refusals."""
+def test_a_genuine_mismatch_wakes_the_operator(monkeypatch):
+    """The carrier compares against a code it holds live, so a disagreement reaching
+    this far is money spent on a call nobody can be matched against — rare, and exactly
+    what the alert exists for. The false mismatches that used to wake the operator every
+    minute were the sweep's spent-code comparison, not this: covered in
+    `test_the_call_outcome_that_arrives_late.py`."""
     said: list = []
     monkeypatch.setattr("app.alerting.notify",
                         lambda kind, text, **kw: said.append(text))
@@ -386,7 +355,7 @@ def test_a_disagreeing_code_report_does_not_wake_the_operator(monkeypatch):
             vid = await _open(code="1234")
             _patch(monkeypatch, call=_accepted(code="9876"), infos=[_info()])
             await _carry(vid)()
-            assert said == []
+            assert said and "uCaller" in said[0]
             return True
         return run()
     assert _run(body)

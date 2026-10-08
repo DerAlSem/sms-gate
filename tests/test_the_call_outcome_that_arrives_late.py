@@ -155,14 +155,15 @@ def test_the_balance_this_sweep_watches_is_the_one_after_the_charge(monkeypatch)
     assert _run(body)
 
 
-# --- the vendor's code report is not the dialled digits -------------------------------------
+# --- the spent code and the honest echo -----------------------------------------------------
 
 def test_the_sweep_does_not_rewrite_the_rung_of_a_verification_our_own_code_confirmed(
         monkeypatch):
     """Verification 118, 08.10: confirmed at 16:43:06, rung failed at 16:43:12. The
-    sweep read the verification's already-spent code as a disagreement with a report that
-    is not the dialled digits anyway. Confirmation at `/check` is this gateway's own
-    evidence, and it outranks whatever the vendor says a minute later."""
+    person confirmed within seconds, the vendor reports within a minute — so the sweep
+    always arrives after the confirmation, and the code it would compare the report
+    against is already spent. Confirmation at `/check` is this gateway's own evidence,
+    and it outranks whatever the vendor says a minute later."""
     def body():
         async def run():
             vid, _ = await _unresolved(code="1234")
@@ -177,17 +178,19 @@ def test_the_sweep_does_not_rewrite_the_rung_of_a_verification_our_own_code_conf
             assert rungs[0]["outcome"] == ladder.CARRIED, (
                 "the vendor's late report outranked this gateway's own confirmation")
             assert rungs[0]["cost"] == 0.8
+            assert "confirmed" in (rungs[0]["reason"] or ""), (
+                f"the confirmation was not named: {rungs[0]['reason']!r}")
             return True
         return run()
     assert _run(body)
 
 
-def test_a_disagreeing_report_settles_the_rung_as_placed_and_leaves_the_window_open(
+def test_a_genuine_disagreement_on_a_live_code_fails_the_rung_when_the_sweep_settles(
         monkeypatch):
-    """The disagreement carries no information about the call — 6/6 such rungs were
-    confirmed by this gateway's own code — so it fails nothing: the rung records the
-    placement and the cost, and the verification stays confirmable until its own clock
-    says otherwise."""
+    """The report is an honest echo (control probes v121/v122), so a disagreement the
+    sweep sees while the verification still holds its code is real: the vendor dialled
+    digits the person cannot be matched against, and the rung fails for that reason —
+    the same branch the carrier takes, a minute later."""
     def body():
         async def run():
             vid, _ = await _unresolved(code="1234")
@@ -195,13 +198,12 @@ def test_a_disagreeing_report_settles_the_rung_as_placed_and_leaves_the_window_o
 
             assert await flash_carrier.resolve_outstanding() == 1
             row = await queries.get_verification(vid, "app1")
-            assert row["status"] == "pending", (
-                "a report that carries no information failed the verification")
+            assert row["status"] == "failed", (
+                "a live-code disagreement left nobody-waiting pending")
+            assert "digits" in (row["reason"] or "")
             rungs = await queries.verification_rungs(vid)
-            assert rungs[0]["outcome"] == ladder.CARRIED
+            assert rungs[0]["outcome"] == ladder.FAILED
             assert rungs[0]["cost"] == 0.8
-            assert "9876" in (rungs[0]["reason"] or ""), (
-                "the disagreement was not named where the rung records it")
             return True
         return run()
     assert _run(body)
@@ -210,22 +212,24 @@ def test_a_disagreeing_report_settles_the_rung_as_placed_and_leaves_the_window_o
 def test_an_ended_verification_spending_its_code_is_not_read_as_a_disagreement(
         monkeypatch):
     """Every ending spends the verification's code, and the sweep reads rungs of ended
-    verifications too — for their cost. A spent code read as a disagreement would cry
-    wolf on the ordinary expired rung, and the journal line is the evidence the claim
-    against the vendor is built from: poisoned once, it proves nothing."""
+    verifications too — for their cost. A spent code read as a disagreement
+    manufactured a false "different digits" out of an honest echo: all six production
+    rungs with that reason were exactly this, each on a verification this gateway's own
+    code had already confirmed."""
     def body():
         async def run():
             vid, _ = await _unresolved(code="1234")
             await queries.fail_verification(vid, reason="expired under us")
-            # The report agrees with what was requested — and even a disagreeing one
-            # could not be told apart, because the code to compare against is gone.
+            # Even a report that had disagreed could not be told apart now — the code
+            # to compare against is gone.
             _answer(monkeypatch, call_status=ucaller.PLACED, code="1234")
 
             assert await flash_carrier.resolve_outstanding() == 1
             rungs = await queries.verification_rungs(vid)
             assert rungs[0]["outcome"] == ladder.CARRIED
-            assert rungs[0]["reason"] == ("the vendor reported the call placed after "
-                                          "the ladder stopped waiting"), (
+            assert rungs[0]["reason"] == ("the verification ended before the vendor "
+                                          "reported; its code is spent, so the digits "
+                                          "are not comparable"), (
                 f"a spent code was read as a disagreement: {rungs[0]['reason']!r}")
             return True
         return run()
