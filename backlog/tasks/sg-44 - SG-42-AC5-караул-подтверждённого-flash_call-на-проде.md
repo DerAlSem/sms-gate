@@ -1,9 +1,10 @@
 ---
 id: SG-44
 title: 'SG-42 AC#5: караул подтверждённого flash_call на проде'
-status: Backlog
+status: Done
 assignee: []
 created_date: '2026-10-08 16:43'
+updated_date: '2026-10-09 09:58'
 due_date: '2026-10-22'
 labels: []
 dependencies: []
@@ -21,3 +22,15 @@ match: settled as carried by a confirmation
 ssh -o BatchMode=yes -p 30022 home.deralsem.ru 'journalctl -u sms-gate --since "-7 days" --no-pager | grep -m1 "settled as carried by a confirmation"'
 ```
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Дока не менялась: Караул без кода и без изменений capability; итог влита в финальную сводку SG-42 (продом доказано 09.10 12:06 МСК), доке doc-10 нечего добавить.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Исполнено раньше срока: событие наступило 09.10 12:06 МСК и доказано из базы и журнала (SG-42 AC#5 закрыт). Проба журнал-грепом состоятельна (строка info-уровня в журнале есть), но минуту события сетевой блейм скрыл от живого караула — свидетельство базы надёжнее журнала; закрыто без ожидания срока.
+<!-- SECTION:FINAL_SUMMARY:END -->
