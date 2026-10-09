@@ -14,6 +14,9 @@ from app.modem.diag import ALERT_KEYS, summarise_for_alert
 
 class CountingSender:
     in_service = True
+    # `health_snapshot` reads this off the sender; the healthy default, as the
+    # page-suite fakes on master already have it.
+    caller_id_subscribed = True
 
     def __init__(self):
         self.calls = []

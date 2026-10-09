@@ -25,6 +25,10 @@ def _fast(monkeypatch):
 class FakeSender:
     """Answers the two things the tick asks: registration, and the IMS register."""
 
+    # `health_snapshot` reads this off the sender; the healthy default, as the
+    # page-suite fakes on master already have it.
+    caller_id_subscribed = True
+
     def __init__(self, *, registered=True, ims='+QCFG: "ims",1,1', raise_ims=False):
         self.registered = registered
         self.ims = ims
