@@ -384,6 +384,12 @@ _EVENT_TOGGLE = {
     # `sent` goes on to `expired` and its application is told so, and a dropped negative
     # report also suppresses the destination's failure count.
     "delivery_unplaced": "notify_unplaced_reports",
+    # Its own switch, and one that defaults on. A refusal by the routing rule or by a
+    # rung that cannot be attempted is not a send failing — `notify_send_errors` is off
+    # on a stock install, and these are precisely the events nobody would otherwise find
+    # out about: a rung silently skipped costs money on the next one, and a rule that
+    # cannot be read costs an operator's whole traffic.
+    "routing": "notify_routing_errors",
     # Shares the system-errors switch rather than adding one of its own: it replaces the
     # ERROR lines that switch already governed, so the same toggle keeps governing the
     # same class of message.
@@ -408,6 +414,7 @@ _EVENT_TITLE = {
     "inbound": "📨 Inbound",
     "dispatch_error": "📡 Webhook failed",
     "delivery_unplaced": "🕳 Report about nothing",
+    "routing": "🧭 Routing refused",
     "link": "🔌 Link restored",
     "voice_route": "📵 Voice route",
     "voice_route_config": "⚙️ IMS configuration",
@@ -418,7 +425,7 @@ _EVENT_TITLE = {
 def notify(event_type: str, text: str, dedup_extra=None, phone=None) -> None:
     """Send a typed operator notification if its toggle is on and a notifier is
     configured. event_type in {'send_error','delivery_error','delivery_unplaced',
-    'inbound','dispatch_error','link'}. Error types dedup on (event_type, dedup_extra);
+    'inbound','dispatch_error','routing','link'}. Error types dedup on (event_type, dedup_extra);
     inbound (dedup_extra None) is never deduped."""
     from app.settings_store import store
 

@@ -1,41 +1,828 @@
 {% extends "base.html" %}
 {% block content %}
 <h2>{% trans %}Settings{% endtrans %}</h2>
-<form method="post" action="/admin/settings">
-  {% for section, fields in sections.items() %}
-  <div class="card" style="margin-bottom:16px;">
-    <div class="label">{{ section }}</div>
+{# The header's `nav a` rule is for a dark bar and would paint these light grey on white. #}
+<style>
+  nav.settings-toc a { color: #1d4ed8; margin-right: 0; padding: 2px 0; }
+  nav.settings-toc a:hover { color: #1e3a8a; text-decoration: underline; }
+  /* SG-33.3: every button the form-over-JSON editors add (reorder, remove, "add a
+     row…", the JSON/text toggle, "insert example") is a secondary action next to the
+     one blue button that matters per section — "Save section". Without its own weight
+     these would read as equally important and the page turns pointillist. */
+  button.btn-secondary, button.btn-icon {
+    background: #fff;
+    color: #1f2937;
+    border: 1px solid #d1d5db;
+  }
+  button.btn-secondary:hover, button.btn-icon:hover {
+    background: #f3f4f6;
+    opacity: 1;
+  }
+  button.btn-icon { padding: 2px 8px; }
+  button.btn-icon:disabled { opacity: .45; cursor: default; }
+  button.btn-icon.btn-remove:hover { color: #b91c1c; border-color: #fca5a5; }
+</style>
+<nav class="settings-toc"style="margin-bottom:16px;display:flex;gap:10px;flex-wrap:wrap;font-size:13px;">
+  {% for section in sections %}
+  <a href="#{{ section.id }}">{{ _(section.title) }}</a>
+  {% endfor %}
+</nav>
+
+{% macro dirty_mark(has_error) %}
+{# A refused save leaves the submitted values on the page but not in the store —
+   the section is exactly as unsaved as one edited by hand. #}
+<span class="dirty-mark muted" style="font-size:11px;font-weight:600;" {% if not has_error %}hidden{% endif %}>&#9679; {% trans %}unsaved{% endtrans %}</span>
+{% endmacro %}
+
+{% macro changed_badge(n) %}
+{% if n %}
+<span class="muted" style="font-size:11px;font-weight:600;margin-left:6px;">{% trans n=n %}changed: {{ n }}{% endtrans %}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro settings_table(section) %}
+<div class="table-wrap">
+<table>
+  {% for f in section.fields %}
+  <tr id="row-{{ f.key }}">
+    <td style="width:280px;">
+      <label for="set-{{ f.key }}" style="font-weight:600;">{{ _(f.label) }}</label><br>
+      <span class="muted" style="font-size:12px;">{{ _(f.help) }}</span><br>
+      <code class="muted" style="font-size:10px;">{{ f.key }}</code>
+    </td>
+    <td>
+      {% if f.app_owned %}
+        <span class="muted" style="font-size:13px;">{% trans %}set on the application's own page{% endtrans %} — <a href="/admin/apps">{% trans %}Apps{% endtrans %}</a></span>
+      {% elif f.is_secret %}
+        <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
+      {% elif f.key == 'phone_region' %}
+        <select name="{{ f.key }}" id="set-{{ f.key }}">
+          {% for code, label in countries %}
+            <option value="{{ code }}" {% if f.value == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      {% elif f.type == 'bool' %}
+        {# The hidden field carries "false" when the checkbox is unticked — a
+           checkbox absent from the form is simply not sent, so without it an
+           operator clearing the box would leave the setting unchanged rather than
+           off. Starlette's form keeps the last value for a repeated key, so a
+           ticked box (hidden "false" then checkbox "true") arrives as "true". #}
+        <input type="hidden" name="{{ f.key }}" value="false">
+        <label style="display:inline-flex;align-items:center;gap:6px;">
+          <input type="checkbox" name="{{ f.key }}" id="set-{{ f.key }}" value="true" {% if f.value %}checked{% endif %}>
+          <span data-on="{{ _('On') }}" data-off="{{ _('Off') }}">{{ _('On') if f.value else _('Off') }}</span>
+        </label>
+      {% elif f.key in ('operator_routes', 'verification_route_order', 'send_retry_backoff', 'inbound_dispatch') %}
+        {# SG-33.3: the real form field stays this textarea — same name/id the backend has
+           always read — but a JS-built form sits on top of it in the common case and writes
+           back into it on every change (see the script at the bottom of the page). A value
+           the form cannot read (freehand JSON, or a refused save's own bad input) opens in
+           this textarea directly instead; the "back to form"/"edit as text" button lets an
+           operator move between the two deliberately. #}
+        <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4"
+                   style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+        <div class="field-form" id="form-{{ f.key }}" data-key="{{ f.key }}" hidden style="margin-top:8px;"></div>
+        <div class="parse-msg" id="parsemsg-{{ f.key }}" style="font-size:12px;color:#b91c1c;margin-top:4px;" hidden>
+          {% trans %}Could not be read as expected — edit it as text below, or fix it and try the form again.{% endtrans %}
+        </div>
+        <button type="button" class="toggle-mode-btn btn-secondary" data-target="{{ f.key }}"
+                data-to-text="{{ _('Edit as JSON') if f.key in ('operator_routes', 'inbound_dispatch') else _('Edit as text') }}"
+                data-to-form="{{ _('Back to form') }}"
+                style="margin-top:6px;">{{ _('Edit as JSON') if f.key in ('operator_routes', 'inbound_dispatch') else _('Edit as text') }}</button>
+      {% elif f.type in ('brands', 'limits') %}
+        <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="12"
+                   style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+        <button type="button" class="insert-example-btn btn-secondary" data-target="{{ f.key }}"
+                data-example="{{ json_examples.get(f.key, '') }}"
+                style="margin-top:6px;">{% trans %}Insert example{% endtrans %}</button>
+      {% elif f.type in ('routes', 'templates') %}
+        <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+      {% else %}
+        <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
+      {% endif %}
+      {% if errors.get(f.key) %}<div class="field-error" style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endmacro %}
+
+{% macro tg_account_card(tg_account) %}
+<div style="margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;">
+  <div class="label" style="margin-bottom:8px;">{% trans %}Telegram account{% endtrans %}</div>
+  {% if tg_account.error %}
+    <div class="muted" style="font-size:12px;">{% trans %}could not be read{% endtrans %}</div>
+  {% else %}
     <table>
-      {% for f in fields %}
       <tr>
-        <td style="width:240px;"><label for="set-{{ f.key }}"><code>{{ f.key }}</code></label><br>
-            <span class="muted" style="font-size:11px;">{{ f.description }}</span></td>
+        <td style="width:280px;"><code class="muted" style="font-size:11px;">TG_API_ID</code></td>
+        <td>{{ _('set') if tg_account.api_id_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td><code class="muted" style="font-size:11px;">TG_API_HASH</code></td>
+        <td>{{ _('set') if tg_account.api_hash_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td><code class="muted" style="font-size:11px;">TG_SESSION_DIR</code></td>
+        <td>{{ _('set') if tg_account.session_dir_set else _('not set') }}</td>
+      </tr>
+      <tr>
+        <td>{% trans %}tg_user in the rung order{% endtrans %}</td>
+        <td>{{ _('yes') if tg_account.route_order_has_tg_user else _('no') }}</td>
+      </tr>
+      {% for app in tg_account.apps %}
+      <tr>
+        <td><code style="font-size:11px;">{{ app.app_id }}</code></td>
         <td>
-          {% if f.is_secret %}
-            <input name="{{ f.key }}" id="set-{{ f.key }}" type="password" placeholder="{{ _('configured (blank = keep)') if f.configured else _('not set') }}">
-          {% elif f.key == 'phone_region' %}
-            <select name="{{ f.key }}" id="set-{{ f.key }}">
-              {% for code, label in countries %}
-                <option value="{{ code }}" {% if f.value == code %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          {% elif f.type == 'bool' %}
-            <select name="{{ f.key }}" id="set-{{ f.key }}">
-              <option value="true" {% if f.value %}selected{% endif %}>true</option>
-              <option value="false" {% if not f.value %}selected{% endif %}>false</option>
-            </select>
-          {% elif f.type == 'routes' %}
-            <textarea name="{{ f.key }}" id="set-{{ f.key }}" rows="4" style="width:100%;font-family:monospace;">{{ f.value }}</textarea>
+          {% if app.reason is none %}
+            <span style="color:#065f46;">{% trans %}connected{% endtrans %}</span>
           {% else %}
-            <input name="{{ f.key }}" id="set-{{ f.key }}" type="text" value="{{ f.value }}">
+            <span style="color:#991b1b;">{{ app.reason }}</span>
           {% endif %}
-          {% if errors.get(f.key) %}<div style="color:#b91c1c;font-size:12px;">{% trans %}error{% endtrans %}: {{ errors[f.key] }}</div>{% endif %}
         </td>
       </tr>
       {% endfor %}
     </table>
-  </div>
-  {% endfor %}
-  <button type="submit">{% trans %}Save{% endtrans %}</button>
-</form>
+    <div style="margin-top:8px;font-weight:600;">
+      {% if tg_account.ok and tg_account.wired_count == tg_account.apps | length %}
+        {% trans %}Stage tg_user is enabled{% endtrans %}
+      {% elif tg_account.ok %}
+        {% trans wired=tg_account.wired_count, total=tg_account.apps | length %}Stage tg_user is enabled for {{ wired }} of {{ total }} applications — the reasons for the rest are above{% endtrans %}
+      {% elif not tg_account.route_order_has_tg_user %}
+        {% trans %}Stage tg_user is not enabled: it is not in the order of verification rungs{% endtrans %}
+      {% elif tg_account.blocking_reason %}
+        {% trans reason=tg_account.blocking_reason %}Stage tg_user is not enabled: {{ reason }}{% endtrans %}
+      {% else %}
+        {% trans %}Stage tg_user is not enabled: no application has a tg_user account configured{% endtrans %}
+      {% endif %}
+    </div>
+  {% endif %}
+  <details style="margin-top:10px;">
+    <summary style="cursor:pointer;font-size:12px;">{% trans %}How to set it up{% endtrans %}</summary>
+    <div style="font-size:12px;margin-top:8px;">
+      <p>{% trans %}The three variables above are set in the file named by EnvironmentFile= in deploy/sms-gate.service — on the production host, /opt/sms-gate/.env.{% endtrans %}</p>
+      <p>{% trans %}TG_SESSION_DIR must be an absolute path; it holds one &lt;account&gt;.session file per sender account.{% endtrans %}</p>
+      <p>{% trans %}Signing an account in for the first time is deploy/tg-sign-in.py — see its own docstring for the environment variables it needs.{% endtrans %}</p>
+      <p>{% trans %}After editing .env, the service must be restarted:{% endtrans %}</p>
+      <pre style="white-space:pre-wrap;">sudo systemctl restart sms-gate</pre>
+    </div>
+  </details>
+</div>
+{% endmacro %}
+
+{% for section in sections %}
+{% set has_error = (section.fields | selectattr('key', 'in', errors) | list) %}
+<div class="card" id="{{ section.id }}" style="margin-bottom:16px;">
+  <form method="post" action="/admin/settings" class="settings-section" data-section="{{ section.id }}">
+    <input type="hidden" name="_section" value="{{ section.id }}">
+    {% if section.collapsed %}
+    {# `advanced`: closed by default, opened by a refusal inside it or by a just-saved
+       redirect back to it — an operator who just fixed something in here must not have
+       the page fold it away again. #}
+    <details {% if has_error or saved == section.id %}open{% endif %}>
+      <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:600;">{{ _(section.title) }}</span>
+        {{ changed_badge(section.changed_count) }}
+        {{ dirty_mark(has_error) }}
+      </summary>
+      {% if saved == section.id %}
+        <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+      {% endif %}
+      {{ settings_table(section) }}
+      {% if section.id == 'vendors' %}{{ tg_account_card(tg_account) }}{% endif %}
+      <button type="submit" style="margin-top:12px;">{% trans %}Save section{% endtrans %}</button>
+    </details>
+    {% else %}
+    <div class="label" style="display:flex;align-items:center;gap:8px;">
+      <span>{{ _(section.title) }}</span>
+      {{ dirty_mark(has_error) }}
+    </div>
+    {% if saved == section.id %}
+      <div role="status" style="color:#065f46;font-size:12px;margin:6px 0;">{% trans %}Saved{% endtrans %}</div>
+    {% endif %}
+    {{ settings_table(section) }}
+    {% if section.id == 'vendors' %}{{ tg_account_card(tg_account) }}{% endif %}
+    <button type="submit" style="margin-top:12px;">{% trans %}Save section{% endtrans %}</button>
+    {% endif %}
+  </form>
+</div>
+{% endfor %}
+
+{# SG-33.3: data the form-over-JSON editors below need, translated server-side (see
+   `app.admin.router._rung_choices`) and passed as JSON rather than assembled by hand in
+   a Jinja expression — `tojson` escapes it for safe embedding, a hand-built one would not. #}
+{% set UI = {
+  'unknown_rung': _('unknown rung'),
+  'move_up': _('move up'),
+  'move_down': _('move down'),
+  'remove': _('remove'),
+  'add_stage': _('Add a stage…'),
+  'no_retries': _('Empty — no retries, a single attempt only'),
+  'after_prefix': _('after'),
+  'after_suffix': _('s'),
+  'add_retry': _('Add a retry'),
+  'operator_name': _('Operator'),
+  'refuse': _('Refuse'),
+  'any_other_operator': _('Any other operator'),
+  'unknown_operator': _('Operator not resolved'),
+  'add_operator': _('Add operator'),
+  'prefix_label': _('Prefix'),
+  'webhook_url_label': _('Webhook URL'),
+  'bearer_label': _('Bearer'),
+  'bearer_placeholder_set': _('already set (blank — keep it)'),
+  'add_route': _('Add a route'),
+  'no_dispatch_routes': _('No routes — inbound SMS is not forwarded anywhere'),
+  'insert_example_confirm': _('Replace the current content with the example?'),
+} %}
+<script type="application/json" id="rung-choices-data">{{ rung_choices | tojson }}</script>
+<script type="application/json" id="bearer-sentinel-data">{{ bearer_sentinel | tojson }}</script>
+<script type="application/json" id="settings-i18n">{{ UI | tojson }}</script>
+<script>
+(function () {
+  var dirtySections = new Set();
+  document.querySelectorAll("form.settings-section").forEach(function (form) {
+    var section = form.dataset.section;
+    var mark = form.querySelector(".dirty-mark");
+    form.addEventListener("input", function () {
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    if (mark && !mark.hidden) { dirtySections.add(section); }
+    form.addEventListener("change", function (e) {
+      var t = e.target;
+      if (t.type === "checkbox" && t.nextElementSibling && t.nextElementSibling.dataset.on) {
+        t.nextElementSibling.textContent = t.checked ? t.nextElementSibling.dataset.on : t.nextElementSibling.dataset.off;
+      }
+      dirtySections.add(section);
+      if (mark) { mark.hidden = false; }
+    });
+    // Saving reloads the whole page, so only this section's edits are carried; the
+    // others' stay dirty and the unload prompt still guards them.
+    form.addEventListener("submit", function () {
+      dirtySections.delete(section);
+    });
+  });
+  // A refused save answers the POST with no anchor, so an error in a lower section (or
+  // inside a closed `advanced`) would sit below the fold, or invisible, on a page that
+  // otherwise looks unchanged. The server already opens `advanced`'s <details> when the
+  // error is inside it; this only has to find the element to scroll to.
+  var firstError = document.querySelector(".field-error");
+  if (firstError) {
+    var host = firstError.closest("details");
+    if (host) { host.open = true; }
+    firstError.scrollIntoView({block: "center"});
+  } else if (window.location.hash) {
+    // A bookmarked or shared link into a field that lives inside `advanced` must open
+    // it too — the server has no way to know the fragment at render time.
+    // By id rather than `querySelector`: a fragment that is no valid selector (`#1`)
+    // would throw there and take the unload guard below down with it.
+    var target = null;
+    try { target = document.getElementById(decodeURIComponent(window.location.hash.slice(1))); } catch (e) {}
+    if (target) {
+      var targetHost = target.closest("details");
+      if (targetHost) { targetHost.open = true; }
+      target.scrollIntoView({block: "center"});
+    }
+  }
+  window.addEventListener("beforeunload", function (e) {
+    if (dirtySections.size === 0) { return; }
+    e.preventDefault();
+    e.returnValue = "";
+  });
+})();
+</script>
+
+{# SG-33.3: form-over-JSON editors for operator_routes, verification_route_order,
+   send_retry_backoff and inbound_dispatch, plus the "insert example" buttons for the two
+   JSON textareas that stay textareas (messenger_brands, messenger_limits). One IIFE, no
+   external library — same convention as app_detail.html's own script. #}
+<script>
+(function () {
+  "use strict";
+
+  function readJSON(id, fallback) {
+    var node = document.getElementById(id);
+    if (!node) { return fallback; }
+    try { return JSON.parse(node.textContent); } catch (e) { return fallback; }
+  }
+
+  var RUNG_CHOICES = readJSON("rung-choices-data", []);
+  var BEARER_SENTINEL = readJSON("bearer-sentinel-data", "");
+  var UI = readJSON("settings-i18n", {});
+
+  function rungLabel(code) {
+    for (var i = 0; i < RUNG_CHOICES.length; i++) {
+      if (RUNG_CHOICES[i].code === code) { return RUNG_CHOICES[i].label; }
+    }
+    return null;
+  }
+
+  function fireInput(el) {
+    var evt;
+    try { evt = new Event("input", {bubbles: true}); }
+    catch (e) { evt = document.createEvent("Event"); evt.initEvent("input", true, true); }
+    el.dispatchEvent(evt);
+  }
+
+  var ROW_STYLE = "display:flex;align-items:center;gap:6px;margin-bottom:4px;";
+
+  function makeIconButton(symbol, title, disabled, onClick) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.textContent = symbol;
+    b.className = (symbol === "×") ? "btn-icon btn-remove" : "btn-icon";
+    if (title) {
+      b.title = title;
+      b.setAttribute("aria-label", title);
+    }
+    b.disabled = !!disabled;
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function rungLine(code, onUp, onDown, onRemove, upDisabled, downDisabled) {
+    var line = document.createElement("div");
+    line.style.cssText = ROW_STYLE;
+    var label = rungLabel(code);
+    var span = document.createElement("span");
+    span.textContent = label ? label : ((UI.unknown_rung || "unknown rung") + ": " + code);
+    line.appendChild(span);
+    var codeTag = document.createElement("code");
+    codeTag.style.fontSize = "10px";
+    codeTag.className = "muted";
+    codeTag.textContent = code;
+    line.appendChild(codeTag);
+    line.appendChild(makeIconButton("↑", UI.move_up, upDisabled, onUp));
+    line.appendChild(makeIconButton("↓", UI.move_down, downDisabled, onDown));
+    line.appendChild(makeIconButton("×", UI.remove, false, onRemove));
+    return line;
+  }
+
+  function addStageSelect(usedCodes, onPick) {
+    var unused = RUNG_CHOICES.filter(function (r) { return usedCodes.indexOf(r.code) === -1; });
+    if (!unused.length) { return null; }
+    var select = document.createElement("select");
+    var ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = UI.add_stage || "Add a stage…";
+    select.appendChild(ph);
+    unused.forEach(function (r) {
+      var opt = document.createElement("option");
+      opt.value = r.code;
+      opt.textContent = r.label;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", function () {
+      if (select.value) { onPick(select.value); select.value = ""; }
+    });
+    return select;
+  }
+
+  // ---------------------------------------------------------------- generic controller
+  function initField(key, editor) {
+    var textarea = document.getElementById("set-" + key);
+    var container = document.getElementById("form-" + key);
+    var msg = document.getElementById("parsemsg-" + key);
+    var btn = document.querySelector('.toggle-mode-btn[data-target="' + key + '"]');
+    if (!textarea || !container) { return; }
+    var mode = "text";
+    var data = null;
+
+    function setMode(next) {
+      mode = next;
+      if (mode === "form") {
+        textarea.hidden = true;
+        container.hidden = false;
+        if (btn) { btn.textContent = btn.getAttribute("data-to-text"); }
+      } else {
+        textarea.hidden = false;
+        container.hidden = true;
+        if (btn) { btn.textContent = btn.getAttribute("data-to-form"); }
+      }
+    }
+
+    // SG-33.3 review: a plain value edit (typing in a text/number field) must only push
+    // the new value into the textarea, never rebuild the DOM — a rebuild mid-keystroke
+    // recreates the input the browser is about to receive the next character in, and
+    // that character is lost together with focus. Only a structural change (reorder,
+    // remove, add a row, tick "Refuse", pick a stage) rebuilds; `onValue`'s own textarea
+    // write covers it too, so `onStructure` is just `onValue` plus a rerender.
+    function onValue() {
+      textarea.value = editor.serialize(data);
+      fireInput(textarea);
+    }
+
+    function onStructure() {
+      onValue();
+      rerender();
+    }
+
+    function rerender() {
+      container.innerHTML = "";
+      editor.render(container, data, onValue, onStructure);
+    }
+
+    function tryEnterForm() {
+      var parsed;
+      try { parsed = editor.parse(textarea.value); } catch (e) { parsed = null; }
+      if (parsed === null) {
+        if (msg) { msg.hidden = false; }
+        setMode("text");
+        return false;
+      }
+      if (msg) { msg.hidden = true; }
+      data = parsed;
+      rerender();
+      setMode("form");
+      return true;
+    }
+
+    if (btn) {
+      btn.addEventListener("click", function () {
+        if (mode === "form") {
+          if (msg) { msg.hidden = true; }
+          setMode("text");
+        } else {
+          tryEnterForm();
+        }
+      });
+    }
+
+    tryEnterForm();
+  }
+
+  // ---------------------------------------------------------- verification_route_order
+  var RungsEditor = {
+    parse: function (raw) {
+      // A comma list never fails to split — an unlisted name is shown, not refused; the
+      // server is what refuses it, at save time.
+      var out = [];
+      (raw || "").split(",").forEach(function (part) {
+        var name = part.trim();
+        if (name) { out.push(name); }
+      });
+      return out;
+    },
+    serialize: function (data) { return data.join(","); },
+    render: function (container, data, onValue, onStructure) {
+      data.forEach(function (code, idx) {
+        container.appendChild(rungLine(
+          code,
+          function () {
+            var t = data[idx - 1]; data[idx - 1] = data[idx]; data[idx] = t; onStructure();
+          },
+          function () {
+            var t = data[idx + 1]; data[idx + 1] = data[idx]; data[idx] = t; onStructure();
+          },
+          function () { data.splice(idx, 1); onStructure(); },
+          idx === 0,
+          idx === data.length - 1
+        ));
+      });
+      var select = addStageSelect(data, function (code) { data.push(code); onStructure(); });
+      if (select) { container.appendChild(select); }
+    }
+  };
+
+  // ---------------------------------------------------------------- send_retry_backoff
+  var DelaysEditor = {
+    parse: function (raw) {
+      var text = (raw || "").trim();
+      if (text === "") { return []; }
+      var out = [];
+      var parts = text.split(",");
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i].trim();
+        if (p === "") { continue; }          // a trailing/doubled comma is a typo
+        if (!/^[0-9]+$/.test(p)) { return null; }
+        var n = parseInt(p, 10);
+        if (n <= 0) { return null; }
+        out.push(n);
+      }
+      return out;
+    },
+    // An emptied box drops out rather than keeping its old delay; anything else goes to
+    // the server as typed, so "0" or "-5" is refused there with its own message.
+    serialize: function (data) {
+      return data.map(function (v) { return String(v).trim(); })
+        .filter(function (v) { return v !== ""; }).join(",");
+    },
+    render: function (container, data, onValue, onStructure) {
+      if (data.length === 0) {
+        var note = document.createElement("div");
+        note.className = "muted";
+        note.style.fontSize = "12px";
+        note.style.marginBottom = "6px";
+        note.textContent = UI.no_retries || "Empty — no retries, a single attempt only";
+        container.appendChild(note);
+      }
+      data.forEach(function (value, idx) {
+        var row = document.createElement("div");
+        row.style.cssText = ROW_STYLE;
+        var before = document.createElement("span");
+        before.textContent = UI.after_prefix || "after";
+        row.appendChild(before);
+        var input = document.createElement("input");
+        input.type = "number";
+        input.min = "1";
+        input.step = "1";
+        input.value = String(value);
+        input.style.width = "80px";
+        // A value edit only — no rerender, so the click that follows (× or "Add a
+        // retry") lands on the same DOM the operator is looking at, not a rebuilt copy.
+        input.addEventListener("input", function () {
+          data[idx] = input.value;
+          onValue();
+        });
+        row.appendChild(input);
+        var after = document.createElement("span");
+        after.textContent = UI.after_suffix || "s";
+        row.appendChild(after);
+        row.appendChild(makeIconButton("×", UI.remove, false, function () {
+          data.splice(idx, 1); onStructure();
+        }));
+        container.appendChild(row);
+      });
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn-secondary";
+      addBtn.textContent = UI.add_retry || "Add a retry";
+      addBtn.addEventListener("click", function () { data.push(30); onStructure(); });
+      container.appendChild(addBtn);
+    }
+  };
+
+  // ------------------------------------------------------------------- operator_routes
+  function isRefuseRoutes(routes) { return routes.length === 1 && routes[0] === "refuse"; }
+
+  function rowToEntry(row) {
+    var entry = {operator: row.operator, routes: row.routes.slice()};
+    Object.keys(row.other || {}).forEach(function (k) { entry[k] = row.other[k]; });
+    return entry;
+  }
+
+  var OperatorRoutesEditor = {
+    parse: function (raw) {
+      var text = (raw || "").trim();
+      var arr;
+      if (text === "") {
+        arr = [];
+      } else {
+        try { arr = JSON.parse(text); } catch (e) { return null; }
+        if (!Array.isArray(arr)) { return null; }
+        for (var i = 0; i < arr.length; i++) {
+          if (typeof arr[i] !== "object" || arr[i] === null || Array.isArray(arr[i])) { return null; }
+        }
+      }
+      var regular = [], star = null, question = null;
+      arr.forEach(function (item) {
+        var operator = typeof item.operator === "string" ? item.operator : "";
+        var routes = Array.isArray(item.routes) ? item.routes.slice() : [];
+        var other = {};
+        Object.keys(item).forEach(function (k) {
+          if (k !== "operator" && k !== "routes") { other[k] = item[k]; }
+        });
+        var row = {operator: operator, routes: routes, other: other};
+        if (operator === "*") { star = row; }
+        else if (operator === "?") { question = row; }
+        else { regular.push(row); }
+      });
+      if (!star) { star = {operator: "*", routes: ["refuse"], other: {}}; }
+      if (!question) { question = {operator: "?", routes: ["refuse"], other: {}}; }
+      return {regular: regular, star: star, question: question};
+    },
+    serialize: function (data) {
+      var out = data.regular.map(rowToEntry);
+      out.push(rowToEntry(data.star));
+      out.push(rowToEntry(data.question));
+      return JSON.stringify(out);
+    },
+    render: function (container, data, onValue, onStructure) {
+      function buildRow(row, removeFromModel, pinnedLabel) {
+        var box = document.createElement("div");
+        box.style.cssText = "border:1px solid #e5e7eb;padding:8px;margin-bottom:8px;" +
+          "border-radius:4px;";
+        var top = document.createElement("div");
+        top.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px;";
+        if (pinnedLabel) {
+          var label = document.createElement("span");
+          label.style.fontWeight = "600";
+          label.textContent = pinnedLabel;
+          top.appendChild(label);
+        } else {
+          var input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = UI.operator_name || "Operator";
+          input.value = row.operator;
+          input.style.flex = "1";
+          // A value edit only — typing a name must not rebuild this very input.
+          input.addEventListener("input", function () { row.operator = input.value; onValue(); });
+          top.appendChild(input);
+        }
+        var refuseLabel = document.createElement("label");
+        refuseLabel.style.cssText = "display:inline-flex;align-items:center;gap:4px;margin-left:auto;";
+        var refuseBox = document.createElement("input");
+        refuseBox.type = "checkbox";
+        var refusing = isRefuseRoutes(row.routes);
+        refuseBox.checked = refusing;
+        refuseBox.addEventListener("change", function () {
+          if (refuseBox.checked) {
+            row._saved = row.routes.slice();
+            row.routes = ["refuse"];
+          } else {
+            row.routes = (row._saved && !isRefuseRoutes(row._saved)) ? row._saved.slice() : [];
+          }
+          onStructure();
+        });
+        refuseLabel.appendChild(refuseBox);
+        var refuseText = document.createElement("span");
+        refuseText.textContent = UI.refuse || "Refuse";
+        refuseLabel.appendChild(refuseText);
+        top.appendChild(refuseLabel);
+        if (removeFromModel) {
+          top.appendChild(makeIconButton("×", UI.remove, false, removeFromModel));
+        }
+        box.appendChild(top);
+        if (!refusing) {
+          row.routes.forEach(function (code, rIdx) {
+            box.appendChild(rungLine(
+              code,
+              function () {
+                var t = row.routes[rIdx - 1]; row.routes[rIdx - 1] = row.routes[rIdx];
+                row.routes[rIdx] = t; onStructure();
+              },
+              function () {
+                var t = row.routes[rIdx + 1]; row.routes[rIdx + 1] = row.routes[rIdx];
+                row.routes[rIdx] = t; onStructure();
+              },
+              function () { row.routes.splice(rIdx, 1); onStructure(); },
+              rIdx === 0,
+              rIdx === row.routes.length - 1
+            ));
+          });
+          var select = addStageSelect(row.routes, function (code) { row.routes.push(code); onStructure(); });
+          if (select) { box.appendChild(select); }
+        }
+        return box;
+      }
+      data.regular.forEach(function (row, idx) {
+        container.appendChild(buildRow(row, function () { data.regular.splice(idx, 1); onStructure(); }, null));
+      });
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn-secondary";
+      addBtn.textContent = UI.add_operator || "Add operator";
+      addBtn.style.marginBottom = "8px";
+      addBtn.addEventListener("click", function () {
+        data.regular.push({operator: "", routes: [], other: {}});
+        onStructure();
+      });
+      container.appendChild(addBtn);
+      container.appendChild(buildRow(data.star, null, UI.any_other_operator || "Any other operator"));
+      container.appendChild(buildRow(data.question, null, UI.unknown_operator || "Operator not resolved"));
+    }
+  };
+
+  // -------------------------------------------------------------------- inbound_dispatch
+  var DispatchEditor = {
+    parse: function (raw) {
+      var text = (raw || "").trim();
+      var arr;
+      if (text === "") {
+        arr = [];
+      } else {
+        try { arr = JSON.parse(text); } catch (e) { return null; }
+        if (!Array.isArray(arr)) { return null; }
+        for (var i = 0; i < arr.length; i++) {
+          if (typeof arr[i] !== "object" || arr[i] === null || Array.isArray(arr[i])) { return null; }
+        }
+      }
+      return arr.map(function (item) {
+        var other = {};
+        Object.keys(item).forEach(function (k) {
+          if (k !== "prefix" && k !== "webhook_url" && k !== "bearer") { other[k] = item[k]; }
+        });
+        var bearerRaw = typeof item.bearer === "string" ? item.bearer : "";
+        var isSentinel = bearerRaw !== "" && bearerRaw === BEARER_SENTINEL;
+        return {
+          prefix: typeof item.prefix === "string" ? item.prefix : "",
+          webhook_url: typeof item.webhook_url === "string" ? item.webhook_url : "",
+          // A bearer that is not the sentinel is a real, already-typed value — carried
+          // into the field (as dots, `type=password`) and serialized as itself. Only the
+          // sentinel is write-only. Losing a non-sentinel bearer here (SG-33.3 review)
+          // meant a refused save, or a value freehand-typed in JSON mode, silently saved
+          // an inbound webhook with no authorization the next time this form ran.
+          bearerSentinel: isSentinel,
+          bearerInput: isSentinel ? "" : bearerRaw,
+          other: other
+        };
+      });
+    },
+    serialize: function (data) {
+      return JSON.stringify(data.map(function (row) {
+        var entry = {prefix: row.prefix, webhook_url: row.webhook_url};
+        if (row.bearerInput) { entry.bearer = row.bearerInput; }
+        else if (row.bearerSentinel) { entry.bearer = BEARER_SENTINEL; }
+        Object.keys(row.other || {}).forEach(function (k) { entry[k] = row.other[k]; });
+        return entry;
+      }));
+    },
+    render: function (container, data, onValue, onStructure) {
+      if (data.length === 0) {
+        var note = document.createElement("div");
+        note.className = "muted";
+        note.style.fontSize = "12px";
+        note.style.marginBottom = "6px";
+        note.textContent = UI.no_dispatch_routes ||
+          "No routes — inbound SMS is not forwarded anywhere";
+        container.appendChild(note);
+      }
+      var table = document.createElement("table");
+      if (data.length === 0) { table.hidden = true; }
+      var head = document.createElement("tr");
+      [UI.prefix_label || "Prefix", UI.webhook_url_label || "Webhook URL",
+       UI.bearer_label || "Bearer", ""].forEach(function (text) {
+        var th = document.createElement("th");
+        th.textContent = text;
+        head.appendChild(th);
+      });
+      table.appendChild(head);
+      data.forEach(function (row, idx) {
+        var tr = document.createElement("tr");
+
+        var tdPrefix = document.createElement("td");
+        var prefixInput = document.createElement("input");
+        prefixInput.type = "text";
+        prefixInput.value = row.prefix;
+        prefixInput.addEventListener("input", function () { row.prefix = prefixInput.value; onValue(); });
+        tdPrefix.appendChild(prefixInput);
+        tr.appendChild(tdPrefix);
+
+        var tdUrl = document.createElement("td");
+        var urlInput = document.createElement("input");
+        urlInput.type = "text";
+        urlInput.style.width = "100%";
+        urlInput.value = row.webhook_url;
+        urlInput.addEventListener("input", function () { row.webhook_url = urlInput.value; onValue(); });
+        tdUrl.appendChild(urlInput);
+        tr.appendChild(tdUrl);
+
+        var tdBearer = document.createElement("td");
+        var bearerInput = document.createElement("input");
+        bearerInput.type = "password";
+        bearerInput.value = row.bearerInput;
+        if (row.bearerSentinel) {
+          bearerInput.placeholder = UI.bearer_placeholder_set || "already set (blank — keep it)";
+        }
+        bearerInput.addEventListener("input", function () {
+          row.bearerInput = bearerInput.value;
+          onValue();
+        });
+        tdBearer.appendChild(bearerInput);
+        tr.appendChild(tdBearer);
+
+        var tdRemove = document.createElement("td");
+        tdRemove.appendChild(makeIconButton("×", UI.remove, false, function () {
+          data.splice(idx, 1); onStructure();
+        }));
+        tr.appendChild(tdRemove);
+
+        table.appendChild(tr);
+      });
+      container.appendChild(table);
+      var addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "btn-secondary";
+      addBtn.textContent = UI.add_route || "Add a route";
+      addBtn.style.marginTop = "6px";
+      addBtn.addEventListener("click", function () {
+        data.push({prefix: "", webhook_url: "", bearerSentinel: false, bearerInput: "", other: {}});
+        onStructure();
+      });
+      container.appendChild(addBtn);
+    }
+  };
+
+  initField("verification_route_order", RungsEditor);
+  initField("send_retry_backoff", DelaysEditor);
+  initField("operator_routes", OperatorRoutesEditor);
+  initField("inbound_dispatch", DispatchEditor);
+
+  // ---------------------------------------------------------- "Insert example" buttons
+  document.querySelectorAll(".insert-example-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var key = btn.dataset.target;
+      var textarea = document.getElementById("set-" + key);
+      if (!textarea) { return; }
+      if (textarea.value.trim() !== "") {
+        var msg = UI.insert_example_confirm || "Replace the current content with the example?";
+        if (!window.confirm(msg)) { return; }
+      }
+      textarea.value = btn.dataset.example || "";
+      fireInput(textarea);
+    });
+  });
+})();
+</script>
 {% endblock %}

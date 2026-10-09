@@ -43,7 +43,9 @@ RELAY="${ALERT_RELAY_BASE:-$(read_env ALERT_RELAY_BASE)}"
 # The spool keeps one record per line so it can be read by a person during an incident, which
 # is when someone will want to know what was held. Newlines are escaped rather than the record
 # encoded, for the same reason.
-encode() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\n/\\n/g'; }
+# The join is awk, not sed's `:a;N;$!ba`: BSD sed quits without printing when `N` runs on the
+# last line, so a one-line alert encoded to nothing there, while GNU sed printed it.
+encode() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'; }
 decode() { printf '%s' "$1" | sed -e 's/\\n/\n/g' -e 's/\\\\/\\/g'; }
 
 send_via() {

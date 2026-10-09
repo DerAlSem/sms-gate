@@ -6,12 +6,14 @@ that changes a message's status, forgets the webhook, and the app silently stops
 hearing about that transition. Exactly how the inbound `webhook_url` bug survived.
 
 Two halves:
-  * the census below fails when a new status writer appears in queries.py;
+  * the census below fails when a new status **write** appears in queries.py — a new
+    function, or a second transition inside one that is already known;
   * the behavioural tests fail when a known writer's call site drops its dispatch.
 """
 import ast
 import asyncio
 import pathlib
+import re
 
 import pytest
 
@@ -23,42 +25,84 @@ from app.db.migrate import run_migrations
 QUERIES_PY = pathlib.Path(__file__).resolve().parents[1] / "app" / "db" / "queries.py"
 MANAGER_PY = pathlib.Path(__file__).resolve().parents[1] / "app" / "modem" / "manager.py"
 
-# Every queries.py helper that moves a message between statuses, and the status it
-# writes. Adding a writer without adding it here fails test_status_writer_census —
-# which is the point: the failure forces a decision about the webhook.
+# Every queries.py helper that moves a message between statuses, and **every status each
+# one writes**. Adding a writer — or a second transition inside an existing one — without
+# adding it here fails test_status_writer_census, which is the point: the failure forces a
+# decision about the webhook.
+#
+# 🔴 **The value half is task 6.6, and what it cost is worth more than what it fixed.**
+# Until 22.09.2026 this was a name → status map compared as `set(KNOWN_STATUS_WRITERS)`,
+# so only the **names** were ever asserted. A second `UPDATE messages SET status =
+# 'rejected'` added *inside* `set_message_delivered` went through green: no new name
+# appeared, and the status nobody declared was read by nobody. The requirement says
+# "every code path that writes `messages.status`" and the guard counted functions — the
+# unit of counting has to be the unit of the norm, or the guard is green on the breach
+# and looks healthy doing it. The verification half of this estate
+# (`tests/test_verification_outcome_reaches_the_app.py`) was written with the stricter
+# shape from the start and kills the same mutation; this is that shape, brought back
+# here.
 KNOWN_STATUS_WRITERS = {
-    "set_message_sent": "sent",
-    "set_message_failed": "failed",
-    "set_message_delivered": "delivered",
-    "set_message_delivery_failed": "failed",
-    "expire_stale_messages": "expired",
+    "set_message_sent": {"sent"},
+    "set_message_failed": {"failed"},
+    "set_message_delivered": {"delivered"},
+    "set_message_delivery_failed": {"failed"},
+    "expire_stale_messages": {"expired"},
     # Completes what the network partly confirmed, rather than expiring it. It writes
     # `delivered`, and its call site notifies that and nothing else: the application is owed
     # the conclusion, not the reasoning that reached it.
-    "complete_partly_reported_messages": "delivered",
+    "complete_partly_reported_messages": {"delivered"},
 }
 
 
-def _functions_writing_message_status() -> set[str]:
-    """Names of queries.py functions whose body contains an UPDATE of messages.status."""
+def _set_clause(sql: str) -> str | None:
+    """The assignment half of an `UPDATE messages`, or None if it is not one.
+
+    Split from the `WHERE` half on purpose: `status` appears in both — two of these
+    writers select the rows to sweep by the status they are already in — and a condition
+    on the status a row must already hold is the opposite of a write.
+    """
+    upper = sql.upper()
+    start = upper.find("UPDATE MESSAGES")
+    if start < 0:
+        return None
+    set_at = upper.find(" SET ", start)
+    if set_at < 0:
+        return None
+    where_at = upper.find(" WHERE ", set_at)
+    return sql[set_at + 5:where_at if where_at > 0 else len(sql)]
+
+
+_SET_STATUS = re.compile(r"\bstatus\s*=\s*(?:'([^']*)'|(\?))", re.IGNORECASE)
+
+
+def _message_status_writes() -> dict[str, set[str]]:
+    """Every queries.py function that writes `messages.status`, and what it writes.
+
+    A bound `?` is recorded as `"?"` rather than guessed at: a writer whose status comes
+    from its caller is a decision somebody has to look at, which is the whole purpose of
+    a census.
+    """
     tree = ast.parse(QUERIES_PY.read_text())
-    found = set()
+    writes: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for sub in ast.walk(node):
             if not isinstance(sub, ast.Constant) or not isinstance(sub.value, str):
                 continue
-            sql = " ".join(sub.value.split()).upper()
-            if "UPDATE MESSAGES" in sql and "STATUS =" in sql:
-                found.add(node.name)
-    return found
+            clause = _set_clause(" ".join(sub.value.split()))
+            if clause is None:
+                continue
+            for literal, bound in _SET_STATUS.findall(clause):
+                writes.setdefault(node.name, set()).add("?" if bound else literal.lower())
+    return writes
 
 
 def test_status_writer_census():
-    """A new status writer must be registered here — and then wired to a dispatch."""
-    assert _functions_writing_message_status() == set(KNOWN_STATUS_WRITERS), (
-        "queries.py gained or lost a writer of messages.status. Add it to "
+    """A new status writer — or a new status out of an old one — must be registered here,
+    and then wired to a dispatch."""
+    assert _message_status_writes() == KNOWN_STATUS_WRITERS, (
+        "queries.py gained or lost a write of messages.status. Add it to "
         "KNOWN_STATUS_WRITERS and give its call site a spawn_delivery_dispatch(...), "
         "or the owning app will never hear about that transition."
     )

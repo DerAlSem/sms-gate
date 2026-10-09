@@ -14,10 +14,25 @@ def test_spec_has_all_soft_keys():
         "instance_name",
         "notify_system_errors", "notify_send_errors",
         "notify_delivery_errors", "notify_inbound", "notify_dispatch_errors",
-        "notify_unplaced_reports",
+        "notify_unplaced_reports", "notify_routing_errors",
         "telegram_replies_enabled",
         "inbound_dispatch", "delivery_dispatch",
         "inbound_dispatch_retries", "inbound_dispatch_timeout",
+        "verification_ttl_seconds", "verification_max_attempts",
+        "verification_retention_days", "verification_route_order",
+        "verification_probe_timeout", "verification_proof_max_age_seconds",
+        "verification_ladder_bound",
+        "verification_call_in_ttl_seconds", "gateway_msisdn",
+        "tg_gateway_token", "tg_gateway_callback_tolerance_seconds",
+        "tg_gateway_callback_base", "tg_gateway_sender_username",
+        "operator_routes", "verification_templates", "operator_route_review_days",
+        "operator_lookup_bound",
+        "messenger_brands", "messenger_limits",
+        "verification_min_gap_seconds", "verification_per_minute",
+        "verification_per_day", "verification_day_window_hours",
+        "verification_paid_per_hour", "verification_paid_per_day",
+        "tg_gateway_balance_floor", "flash_call_balance_floor",
+        "ucaller_key", "ucaller_service_id",
         "blacklist_threshold", "delivery_timeout_seconds",
         "delivery_report_max_age_hours", "delivery_report_strict_attribution",
         "phone_region", "max_sms_parts", "modem_watchdog_enabled",
@@ -106,6 +121,23 @@ def test_normalize_inbound_dispatch_strips_route_fields():
 def test_normalize_leaves_other_types_alone():
     assert normalize_raw("int", " 7 ") == " 7 "
     assert normalize_raw("routes", "") == ""
+
+
+def test_validate_rungs_accepts_the_default_and_blank():
+    validate_raw("rungs", "call_in,sms_out,flash_call,tg_gateway,sms_in")
+    validate_raw("rungs", "")
+    validate_raw("rungs", "  ")
+    validate_raw("rungs", "call_in, , sms_out")   # blank parts (pasted commas) are skipped
+
+
+def test_validate_rungs_rejects_a_name_outside_all_routes():
+    with pytest.raises(ValueError):
+        validate_raw("rungs", "call_in,not_a_rung")
+
+
+def test_validate_rungs_rejects_a_repeated_rung():
+    with pytest.raises(ValueError):
+        validate_raw("rungs", "call_in,sms_out,call_in")
 
 
 def test_inbound_dispatch_parsed_strips_stored_whitespace():

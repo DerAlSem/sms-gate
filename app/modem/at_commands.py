@@ -163,6 +163,12 @@ class ATSerial:
         # symptom of a lost link was silence.
         self._last_good: float | None = None
         self._reopens = 0
+        # Whether `AT+CLIP=1` was last issued successfully on the link generation now in
+        # service. The modem will not answer this question — `AT+CLIP?` times out on the
+        # live device and `AT+CLIP=?` answers a different one, namely that the firmware
+        # knows the command — so what is knowable is our own act, and this is where it is
+        # kept. False until an init or a recovery has actually got an OK for it.
+        self._clip_subscribed = False
 
     @property
     def port(self) -> str:
@@ -186,6 +192,22 @@ class ATSerial:
     @property
     def reopens(self) -> int:
         return self._reopens
+
+    @property
+    def caller_id_subscribed(self) -> bool:
+        """Whether the gateway holds the caller-ID subscription on the link in service.
+
+        Read, never asked: no command is issued here. The link generation is part of the
+        fact — a subscription issued on a port that has since gone proves nothing about
+        the one that replaced it — so the record only counts while that same link is
+        still carrying a transport.
+
+        This is the `call_in` rung's precondition on caller ID. When it is False the rung
+        is not offered at all, which is what separates "the caller withheld their number"
+        (ordinary, confirms nothing, no fault) from "we never had caller ID" (the rung
+        should not have been on the ladder).
+        """
+        return self._clip_subscribed and self.in_service
 
     def link_snapshot(self) -> dict:
         """The link's state, for the health snapshot the diagnostics page renders."""
@@ -213,6 +235,10 @@ class ATSerial:
         just after it is recreated it may exist while this process still may not open it,
         because udev has not yet applied the ownership the service runs under.
         """
+        # A new link generation begins here, and it carries no subscription until one has
+        # been issued on it. Clearing before the open rather than after it means a failed
+        # open cannot leave the previous generation's record standing.
+        self._clip_subscribed = False
         deadline = asyncio.get_event_loop().time() + wait_for_device
         while True:
             try:
@@ -687,11 +713,29 @@ class ATSerial:
         is silent and total: no `+CDS` means every message expires, no `+CMTI` means
         every inbound SMS is missed, and no health check would notice. Re-issuing it is
         idempotent and costs one command.
+
+        Caller ID is re-applied for the same reason and on the same evidence — the
+        argument above is about URC subscriptions, not about `CNMI` in particular — but
+        outside the part that may not fail, exactly as at init. A modem that refuses
+        `AT+CLIP=1` must still come back from a recovery: the gateway's job is sending,
+        and caller ID is not worth a link. What changes is that the refusal is *recorded*
+        rather than merely logged, because the rung that needs it asks this record and
+        cannot ask the modem. Losing this one is worse than losing `CNMI` in one respect:
+        after an ordinary recovery IMS still reads `1,1`, so nothing downstream looks
+        unhealthy and `RING` simply arrives anonymous.
         """
         await self.command("AT+CFUN=4", timeout=5.0)
         await self.command("AT+CFUN=1", timeout=10.0)
         await self.command("AT+COPS=0", timeout=15.0)
         await self.command(CNMI_SUBSCRIBE, timeout=5.0)
+        try:
+            await self.command(CLIP_SUBSCRIBE, timeout=5.0)
+        except ModemFailure as e:
+            self._clip_subscribed = False
+            logger.warning("Recovery could not restore caller ID (%s): %s",
+                           CLIP_SUBSCRIBE, e)
+        else:
+            self._clip_subscribed = True
 
     async def hard_reset(self) -> None:
         """Full modem reset (CFUN=1,1). The port drops as the modem reboots, so the
@@ -720,12 +764,17 @@ class ATSerial:
         # this one is allowed to fail, and the port stays usable when it does. The
         # warning is the whole report — a silent skip would leave an anonymous `RING`
         # looking like a modem that cannot name callers at all.
+        # The outcome is also *recorded*, not only logged: the rung that depends on caller
+        # ID reads this record, because the modem will not answer the question itself.
         try:
             await self._command_unlocked(CLIP_SUBSCRIBE)
-            logger.info("AT init: %s OK", CLIP_SUBSCRIBE)
         except ModemFailure as e:
+            self._clip_subscribed = False
             logger.warning("Could not subscribe to caller ID (%s): %s",
                            CLIP_SUBSCRIBE, e)
+        else:
+            self._clip_subscribed = True
+            logger.info("AT init: %s OK", CLIP_SUBSCRIBE)
 
     async def init(self) -> None:
         """Run modem initialization sequence.

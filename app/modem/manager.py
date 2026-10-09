@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 import sqlite3
 from dataclasses import dataclass
@@ -15,10 +16,17 @@ from app.modem.dispatch import dispatch_inbound
 from app.modem.errors import is_retryable
 from app.modem.health import ModemHealth, COOLDOWN, HARD, OK, SOFT, STALL, TRANSPORT, WAIT
 from app.modem.attribution import ATTRIBUTED, BY_RECENCY, UNPLACED, attribute
+from app.modem import calls
+from app.modem.calls import CallWatch
+from app.verification import placement, refusals, routes, rule, ucaller
+from app.lookup.operator import cached_operator, resolve_within_bound
+from app.verification.dispatch import announce_verification_outcomes
+from app.verification.probes import build_probes
 from app.modem.parser import (
-    parse_cds, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
+    parse_cds, parse_clip, parse_cmti, parse_cmgr_pdu, parse_cmgl_pdu, describe_tp_status,
     classify_at_outcome, VALUE, FAILURE,
 )
+from app.phone import validate_and_normalize
 from app.modem.pdu import decode_deliver, inbound_pdu_key
 from app.modem.pdu_encode import encode_submit
 from app.modem import assembler
@@ -41,6 +49,26 @@ def _as_stored_time(value) -> str | None:
     if value is None:
         return None
     return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+# A code is four digits and nothing around it. Written with lookarounds rather than `\b`
+# so that a longer run of digits — an order number, a time — is not mined for a code it
+# happens to contain.
+_FOUR_DIGITS = re.compile(r"(?<!\d)\d{4}(?!\d)")
+
+
+def _redacted(text: str, codes: set[str] | None) -> str:
+    """The message with any code currently live for this number taken out.
+
+    Only codes that are actually live, so an ordinary message that happens to contain four
+    digits — a time, a flat number, an amount — reaches the operator as written. A
+    redaction that ate every message would have hidden a feature rather than protected a
+    secret.
+    """
+    if not codes:
+        return text
+    return _FOUR_DIGITS.sub(
+        lambda m: "****" if m.group(0) in codes else m.group(0), text)
 
 
 def _is_permanent_status(code: int) -> bool:
@@ -213,6 +241,10 @@ class ModemManager:
         # The registration answer the observation took, handed to the step that follows
         # it in the same tick. Two answers from two moments are not a pair.
         self._pending_poll: tuple[bool, bool] | None = None
+        # Which arriving `RING` or `+CLIP` belongs to which call. The modem announces one
+        # call many times — fifteen pairs in sixteen seconds, measured — and both things
+        # built on this must happen once per call, not once per line.
+        self._calls = CallWatch()
 
     # Thin views onto the health object, kept because this class reads them in several
     # places and because they are what the tests observe.
@@ -355,6 +387,41 @@ class ModemManager:
     def link_in_service(self) -> bool:
         """Both ports open and initialised — the condition `ensure_link` restores."""
         return self._sender.in_service and self._reader_link.in_service
+
+    @property
+    def can_transmit(self) -> bool:
+        """Whether this gateway's SIM can send. The command port, and only it.
+
+        Split out of `link_in_service` on 21.09.2026 because two rungs hold on the two
+        directions and the conjunction made them one question. `sms_out` is the gateway
+        sending; `sms_in` is the subscriber sending to us. Asking both of them "are both
+        ports up" meant `sms_in` could never be offered once `sms_out` was — it sits
+        last in the offer order and is dropped whenever anything earlier proves itself,
+        so an identical precondition retires it outright.
+        """
+        return self._sender.in_service
+
+    @property
+    def can_receive(self) -> bool:
+        """Whether an SMS addressed to this gateway would be read. The URC port.
+
+        The same link `+CMTI` arrives on, which is what `scan_inbox` and the reader loop
+        wait for. A sender port that is gone does not stop a message arriving here, and
+        that state — receive but not transmit — is the one in which asking the person to
+        text us is the right offer rather than the dear one.
+        """
+        return self._reader_link.in_service
+
+    @property
+    def caller_id_held(self) -> bool:
+        """Whether the gateway holds the caller-ID subscription on the link in service.
+
+        Its own record, not a question put to the modem — `AT+CLIP?` does not answer on
+        this device. Exposed here because the `call_in` rung's precondition asks it, and a
+        chooser reaching into the serial object for it would be reaching past the one
+        actor that owns the ports.
+        """
+        return self._sender.caller_id_subscribed
 
     def suspend_until_linked(self) -> None:
         """Close the gate before any loop starts, unless the link is already up.
@@ -538,7 +605,149 @@ class ModemManager:
                 self._held.discard(msg.message_id)
                 self._queue.task_done()
 
+    async def _operator_for(self, phone: str) -> str | None:
+        """This number's operator, resolved under the routing bound. None if not.
+
+        The decision itself — a stale row used as it stands, the bound spent only on a
+        number with no operator at all, nothing ever failed for want of one — lives in
+        `app.lookup.operator.resolve_within_bound`, because the verification door has to
+        make the same one. It used to live here alone, and the door made a different
+        decision for a year: task 6.4.
+
+        Kept as a method because it is the seam the sender's own tests steer, and because
+        what the sender does with a `None` is the sender's: the rule's unknown-operator
+        entry answers, and what it answers with is the owner's.
+        """
+        return await resolve_within_bound(phone)
+
+    @staticmethod
+    async def _cached_operator(phone: str) -> str | None:
+        """The operator already on record, or None — including when the row names nobody."""
+        return await cached_operator(phone)
+
+    async def _refuse_what_the_rule_routes_elsewhere(
+        self, msg: OutgoingMessage
+    ) -> bool:
+        """Refuse an item the rule does not route to this sender. True when refused.
+
+        The rule exists because operators withdraw the modem route, and the replacement
+        rungs have no field for words: a flash call's whole payload is the last four
+        digits of the calling number, and `sendVerificationMessage` accepts a `code` and
+        a `code_length` with no message body at all. Free text addressed to a subscriber
+        of a diverted operator is therefore something nothing in force for that operator
+        can carry — and until this check existed the send path never asked, so it went
+        out over the modem instead. That is the automatic failover this capability
+        refuses by name: not decided by anybody, merely arrived at, and for a МегаФон
+        subscriber it reads to the application as a delivery and behaves to the person as
+        a silence.
+
+        Four properties, each of which an implementation could drop while looking right:
+
+        - **It stands before `encode_submit` and before the modem gate**, so a refused
+          item costs no AT command, no registration query and no place in the queue for
+          the serial port.
+        - **It consumes no attempt.** A refusal is not a failed send: retried, it would
+          ask the same rule four more times and then be reported as a send failure, which
+          names the modem for something the modem was never offered.
+        - **It is counted, per operator and per application.** That count is the one
+          instrument that says what a rule set during an outage is still costing after
+          the outage, and `refusals.record` is where it is kept.
+        - 🔴 **It is audible on a stock install.** `refusals.record` alerts on the
+          `routing` event, which ships **on**; `_finally_fail` alerts on `send_error`,
+          which ships **off**. A refusal raised only through the latter is silent on
+          exactly the installs that have the rule in force, which is all of them.
+
+        Where the operator comes from is `_operator_for`, and it is not simply the cache:
+        a number with no row is resolved here, under a bound of this sender's own, so
+        that `?` means "the lookup did not answer" rather than "the lookup has not been
+        asked". Routing a first message on an empty cache would take the `?` entry — the
+        modem — for the very subscriber this rule diverts away from it.
+        """
+        # 🔴 **A verification's code was routed by the ladder, and the ladder read the
+        # rule to do it.** Asking again here would refuse exactly the item this change
+        # exists to place: a ladder written `[tg_gateway, sms_out]` puts the modem behind
+        # a paid rung deliberately, so the rule's **first** route is not `sms_out` and
+        # the check below would refuse the code — naming `tg_gateway` in the reason, on a
+        # message the ladder had already decided, and consuming the verification's one
+        # placement. The hazard is task 4.1's, named there before this rung existed.
+        #
+        # Read from the database rather than from the queued item, and that is the whole
+        # reason it is a query: the restart resume path builds its items out of
+        # `messages` rows alone, so an ownership carried in the queue would be dropped by
+        # the one path that re-sends.
+        if await queries.verification_of_message(msg.message_id) is not None:
+            return False
+
+        operator = await self._operator_for(msg.phone)
+
+        try:
+            assigned_routes = rule.route_for(operator)
+        except rule.UnreadableRule as exc:
+            # Never read as an empty rule — empty, it would send the whole of a diverted
+            # operator's traffic straight back to the route that is rejecting it. The
+            # alert was raised by `route_for` itself; what is left here is to refuse.
+            await self._refuse(
+                msg, operator, rule.REFUSE,
+                f"the stored routing rule cannot be read, so no route can be named for "
+                f"this number: {exc}",
+            )
+            return True
+
+        if rule.refuses(assigned_routes):
+            await self._refuse(
+                msg, operator, rule.REFUSE,
+                f"the routing rule offers no way out for "
+                f"{operator or 'an operator it could not resolve'}",
+            )
+            return True
+
+        # The first route named, and only it. Walking further down the entry looking for
+        # a route that happens to fit would be the rerouting this requirement forbids in
+        # the same sentence — and it would put the modem back under a paid rung by
+        # accident, which is what the whole capability exists to stop.
+        assigned = assigned_routes[0]
+        if assigned == routes.SMS_OUT:
+            await queries.record_message_routing(
+                msg.message_id, route=assigned, operator=operator)
+            return False
+
+        named = operator or "an operator that could not be resolved"
+        if routes.carries(assigned, routes.ARBITRARY_TEXT):
+            why = (f"the route the rule names for {named} is {assigned}, and this is "
+                   f"the modem")
+        else:
+            why = (f"the route the rule names for {named} is {assigned}, which cannot "
+                   f"carry {routes.ARBITRARY_TEXT}")
+        await self._refuse(msg, operator, assigned, why)
+        return True
+
+    async def _refuse(
+        self, msg: OutgoingMessage, operator: str | None, route: str, error: str
+    ) -> None:
+        """Count the refusal, then fail the message. In that order, deliberately.
+
+        A count written after the failure would be lost to anything that threw between
+        them, and the count is the only record that survives the message. Written first,
+        the worst case is a refusal counted for a message the catch-all then fails with a
+        worse-worded reason — the item did not go out either way.
+        """
+        logger.warning(
+            "Refused message %d (app=%s to=%s operator=%s): %s",
+            msg.message_id, msg.app_id or "?", msg.phone, operator or "?", error,
+        )
+        await queries.record_message_routing(
+            msg.message_id, route=route, operator=operator)
+        await refusals.record(
+            operator=operator, app_id=msg.app_id or "?", route=route)
+        await self._finally_fail(msg, error, attempt=0, dedup=f"unroutable:{route}")
+
     async def _send_one(self, msg: OutgoingMessage) -> None:
+        # First of everything, and before the text is so much as encoded: this sender is
+        # the `sms_out` route, and the rule decides whether that is the route this item
+        # was assigned. Below this line the modem is asked to do things.
+        if await self._refuse_what_the_rule_routes_elsewhere(msg):
+            return
+
         parts = encode_submit(msg.phone, msg.text, ref=msg.message_id % 256)
         if len(parts) > store.max_sms_parts:
             error = f"message too long: {len(parts)} parts > max {store.max_sms_parts}"
@@ -772,6 +981,18 @@ class ModemManager:
 
                 if decoded.startswith('+CDS:'):
                     await self._on_cds_line(decoded)
+                elif decoded == 'RING' or decoded.startswith('+CLIP:'):
+                    # Guarded exactly as `+CDS` is, and for the same reason: losing this
+                    # loop is silent and total, and a call now reaches the database from
+                    # it. A locked table costs the call; it must not cost the `+CMTI`
+                    # behind it, which is somebody's message.
+                    try:
+                        if decoded == 'RING':
+                            await self._on_ring()
+                        else:
+                            await self._on_clip_line(decoded)
+                    except Exception:
+                        logger.exception("Could not record an incoming call: %r", decoded)
                 elif decoded.startswith('+CMTI:'):
                     index = parse_cmti(decoded)
                     if index is not None:
@@ -803,6 +1024,91 @@ class ModemManager:
             # The gate is open and the port is still gone: the watchdog has not reached
             # this observation yet. Its own tick is what acts on it.
             await asyncio.sleep(_RECOVERY_POLL)
+
+    async def _on_ring(self) -> None:
+        """A call is ringing. Written down before anything is known about who is calling.
+
+        `RING` needs no subscription — the modem volunteers it — so it is the one part of
+        an incoming call that always arrives. Recording the call here rather than waiting
+        for its number is what keeps the nameless ones, and those are the ones worth
+        keeping: a caller-ID subscription dropped without a `CFUN` cycle presents as
+        nothing but a rise in calls that carry no number.
+        """
+        call, is_new = self._calls.observe()
+        if not is_new:
+            return          # the same call, still ringing
+        call.row_id = await queries.record_inbound_call(outcome=calls.NO_NUMBER)
+
+    async def _on_clip_line(self, line: str) -> None:
+        """The caller's number, joined to the call its `RING` opened.
+
+        Only the first `+CLIP` of a call says anything new; the fourteen after it repeat
+        it. A `+CLIP` with no `RING` before it opens a call of its own, because the join
+        must not be the thing that loses the event it was meant to connect.
+
+        Nothing is said back to the modem. Ending the call is the owner's decision of
+        18.09.2026, but every step of it is still an assertion — that `ATH` ends an
+        *unanswered* incoming call on this firmware, that the command port can be taken
+        from the sender without displacing a send — and none of them has been observed.
+        Confirmation never depended on the hang-up, which is why waiting costs nothing.
+        """
+        call, _ = self._calls.observe()
+        if call.row_id is None:
+            call.row_id = await queries.record_inbound_call(outcome=calls.NO_NUMBER)
+        if call.named:
+            return          # the same number, said again
+        raw = parse_clip(line)
+        if raw is None:
+            # The caller withheld it, or the network could not supply it. With the
+            # subscription recorded as held this is an ordinary outcome and not a fault:
+            # it confirms nothing, and the call stays among those carrying no number.
+            logger.info("Incoming call with no usable caller number: %r", line)
+            return
+        phone = self._canonical_caller(raw)
+        call.named = phone is not None
+        # Offered to the open verifications before the row is written, so that what is
+        # written is what happened rather than a first guess corrected a moment later.
+        # At most one verification can take it: the `call_in` rung is forbidden from
+        # having two windows open on one number, which is what makes a call — carrying no
+        # code at all — attributable.
+        verification_id = None
+        if phone is not None:
+            verification_id = await queries.confirm_by_inbound_call(
+                phone, method=calls.CALL_IN)
+        if verification_id is not None:
+            outcome = calls.CONFIRMED
+        elif phone is not None:
+            outcome = calls.UNATTRIBUTED
+        else:
+            outcome = calls.NO_NUMBER
+        await queries.attach_inbound_call_number(
+            call.row_id,
+            phone=phone,
+            raw_number=raw,
+            outcome=outcome,
+            verification_id=verification_id,
+        )
+        logger.info("Incoming call from %s%s",
+                    phone or f"{raw!r} (not a usable number)",
+                    f" confirmed verification {verification_id}" if verification_id else "")
+
+    @staticmethod
+    def _canonical_caller(raw: str) -> str | None:
+        """The caller's number in the one form the rest of the gateway matches on.
+
+        Canonicalised before storage rather than at comparison time, per the project's
+        own convention: a national-format caller has to match a number stored in E.164,
+        and matching is not the place to discover that. What the network said is kept
+        beside it either way.
+
+        None where what arrived is not a number at all — a service caller, a short code.
+        Nothing can be attributed by it, which is the same position as a withheld number
+        and is recorded as such.
+        """
+        try:
+            return validate_and_normalize(raw, store.phone_region, restrict_region=False)
+        except ValueError:
+            return None
 
     async def _on_cds_line(self, line: str) -> None:
         """One `+CDS` from the port, from raw text to a recorded outcome.
@@ -1006,12 +1312,48 @@ class ModemManager:
         if full is not None:
             logger.info("Inbound saved: phone=%s len=%d", sms.sender, len(full))
             # Do not await dispatch — fire-and-forget; errors are logged internally.
-            self._spawn_dispatch(sms.sender, full)
+            await self.handle_inbound_text(sms.sender, full)
 
-    def _spawn_dispatch(self, phone: str, text: str) -> None:
+    async def handle_inbound_text(self, phone: str, text: str) -> None:
+        """One complete inbound message, from the person to everything that wants it.
+
+        Three things happen to it and they are deliberately independent. It may confirm a
+        verification — only by the pair of this number and this verification's code, and
+        only on the rung where the person is the sender. It is announced to the operator,
+        with any live code taken out of the announcement first. And it is dispatched and
+        stored exactly as it is today, because verification neither deletes, hides nor
+        reclassifies traffic that was not meant for it: the gateway receives ordinary
+        messages from people, and a person replying to a verification with a question
+        must still be visible in the console.
+        """
+        live = await queries.open_codes_for(phone)
+        confirmed = None
+        for candidate in _FOUR_DIGITS.findall(text):
+            if candidate not in live:
+                continue
+            confirmed = await queries.confirm_by_inbound_message(
+                phone, code=candidate, method=routes.SMS_IN)
+            if confirmed is not None:
+                logger.info("Inbound message confirmed verification %d", confirmed)
+                break
+        self._spawn_dispatch(phone, text, redact=live)
+
+    def _spawn_dispatch(self, phone: str, text: str, *, redact: set[str]) -> None:
         """Fire-and-forget dispatch with a strong reference: the event loop holds
-        tasks weakly, and a sleeping retry-ladder could be collected by the GC."""
-        notify("inbound", f"{phone}: {text}", phone=phone)
+        tasks weakly, and a sleeping retry-ladder could be collected by the GC.
+
+        `redact` is applied to the *announcement only*. A verification's code may not
+        appear in an operator notification, and this is the live path that would carry it
+        out — notifications relay message text to Telegram. What reaches the application
+        and the message store is untouched: that is the traffic, and it stays exactly as
+        it is today.
+
+        Required rather than defaulted, and this is the boundary it guards: every inbound
+        text leaves for the operator through here, so a new caller that has not thought
+        about live codes fails on the signature rather than quietly announcing one. An
+        empty set is the way to say "nothing to hide", out loud.
+        """
+        notify("inbound", f"{phone}: {_redacted(text, redact)}", phone=phone)
         task = asyncio.create_task(dispatch_inbound(phone, text))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
@@ -1060,7 +1402,10 @@ class ModemManager:
             await asyncio.sleep(60)
             try:
                 for phone, text in await assembler.flush_stale_parts(max_age_seconds):
-                    self._spawn_dispatch(phone, text)
+                    # Through the same door as a whole message. A flushed group is still
+                    # a person's text arriving: if the part carrying the code survived,
+                    # it confirms, and if it did, the code must not ride out in the alert.
+                    await self.handle_inbound_text(phone, text)
             except Exception:
                 logger.exception("Parts flush failed")
 
@@ -1348,6 +1693,14 @@ class ModemManager:
         snapshot = self._health.snapshot(held=len(self._held), stalled=self._stalled)
         snapshot.update(self._sender.link_snapshot())
         snapshot["urc_link"] = "open" if self._reader_link.usable else "lost"
+        # Whether the gateway holds the caller-ID subscription on the link now in service
+        # — its own record, since the modem will not answer the question. It is here
+        # because it is the difference between two pages that look identical: one where
+        # nameless calls mean callers withholding their numbers, and one where they mean
+        # the gateway lost the subscription and nothing said so.
+        snapshot["caller_id"] = (
+            "held" if self._sender.caller_id_subscribed else "not held"
+        )
         # The one fact the console's banner reads. It is here rather than derived in the
         # template so the banner and the diagnostics page cannot disagree about whether
         # the modem is reachable — and it is the whole link, not one port, because a
@@ -1374,6 +1727,24 @@ class ModemManager:
         # First, so the operator sees it before the readings: during a recovery the radio
         # is deliberately off, and an unannotated snapshot reads as a dead modem.
         state = [{"key": "gateway", "cmd": "—", "parsed": self.health_snapshot()}]
+        # Before the modem is asked anything, and therefore still there when it has
+        # stopped answering. A caller-ID subscription dropped without a `CFUN` cycle is
+        # invisible to the record above — the gateway believes it holds something it does
+        # not — and the only symptom is calls arriving with no number where they used to
+        # carry one. That is a rate, and a rate needs a count to be read off.
+        #
+        # Read the way every other row of this sweep is read — one reading that fails
+        # does not break it. This method is also the alert path's source, and it promises
+        # never to raise; a database that cannot be read during an incident is exactly
+        # when that promise is called in.
+        try:
+            state.append({"key": "calls", "cmd": "—", "parsed": {
+                "calls_total": await queries.count_inbound_calls(),
+                "calls_without_number": await queries.count_calls_without_number(),
+            }})
+        except Exception as e:
+            state.append({"key": "calls", "cmd": "—",
+                          "error": f"could not read the call log: {type(e).__name__}: {e}"})
 
         try:
             await self._sender.command("AT", timeout=2.0)
@@ -1408,6 +1779,110 @@ class ModemManager:
                 item["outcome"] = FAILURE
             out.append(item)
         return out
+
+    async def verification_loop(self) -> None:
+        """Expire what is due, announce every ended verification, prune the old.
+
+        A loop rather than a lazy check, because the case that matters never asks: the
+        person who never got the call has no reason to come back with a code, so nothing
+        would trigger an expiry computed on demand and the application would hold a
+        session open for ever.
+
+        A minute, the same tick as the message expiry sweep. A verification's default
+        life is five minutes, so a minute is fine enough to keep "expired" honest while
+        costing one query a minute on a gateway that is mostly idle.
+        """
+        logger.info("Verification loop started")
+        while True:
+            await asyncio.sleep(60)
+            try:
+                await self.verification_step()
+            except Exception:
+                logger.exception("Verification sweep failed")
+
+    async def verification_step(self) -> None:
+        """One pass, split out of the loop so a test can drive the ordering.
+
+        The order is the mechanism. Rungs that have died under an open verification are
+        ended *first*, so their reason is announced in the same pass rather than the next
+        one — and so that a verification whose route died a second before its deadline is
+        reported as the outage it was rather than as an expiry.
+        """
+        await self._end_verifications_whose_route_died()
+        await announce_verification_outcomes()
+
+    async def _end_verifications_whose_route_died(self) -> None:
+        """A rung proven at the offer can stop holding while the person is still dialling.
+
+        The gap is not small. A verification's default life is five minutes, and one
+        recovery of this modem is bounded at three hundred seconds of gate-closed time
+        plus a thirty-second settle — so a recovery can consume a whole window. "Expired",
+        told to a person who did call, on time, from the right number, is the gateway
+        reporting the one thing that did not happen.
+
+        🔴 What this cannot do is recover the call. Inbound SMS has a buffer — messages
+        accumulate in modem memory while the link is down and are reconciled by a scan
+        when it returns — and a call has none: it exists nowhere in the modem, nowhere in
+        the log, and the caller heard the carrier's voicemail. The asymmetry is a property
+        of the bearer. What is forbidden is concealing it, which is why the reason names
+        the outage instead of the clock.
+
+        🔴 **Only the rungs the subscriber acts on are re-proved** — the owner's decision of
+        23.09.2026, task 7.2. On `call_in` and `sms_in` the event is still ahead: the
+        precondition has to hold for the whole window, because a subscription that has
+        lapsed means the call or message the person is about to send will confirm nothing.
+        On the rungs this gateway places, the selection *was* the placement — the door
+        walked the ladder inside it, a vendor was contacted and billed, and the person has
+        already heard the call or read the code. Re-proving that precondition afterwards
+        asks whether we *could* place it again, which is not a question anything is waiting
+        on; and answering "no" destroys a verification that is already paid for. Live, the
+        owner editing `ucaller_key` on `/admin/` would end every open paid verification
+        within the minute, with a reason saying the route had lost a precondition it had in
+        fact already used.
+
+        The boundary is read from `placement` rather than listed here. A list of rung names
+        in this sweep would drift away from `PLACED_HERE` silently, and the drift is only
+        visible when it costs money.
+        """
+        open_rows = [row for row in await queries.open_verifications_with_a_route()
+                     if not placement.places_here(row["route"])]
+        if not open_rows:
+            return
+        for row in open_rows:
+            # A registry per row, because the rung is being re-proved *under* this
+            # verification: its own open window must not be the reason its rung looks
+            # unavailable.
+            registry = self._verification_registry(excluding=row["id"])
+            offered = {o.route for o in await registry.offer(row["phone"])}
+            if row["route"] in offered:
+                continue
+            if await queries.fail_verification(
+                row["id"],
+                reason=f"the {row['route']} route lost the precondition it was "
+                       f"offered on",
+            ):
+                logger.warning(
+                    "Verification %d ended: its %s route lost its precondition",
+                    row["id"], row["route"],
+                )
+
+    def _verification_registry(self, *, excluding: int | None = None):
+        """The ladder as the settings have it right now, against this modem."""
+        return routes.Registry(
+            probes=build_probes(self, ims_proof=getattr(self, "ims_proof", None),
+                                excluding=excluding,
+                                tg_token=store.tg_gateway_token,
+                                ucaller_bearer=ucaller.configured_bearer() or "",
+                                # The sweep re-proves only rungs nothing is placed for,
+                                # and `tg_user` is placed: there is no application to ask.
+                                app_id=None),
+            order=[name.strip()
+                   for name in store.verification_route_order.split(",")
+                   if name.strip()],
+            probe_timeout=store.verification_probe_timeout,
+            max_proof_age=store.verification_proof_max_age_seconds,
+            gateway_number=store.gateway_msisdn,
+        )
 
     async def expire_loop(self) -> None:
         """Periodically mark stale 'sent' messages as 'expired'.

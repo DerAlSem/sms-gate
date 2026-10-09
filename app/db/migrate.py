@@ -167,6 +167,36 @@ async def run_migrations() -> None:
 
         CREATE INDEX IF NOT EXISTS idx_inbound_phone ON inbound_messages(phone);
 
+        -- Incoming calls, in their own right. Deliberately not `inbound_messages`: a
+        -- call carries no text, and writing it there would corrupt the record that makes
+        -- ordinary inbound traffic visible in the console.
+        --
+        -- `phone` is the canonical form and is NULL whenever nothing usable arrived —
+        -- the caller withheld the number, the network could not supply it, the
+        -- subscription was not held, or what came was not a number at all. `raw_number`
+        -- keeps what the network actually said, because that is the evidence and our
+        -- reading of it is not. A row is written on the first `RING`, before its number
+        -- exists; the number is attached when the first `+CLIP` arrives, which is why
+        -- `phone` is nullable rather than merely often empty.
+        CREATE TABLE IF NOT EXISTS inbound_calls (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone      TEXT,
+            raw_number TEXT,
+            started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            -- no_number    — nothing usable to attribute it by
+            -- unattributed — a number arrived and no open verification wanted it
+            -- confirmed    — it confirmed a verification
+            outcome    TEXT NOT NULL,
+            reason     TEXT,
+            -- The verification this call confirmed, where it confirmed one. "Who called
+            -- us" and "what did that call do" are different questions and the second one
+            -- is the one an operator asks after a person says the barrier did not open.
+            verification_id INTEGER
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbound_calls_phone ON inbound_calls(phone);
+        CREATE INDEX IF NOT EXISTS idx_inbound_calls_at    ON inbound_calls(started_at);
+
         CREATE TABLE IF NOT EXISTS inbound_parts (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             phone       TEXT NOT NULL,
@@ -266,6 +296,109 @@ async def run_migrations() -> None:
         CREATE INDEX IF NOT EXISTS idx_delivery_reports_at  ON delivery_reports(received_at);
         CREATE INDEX IF NOT EXISTS idx_delivery_reports_ref ON delivery_reports(modem_ref);
 
+        -- A verification: who asked, which number, the secret, the deadline, the state.
+        --
+        -- `code` is nullable and is *emptied* the moment the verification stops being
+        -- confirmable — confirmed, expired, or out of attempts. The row holds a
+        -- subscriber's number next to a live secret, and the window in which that secret
+        -- is useful is exactly the window in which the row is pending.
+        --
+        -- `route` is the rung the consumer selected, and is NULL until it selects one:
+        -- nothing is placed, composed or charged before that. `confirmed_by` is the
+        -- method that actually proved it, which is not always the route — an application
+        -- whose stakes do not tolerate a caller number alone must be able to see what it
+        -- got rather than assume the strongest.
+        CREATE TABLE IF NOT EXISTS verifications (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id       TEXT NOT NULL,
+            phone        TEXT NOT NULL,
+            code         TEXT,
+            -- pending | confirmed | failed | expired
+            status       TEXT NOT NULL DEFAULT 'pending',
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            route        TEXT,
+            confirmed_by TEXT,
+            reason       TEXT,
+            created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            expires_at   TIMESTAMP NOT NULL,
+            confirmed_at TIMESTAMP,
+            -- Whether the owning application has already been told this verification
+            -- reached a terminal state. One notification per verification, and the
+            -- sweep must not announce the same expiry on its next pass.
+            notified     INTEGER NOT NULL DEFAULT 0
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_verifications_phone  ON verifications(phone);
+        CREATE INDEX IF NOT EXISTS idx_verifications_status ON verifications(status);
+
+        -- Per rung attempted, not per verification: a ladder has more than one. A
+        -- verification that tried Telegram and then placed a call holds two vendor
+        -- identifiers and two costs against one code, and a column on the row above
+        -- would answer "what did this person's login cost" by overwriting half of it.
+        CREATE TABLE IF NOT EXISTS verification_rungs (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            verification_id INTEGER NOT NULL,
+            route           TEXT NOT NULL,
+            vendor_ref      TEXT,
+            cost            REAL,
+            refunded        INTEGER NOT NULL DEFAULT 0,
+            outcome         TEXT,
+            reason          TEXT,
+            started_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_verification_rungs_v
+            ON verification_rungs(verification_id);
+
+        -- What the routing rule costs, one row per item it refused. A rule set during an
+        -- outage outlives the outage: when the operator starts accepting traffic again
+        -- the rule stays in force, the applications that do not send codes stay refused,
+        -- and without this there is nothing on any screen to say so.
+        --
+        -- A row per refusal rather than a running total, because the question the count
+        -- exists to answer is not only "how many" but "how many since this entry came
+        -- into force", and a total cannot be asked that afterwards. At the measured rate
+        -- — about seventy a month — a row each costs nothing worth saving.
+        --
+        -- No retention sweep, deliberately, and it is the one table here without one:
+        -- the row holds an operator, an application and a route and no subscriber data,
+        -- so nothing here expires for privacy. Pruning it for size would answer "this
+        -- rule has cost nothing lately" about a rule that has been refusing traffic for
+        -- a year, which is the question the table exists to answer correctly.
+        --
+        -- `operator_key` is the folded spelling (NFKC + casefold, done in Python — the
+        -- shipped SQLite's `upper()`/`LIKE` are ASCII-only and leave Cyrillic untouched),
+        -- and `operator` is the spelling as it was seen. Grouping happens on the key, so
+        -- МегаФон and МЕГАФОН are one operator and not two half-sized counts.
+        CREATE TABLE IF NOT EXISTS route_refusals (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            operator_key TEXT NOT NULL,
+            operator     TEXT NOT NULL,
+            app_id       TEXT NOT NULL,
+            route        TEXT NOT NULL,
+            refused_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_route_refusals_op
+            ON route_refusals(operator_key, refused_at);
+
+        -- Since when each entry of the routing rule has been in force, so that a rule
+        -- nobody has revisited can say so. Reconciled against the rule on every review
+        -- tick rather than written by a save hook: a rule can change by paths that never
+        -- pass through the console — a restored database, a seeded environment, another
+        -- process — and a record kept only by the console would date those to never.
+        --
+        -- `reviewed_at` is when the operator was last told this entry is stale, not when
+        -- a human looked at it. Nothing here can know the second one; what it buys is
+        -- that a stale rule is reported once per review period instead of once per tick.
+        CREATE TABLE IF NOT EXISTS route_rule_entries (
+            operator_key   TEXT PRIMARY KEY,
+            operator       TEXT NOT NULL,
+            routes         TEXT NOT NULL,
+            in_force_since TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at    TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS notify_refs (
             message_id  INTEGER PRIMARY KEY,
             phone       TEXT NOT NULL,
@@ -292,6 +425,90 @@ async def run_migrations() -> None:
             key        TEXT PRIMARY KEY,
             value      TEXT,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Every rung offered a message, append-only. Ported from the messengers branch
+        -- (task 2.8 there) for the `tg_user` verification rung: it is the source of the
+        -- rate windows, the aggregate route alerting, and the answer to a person who asks
+        -- how their number was used. Without it the two states with opposite remedies —
+        -- *our account is dead* and *this recipient has no messenger account* — are
+        -- indistinguishable, because both appear only as an absence of acceptances.
+        --
+        -- `message_id` is deliberately NOT a foreign key, for the same reason
+        -- `delivery_reports.message_id` is not: `PRAGMA foreign_keys` is ON, and a
+        -- declared reference would turn every deletion of a message into a refusal on an
+        -- operator surface. This is an account of what we did; it outlives the row it
+        -- names. For `tg_user`, `message_id` is the *negated* verification id (see
+        -- `app/verification/tg_user_carrier.py`), so it never collides with a genuine
+        -- outbound message id either.
+        CREATE TABLE IF NOT EXISTS rung_ledger (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            occurred_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            message_id  INTEGER,
+            phone       TEXT NOT NULL,
+            route       TEXT NOT NULL,
+            brand       TEXT,
+            account     TEXT,
+            -- accepted | miss | unavailable | indeterminate | skipped | withheld
+            outcome     TEXT NOT NULL,
+            -- Whether this route was actually put in front of this number. Not derivable
+            -- from `outcome`: `unavailable` covers both a client that failed after it had
+            -- already resolved the recipient and a brand that owns no account here, where
+            -- nobody was asked anything.
+            offered     INTEGER NOT NULL DEFAULT 0,
+            reason      TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_phone ON rung_ledger(phone);
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_at    ON rung_ledger(occurred_at);
+        CREATE INDEX IF NOT EXISTS idx_rung_ledger_msg   ON rung_ledger(message_id);
+
+        -- An allowance is consumed by a claim that cannot be granted twice for the same
+        -- send. The primary key is the whole mechanism: two concurrent sends racing on
+        -- one account both try to insert, and exactly one succeeds.
+        --
+        -- Durable rather than an in-memory window, because this process exits by design:
+        -- a restart would otherwise hand the account a fresh allowance inside the same
+        -- hour. The row is never deleted; `may_have_reached` is the recipient's side of
+        -- the same row, starting at 1 (an unfinished send may have arrived) and set to 0
+        -- only by an outcome that states nothing was sent.
+        CREATE TABLE IF NOT EXISTS messenger_rate_claims (
+            message_id       INTEGER NOT NULL,
+            route            TEXT NOT NULL,
+            account          TEXT NOT NULL,
+            phone            TEXT NOT NULL DEFAULT '',
+            may_have_reached INTEGER NOT NULL DEFAULT 1,
+            claimed_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (message_id, route)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rate_claims_account
+            ON messenger_rate_claims(account, claimed_at);
+        CREATE INDEX IF NOT EXISTS idx_rate_claims_phone
+            ON messenger_rate_claims(phone, claimed_at);
+
+        -- Numbers sent to a vendor, whatever the outcome. Resolution sends the number
+        -- before any verdict, so a miss is a disclosure too — and the record of the route
+        -- that *accepted* is exactly the set of disclosures that is not the interesting
+        -- one.
+        CREATE TABLE IF NOT EXISTS messenger_disclosures (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone        TEXT NOT NULL,
+            route        TEXT NOT NULL,
+            account      TEXT,
+            disclosed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_disclosures_phone ON messenger_disclosures(phone);
+
+        -- Numbers withheld from messenger lookup — because the person asked us to stop,
+        -- or because an operator withheld them. Kept apart from `bad_numbers` on purpose:
+        -- a refusal to be written to in Telegram is not consent to stop receiving SMS,
+        -- and folding the two would silently cut a person off from their codes entirely.
+        CREATE TABLE IF NOT EXISTS messenger_suppressions (
+            phone      TEXT PRIMARY KEY,
+            reason     TEXT,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
     """)
 
@@ -327,6 +544,75 @@ async def run_migrations() -> None:
     # gateway worked it out. A record that cannot answer that is confidently wrong, which is
     # worse than the `expired` it replaces — nobody trusted `expired`.
     await _add_column_if_missing(db, "messages", "delivery_inferred", "INTEGER NOT NULL DEFAULT 0")
+
+    # What the routing rule answered for this message, and the operator it was answered
+    # for. Written by the sender at the moment it decides, which is the only moment both
+    # facts are true together: a later lookup fills `number_operators` in, and reading
+    # the operator back from there would say this message was routed for МТС when it was
+    # routed for nobody.
+    #
+    # 🔴 **The pair is what makes "routed without a known operator" countable, and the
+    # pair is why it is two columns rather than one.** `routed_operator IS NULL` alone
+    # cannot tell an unresolved operator from a row that predates this migration or from
+    # a message the sender never reached; `routed_route IS NOT NULL AND routed_operator
+    # IS NULL` names exactly the case the requirement asks to be able to count. Both
+    # NULL for every existing row, which is the truth about them: nothing recorded.
+    #
+    # Additive and reversible by deploying the old code.
+    await _add_column_if_missing(db, "messages", "routed_route", "TEXT")
+    await _add_column_if_missing(db, "messages", "routed_operator", "TEXT")
+
+    # Which verification this message carries the code of, and NULL for the ordinary
+    # traffic that is all of it today. Three separate mechanisms read it and none of them
+    # can be told the fact any other way:
+    #
+    # - the sender, which otherwise asks the routing rule afresh and refuses anything
+    #   whose first rung is not the modem — including a verification the ladder placed on
+    #   the modem deliberately, *behind* a paid rung;
+    # - the delivery webhook, which otherwise pushes a raw message id to an application
+    #   that only ever asked about a verification;
+    # - the verification itself, which takes this message's failure as its own.
+    #
+    # In the row rather than in the queued item on purpose: the restart resume path
+    # re-enqueues from these rows, so an ownership carried only in memory would be
+    # dropped by the one path that re-sends.
+    #
+    # Additive, NULL for every existing row — which is the truth about them — and
+    # reversible by deploying the old code.
+    await _add_column_if_missing(
+        db, "messages", "verification_id", "INTEGER REFERENCES verifications(id)")
+
+    # Whether this application may have a verification carried by a **paid** route. An
+    # ALTER rather than a column in the CREATE above, and the distinction is the whole
+    # guarantee: `DEFAULT 0` on a new column applies to every row that already exists, so
+    # the estates that already have the defect — four applications, three of which send
+    # no codes at all — come out of the migration switched off rather than entitled.
+    #
+    # Additive and therefore reversible by deploying the old code: nothing before this
+    # change reads the column, and SQLite carries an unread column at no cost. The column
+    # is never dropped on the way back, because dropping it would silently revoke an
+    # operator's decision the next time the new code is deployed.
+    #
+    # Separate from `is_active`, which answers whether the application may talk to this
+    # gateway at all. This one answers who is allowed to spend, and the two are refused
+    # by different people for different reasons.
+    await _add_column_if_missing(db, "apps", "may_spend", "INTEGER NOT NULL DEFAULT 0")
+
+    # Which operator this verification's ladder was routed for — or `?`, the rule's own
+    # word for one that could not be resolved. Task 6.8: the norm asks for "routed without
+    # a known operator" to be **countable rather than invisible**, and on the paid rungs
+    # there was nothing to count it with. A verification carried by `tg_gateway` or
+    # `flash_call` creates no `messages` row, so the pair on that table
+    # (`routed_route`/`routed_operator`) answers only for what the modem sent.
+    #
+    # A word rather than a NULL for the unknown case, because a NULL cannot tell "routed
+    # for nobody" from "written before this column existed" — and the count the rule is
+    # reviewed by would then quietly include every row older than the change. NULL keeps
+    # exactly that meaning here: not recorded.
+    #
+    # Additive and therefore reversible by deploying the old code: nothing before this
+    # change reads it, and SQLite carries an unread column at no cost.
+    await _add_column_if_missing(db, "verifications", "routed_operator", "TEXT")
 
     # Runs after the base script, which is what makes the index handling above necessary,
     # and outside `executescript`, which is what makes it atomic.

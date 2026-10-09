@@ -82,7 +82,7 @@ def _no_dispatch(monkeypatch):
     delivered = []
     monkeypatch.setattr(
         ModemManager, "_spawn_dispatch",
-        lambda self, phone, text: delivered.append((phone, text)),
+        lambda self, phone, text, *, redact: delivered.append((phone, text)),
     )
     return delivered
 

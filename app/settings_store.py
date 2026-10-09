@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from app.db.connection import get_db
+from app.routing import config as route_config
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +16,30 @@ logger = logging.getLogger(__name__)
 class Spec:
     key: str
     type: str          # "bool" | "int" | "posint" | "float" | "str" | "routes"
-                       # | "region" | "delays"
+                       # | "oproutes" | "templates" | "region" | "delays" | "rungs"
+                       # | "callbackbase" | "msisdn"
     default: object
     section: str
     is_secret: bool
     description: str
     route_key: str = ""   # "routes" only: the field identifying a route
+
+
+def _shipped_rule() -> str:
+    """The rule's shipped content, fetched late.
+
+    `app.verification.rule` reads this store, so importing it at module scope would close
+    a cycle. The default is wanted here all the same: a spec whose default lived anywhere
+    else would let `seed_from_env` write a rule nobody wrote.
+    """
+    from app.verification import rule
+    return rule.SHIPPED
+
+
+def _shipped_templates() -> str:
+    """The templates' shipped content, fetched late, for the reason above."""
+    from app.verification import template
+    return template.SHIPPED
 
 
 SETTINGS_SPEC: list[Spec] = [
@@ -55,6 +74,11 @@ SETTINGS_SPEC: list[Spec] = [
          "Notify on every inbound SMS received"),
     Spec("notify_dispatch_errors", "bool", True, "Alerting", False,
          "Notify when an inbound webhook fails — otherwise the drop is silent"),
+    # On by default, unlike `notify_send_errors`. What it reports is not a send failing
+    # but a way out being refused or skipped — and the skip is the one that shows up
+    # only as a bill on the rung below it.
+    Spec("notify_routing_errors", "bool", True, "Alerting", False,
+         "Notify when a route is refused, unreadable or cannot be attempted"),
     Spec("telegram_replies_enabled", "bool", False, "Alerting", False,
          "Allow replying to a notification in Telegram to send an SMS back (takes effect after restart)"),
     Spec("instance_name", "str", "", "Alerting", False,
@@ -69,6 +93,275 @@ SETTINGS_SPEC: list[Spec] = [
          route_key="app_id"),
     Spec("inbound_dispatch_retries", "int", 3, "Dispatch", False, "POST retries"),
     Spec("inbound_dispatch_timeout", "float", 10.0, "Dispatch", False, "POST timeout (s)"),
+    # Both numbers coincide with ones the gateway already holds, by the owner's decision
+    # of 18.09.2026, and the coincidence is the argument. Five minutes is
+    # `delivery_timeout_seconds`: a verification that outlived the message carrying it
+    # would sit open waiting on an outcome the sender had already abandoned. Five attempts
+    # is `blacklist_threshold`: two different numbers for "enough" is two support answers
+    # to one question.
+    Spec("verification_ttl_seconds", "posint", 300, "Verification", False,
+         "How long a verification stays open (s)"),
+    # The ladder: which rungs are offered and in what order. Configuration rather than
+    # compiled-in behaviour, because prices move, vendors are added and dropped, and an
+    # operator that refuses delivery today may accept it next month — none of which should
+    # need a deployment. The shipped order is the owner's decision of 18.09.2026 and is
+    # recorded as a decision rather than a measurement. Changing it changes nothing about
+    # what a route proves.
+    Spec("verification_route_order", "rungs",
+         "call_in,sms_out,flash_call,tg_gateway,sms_in", "Verification", False,
+         "Rungs offered, cheapest first (comma-separated). A rung nothing can prove is "
+         "never offered, whatever its place here"),
+    # Bounds the precondition probes **as a whole**, not one by one: otherwise a slow day
+    # at one vendor spends the budget the whole answer was promised in.
+    Spec("verification_probe_timeout", "float", 5.0, "Verification", False,
+         "Bound on the whole set of precondition probes (s)"),
+    # The ladder's acceptance bound, and it covers the ladder **as a whole** rather than
+    # each rung: otherwise two rungs on a slow day take twice the time the application was
+    # promised, and the application is holding a person at a barrier for all of it. Its own
+    # setting rather than a share of `verification_probe_timeout`, because the two bound
+    # different things — that one bounds asking whether a rung *could* carry, this one
+    # bounds actually carrying, and only this one has money behind it.
+    #
+    # 🔴 Ten seconds is a ceiling rather than an expectation, and the two numbers behind it
+    # are measured. The Gateway answers in 178–285 ms over the wired path (task 1.7, read
+    # 20.09.2026), so a ladder of two rungs each doing a check and a send is about a second
+    # — roughly tenfold headroom. What the ceiling is actually for is the other measurement:
+    # on a failed-over uplink `gatewayapi.telegram.org` times out at **fifteen** seconds
+    # (18.09.2026, task 1.12), which is longer than any answer an application should be made
+    # to wait for. Cutting at ten is what makes that case bounded rather than a hang, and it
+    # is the one case where this setting decides anything at all.
+    Spec("verification_ladder_bound", "float", 10.0, "Verification", False,
+         "Bound on the whole ladder once a rung is selected (s) — one bound for every "
+         "rung together, never one each"),
+    # How stale a proof may be before a person is sent down a route that no longer works.
+    # Without a bound, "current evidence" is undefined: a reading taken once at boot would
+    # satisfy the norm for ever, which is precisely the failure it exists to prevent.
+    Spec("verification_proof_max_age_seconds", "posint", 300, "Verification", False,
+         "Refuse a route whose precondition was last proven longer ago than this (s)"),
+    # The `call_in` rung's own window, separately configurable and never longer than the
+    # ladder's. Shorter is the point: the rung's residual risk scales with the window,
+    # because an attacker can open a verification on a victim's number and, inside it,
+    # give the victim a reason to call. The number itself is open — task 1.5 — so the
+    # shipped value is the ladder's rather than an unmeasured guess.
+    Spec("verification_call_in_ttl_seconds", "posint", 300, "Verification", False,
+         "How long a call_in verification stays open (s); clamped to the ladder's"),
+    # The number a subscriber calls or texts. The gateway does not otherwise hold its own
+    # MSISDN anywhere, and both rungs this change adds have to tell the person where to
+    # reach it — blank means neither rung can be offered, which is the honest answer.
+    # 🔴 A validated type rather than a free string, and for the reason `callbackbase` is
+    # one: the value goes out to applications as **data** — `RouteOffer.number` exists
+    # precisely so a consumer can build a `tel:` on it without reading our English prose —
+    # so a national spelling kept as it was typed puts our data entry onto their screen.
+    # The failure is mute: the subscriber dials nothing, the window closes, and the
+    # verification reports `expired`, indistinguishable from a person who never called.
+    # Blank still saves, because blank is the honest state of an unconfigured estate and
+    # the rungs are then simply not offered.
+    Spec("gateway_msisdn", "msisdn", "", "Verification", False,
+         "The gateway's own number, as the subscriber must dial or text it "
+         "(stored normalised; a national spelling is rewritten, a non-number refused)"),
+    Spec("verification_max_attempts", "posint", 5, "Verification", False,
+         "Wrong codes tolerated before a verification stops accepting any"),
+    # The Telegram Gateway rung's access token. Secret on the same terms as
+    # `alert_bot_token`, and blank by default because blank is the honest state of an
+    # unconfigured estate: the rung is then never offered, which is a refusal rather
+    # than a rung that fails at the vendor after the gates have been spent.
+    Spec("tg_gateway_token", "str", "", "Verification", True,
+         "Telegram Gateway API access token (blank = the tg_gateway rung is never offered)"),
+    # How far a signed callback's own timestamp may be from ours before it is refused as
+    # a replay. `posint` because zero would refuse every callback the vendor ever sends
+    # and present as a vendor that stopped reporting deliveries.
+    Spec("tg_gateway_callback_tolerance_seconds", "posint", 300, "Verification", False,
+         "Refuse a signed Gateway callback whose timestamp is further than this from "
+         "now (s)"),
+    # This gateway's own public address, as the vendor must reach it. The Gateway takes
+    # its callback address **per request** and holds none of its own — measured against
+    # the vendor's reference and against the cabinet on 21.09.2026 — so without this
+    # setting no delivery report can ever arrive: a message the vendor accepts and then
+    # fails to deliver reports itself to nobody, and its refund is never recorded.
+    #
+    # Blank ships, because a blank base is the honest state of an estate with no public
+    # address, and the rung carries perfectly well without one. The cost of blank is said
+    # out loud where the carrier is assembled rather than hidden here.
+    Spec("tg_gateway_callback_base", "callbackbase", "", "Verification", False,
+         "This gateway's own public HTTPS address, as the Telegram Gateway must reach it "
+         "(e.g. https://sms.example.org) — the callback path is appended. "
+         "Blank = no delivery reports, and no refund is ever recorded"),
+    # The one lever on what the subscriber sees: the vendor's own wording arrives from
+    # "Verification Codes" and carries nothing of ours. Per the vendor's reference this is
+    # the username of a Telegram **channel**, which must be verified and owned by the same
+    # account that owns the token above — so a value here costs a verified channel, and a
+    # wrong one is refused by the vendor for every send. Blank ships for that reason.
+    Spec("tg_gateway_sender_username", "str", "", "Verification", False,
+         "Username of a verified Telegram channel, owned by the same account as the "
+         "token, to send verification codes from (blank = the vendor's own sender)"),
+    # The row holds a subscriber's number beside a code. Retention is why it does not hold
+    # it for ever; `posint` because zero would delete verifications as fast as they are
+    # made and present as a gateway that answers 404 to everyone.
+    Spec("verification_retention_days", "posint", 30, "Verification", False,
+         "Delete finished verifications after N days"),
+    # uCaller's credential, and it is **two** rows rather than one. The vendor takes the
+    # same pair three interchangeable ways — `?key=&service_id=` on a GET, the two fields
+    # in a JSON body, or the header `Authorization: Bearer <key>.<service_id>` — and the
+    # cabinet hands the two values over separately, under "Мои сервисы". Reference read
+    # 22.09.2026; captured in the change's
+    # `captures/ucaller-reference-2026-09-22.md`.
+    #
+    # 🔴 The joined bearer was the spec's reading until that read, and storing it would
+    # have put the dot in the owner's hands. A bearer whose separator is missing or
+    # doubled is indistinguishable from a configured one on this page — it says "задано"
+    # about any row that is not blank — and announces itself as the vendor's `401` on the
+    # first live call, which on this rung is a call somebody paid for. Two rows are each
+    # pasted verbatim, and a missing half reads as "не задано", which is what it is.
+    #
+    # Blank by default, for the reason `tg_gateway_token` is: blank is the honest state of
+    # an unconfigured estate, and a rung with no credential is never offered rather than
+    # attempted and refused at the vendor.
+    Spec("ucaller_key", "str", "", "Verification", True,
+         "uCaller service secret key, from the cabinet under Мои сервисы "
+         "(blank = the flash_call rung is never offered)"),
+    # Held as a string although the vendor's own `getService` reports it as a number: a
+    # blank string is how this gateway spells "not configured", and a wrong id is refused
+    # by the vendor either way. `getService` is the free way to check the pair — it needs
+    # no phone number and no money, and names the service on success.
+    Spec("ucaller_service_id", "str", "", "Verification", False,
+         "uCaller service id, the second half of the credential above "
+         "(blank = the flash_call rung is never offered)"),
+    # The vendor's numbers, not ours, and therefore settings: uCaller allows four
+    # authorisations per number per minute with at least fifteen seconds between them and
+    # thirty per number per day, and a number that exceeds them is blocked **for ten
+    # hours**. Being told to wait fifteen seconds costs a person fifteen seconds; being
+    # blocked at the vendor costs them a working day of not being able to log in.
+    #
+    # They bound the ladder as a whole rather than the call rung alone. Telegram's
+    # reference publishes no rate limits at all, and silence is the absence of a
+    # statement rather than a statement of absence — a rung whose block conditions are
+    # unpublished is the one to be more careful with.
+    Spec("verification_min_gap_seconds", "posint", 15, "Verification", False,
+         "Least time between two paid attempts on one number (s)"),
+    Spec("verification_per_minute", "posint", 4, "Verification", False,
+         "Paid attempts allowed on one number per rolling minute"),
+    Spec("verification_per_day", "posint", 30, "Verification", False,
+         "Paid attempts allowed on one number per rolling day"),
+    # Rolling, and stated rather than implied. This database stores naive UTC and the
+    # vendor is Russian: a calendar day read in the wrong zone resets three hours early,
+    # and in those three hours the gateway confidently places the call that costs the
+    # subscriber ten hours. A rolling window is the stricter reading of any calendar day.
+    Spec("verification_day_window_hours", "posint", 24, "Verification", False,
+         "The window the daily ceiling counts in, rolling backwards from now (h)"),
+    # The spend ceiling: how many paid rungs this gateway may attempt in total, across
+    # every number, every application and both paid routes together. A different
+    # instrument from the per-number limits above, which are the vendors' and are per
+    # number — a loop over five hundred numbers violates none of them while spending four
+    # hundred roubles.
+    #
+    # 🔴 The shipped numbers are measured rather than chosen, on this gateway's own live
+    # traffic: 2391 messages between 17.04.2026 and 20.09.2026, of which 601 went to
+    # МегаФон — the operator whose traffic the paid ladder carries. Read on 20.09.2026
+    # with both spellings matched by hand, because `upper()` is ASCII-only here and would
+    # have counted 397 of the 601. The busiest МегаФон hour in five months held 20
+    # messages and the busiest day 47; a verification may consume **two** paid rungs by
+    # advancing from Telegram to the call, so the worst honest load ever seen is about 40
+    # attempts an hour and 94 a day.
+    #
+    # So: a ceiling that does not refuse the busiest real hour this gateway has ever had,
+    # even doubled, and still stops a runaway loop within minutes rather than at the
+    # four-hundred-rouble bill the requirement is written against.
+    Spec("verification_paid_per_hour", "posint", 100, "Verification", False,
+         "Paid rungs this gateway may attempt per rolling hour, across all numbers, "
+         "applications and both paid routes together"),
+    Spec("verification_paid_per_day", "posint", 300, "Verification", False,
+         "Paid rungs this gateway may attempt per rolling day, across all numbers, "
+         "applications and both paid routes together"),
+    # The balance floors: one per prepaid vendor, never a floor over the sum. A single
+    # floor over the total would be satisfied by one funded account while the other is
+    # empty, and the empty one is a rung of the same ladder.
+    #
+    # 🔴 Telegram's balance cannot be polled: `remaining_balance` is the account's
+    # balance only in the answer to a **confirming** ability check, which is the billed
+    # call (measured 20.09.2026 — the same request answered 99.99 on the check and 0 on
+    # the send that followed). So the floor is held against the reading that arrives with
+    # ordinary traffic, and the shipped value is stated in the vendor's own units rather
+    # than in a currency this gateway has never been told: one confirmation cost 0.01 in
+    # those units, so a floor of 10 is about a thousand verifications of warning.
+    Spec("tg_gateway_balance_floor", "float", 10.0, "Verification", False,
+         "Alert when the Telegram Gateway balance last reported falls below this "
+         "(in the vendor's own units; read from confirming ability checks, never polled)"),
+    # Zero, and deliberately: this rung has no account yet (task 1.1) and no observed
+    # cost, so any number here would be a guess dressed as a setting. Zero is not read as
+    # "the balance is fine" — a balance arriving for a rung with no floor is logged as a
+    # vendor nobody is watching, which is what it is until the account exists.
+    Spec("flash_call_balance_floor", "float", 0.0, "Verification", False,
+         "Alert when the uCaller balance falls below this (0 = not configured; the "
+         "account does not exist yet, and a reading with no floor is reported as such)"),
+    # The routing rule, as data. Its shipped content and every norm about reading it live
+    # in `app/verification/rule.py`; what belongs here is that it is a setting at all —
+    # `.env` would need a restart to change, and a restart drops sending sessions, which
+    # is the deploy the rule exists to avoid, merely spelled differently. Not carried by
+    # `delivery_dispatch`, which requires a webhook URL on every entry and would reject
+    # this rule outright.
+    # How long the **sender** may wait for an operator it has no row for, before the
+    # rule's unknown-operator entry answers instead. Its own setting rather than a share
+    # of `voxlink_timeout`, because the two bound different decisions: that one is how
+    # patient one HTTP call is, this one is how long a message may sit in a single-file
+    # queue while the gateway works out which way out it takes. Spent only on a number
+    # with no operator at all — a stale row still names one, and refreshing it changes
+    # no route.
+    Spec("operator_lookup_bound", "float", 5.0, "Routing", False,
+         "How long the sender waits for an unknown recipient's operator before routing "
+         "by the rule's \"?\" entry (seconds; the lookup keeps running either way)"),
+    Spec("operator_routes", "oproutes", _shipped_rule(), "Routing", False,
+         'Which way out each operator\'s traffic takes: JSON list, e.g. '
+         '[{"operator":"МегаФон","routes":["tg_gateway","flash_call"]},'
+         '{"operator":"*","routes":["sms_out"]},{"operator":"?","routes":["sms_out"]}] '
+         "— \"*\" answers for an operator with no entry, \"?\" for one that could not "
+         "be resolved, and \"refuse\" is a way of declining rather than a way out"),
+    # The text an `sms_out`-carried code arrives in, per application. Its norms and its
+    # save-time validation live in `app/verification/template.py`; what belongs here is
+    # that it is a setting at all, and that its default is **empty**. An estate with no
+    # templates refuses every `sms_out`-carried code, which is the honest state: the
+    # alternative is wording nobody chose going out under somebody's name. Not carried by
+    # `delivery_dispatch`, which requires a webhook URL on every entry.
+    Spec("verification_templates", "templates", _shipped_templates(), "Verification", False,
+         'The text a code arrives in, per application and optionally per rung '
+         '(sms_out, tg_user): JSON list, e.g. [{"app_id":"gmp_app","route":"sms_out",'
+         '"template":"GM+: {code_words}"},{"app_id":"gmp_app","template":"GM+: {code}"}] '
+         "— an entry with no route stands in for every rung. Exactly one {code} (digits) "
+         "or {code_words} (ОДИН ДВА ТРИ ЧЕТЫРЕ) per template; a rung with no template "
+         "is not used rather than given wording of the gateway's own"),
+    # How long an entry of the routing rule may stay in force before the gateway says it
+    # has not been revisited. The rule's own requirement asks for a way to observe
+    # recovery, and this is the half that costs nothing: the other — a rate-bounded probe
+    # send over the withdrawn route — puts a real message in front of a real person.
+    #
+    # Thirty days because the event the rule exists for is an operator's withdrawal, and
+    # those are settled or escalated on the scale of a month, not of a week. `posint`
+    # because zero would report every entry on every tick from the moment it was written,
+    # which is the shape that teaches an operator to ignore the channel.
+    Spec("operator_route_review_days", "posint", 30, "Routing", False,
+         "Report a routing-rule entry that has been in force this many days without "
+         "being revisited — a rule set during an outage outlives the outage"),
+    # Ported from the messengers branch (reach-people-in-messengers) for the `tg_user`
+    # verification rung. SG-32. Only these two settings are brought over — `route_order`,
+    # `route_deadlines`, `message_class_rule`, `route_alert_*` and `notify_route_stopped`
+    # belong to that branch's own outbound ladder over `app/routing`, which does not exist
+    # here: this ladder is `app/verification/ladder.py`, and it is not driven by any of
+    # those settings.
+    Spec("messenger_brands", "brands", "", "Routing", False,
+         'Which application may send under which brand, and the account per brand: JSON '
+         'with "apps" and "brands". Each account records the number it lives on, in E.164, '
+         'and the "intro" it sends as its first message to a number — who is writing and '
+         'why — {"brands": {"sokol": {"tg_user": {"account": "@sokol_parking", "number": '
+         '"+79990000000", "intro": "Это Сокол Паркинг, вы запросили код"}}}}. One account '
+         'may carry one brand only, one number is one account on a messenger, and a rung '
+         'with no introduction is not offered a number it has never written to'),
+    # The account name in this example is deliberately the same one messenger_brands'
+    # own example uses (SG-33.3 review, 26.09.2026): `check_every_account_is_rate_bound`
+    # keys a brand's account against this setting's own keys, and two examples that do
+    # not share a name would fail together the moment both are pasted in.
+    Spec("messenger_limits", "limits", "", "Routing", False,
+         'Per-account hourly and daily maxima and the per-recipient window: JSON, e.g. '
+         '{"accounts": {"@sokol_parking": {"per_hour": 5, "per_day": 20}}, '
+         '"recipient_window_seconds": 600}'),
     Spec("blacklist_threshold", "int", 5, "Limits", False, "Block a number after N permanent fails"),
     Spec("delivery_timeout_seconds", "int", 300, "Limits", False, "Mark 'sent' as 'expired' after N seconds"),
     # Measured, not guessed: over 1544 reported deliveries the mean report arrived 93
@@ -177,6 +470,34 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
                     f"http:// or https:// — got {url!r}"
                 )
         return
+    if type_ == "oproutes":
+        from app.verification import rule
+        rule.validate(raw)
+        return
+    if type_ == "templates":
+        from app.verification import template
+        template.validate(raw)
+        return
+    if type_ == "callbackbase":
+        from app.verification import tg_callback
+        tg_callback.validate_base(raw)
+        return
+    if type_ == "brands":
+        route_config.validate_brands(raw)
+        return
+    if type_ == "limits":
+        route_config.validate_limits(raw)
+        return
+    if type_ == "msisdn":
+        # Blank is the shipped state and refusing it would make an unconfigured estate
+        # unsavable; anything else is held to exactly what a subscriber's number is held
+        # to, which is the whole of the norm — "the same normalised form the gateway
+        # requires of a subscriber's number".
+        if raw.strip() == "":
+            return
+        from app.phone import validate_and_normalize
+        validate_and_normalize(raw, store.phone_region)
+        return
     if type_ == "delays":
         for part in raw.split(","):
             text = part.strip()
@@ -190,6 +511,22 @@ def validate_raw(type_: str, raw: str, route_key: str = "") -> None:
                 ) from exc
             if seconds <= 0:
                 raise ValueError(f"delay must be positive: {seconds}")
+        return
+    if type_ == "rungs":
+        from app.verification.routes import ALL_ROUTES
+        seen: set[str] = set()
+        for part in raw.split(","):
+            name = part.strip()
+            if not name:         # a trailing or doubled comma is a typo, not an error
+                continue
+            if name not in ALL_ROUTES:
+                raise ValueError(
+                    f"unknown rung {name!r} — known rungs are "
+                    f"{', '.join(sorted(ALL_ROUTES))}"
+                )
+            if name in seen:
+                raise ValueError(f"rung {name!r} is named twice")
+            seen.add(name)
         return
     if type_ == "region":
         import phonenumbers
@@ -212,8 +549,27 @@ def _clean_route(item: dict) -> dict:
 
 
 def normalize_raw(type_: str, raw: str) -> str:
-    """Canonical stored form of `raw`. Only "routes" is rewritten: route fields are
-    stripped, so a pasted " https://…" cannot reach httpx."""
+    """Canonical stored form of `raw`. Two types are rewritten: "routes" has its route
+    fields stripped, so a pasted " https://…" cannot reach httpx, and "oproutes" has its
+    operator names and route names stripped, so a pasted name is stored as it will be
+    matched rather than matched around for ever."""
+    if type_ == "oproutes":
+        from app.verification import rule
+        return rule.normalize(raw)
+    if type_ == "templates":
+        from app.verification import template
+        return template.normalize(raw)
+    if type_ == "callbackbase":
+        from app.verification import tg_callback
+        return tg_callback.normalize_base(raw)
+    if type_ == "msisdn":
+        if raw.strip() == "":
+            return ""
+        from app.phone import validate_and_normalize
+        try:
+            return validate_and_normalize(raw, store.phone_region)
+        except ValueError:
+            return raw                          # validate_raw reports it
     if type_ != "routes" or raw.strip() == "":
         return raw
     try:
@@ -307,6 +663,14 @@ class SettingsStore:
         return self._routes("delivery_dispatch")
 
     @property
+    def messenger_brands_parsed(self) -> dict:
+        return route_config.parse_brands(self.get("messenger_brands") or "")
+
+    @property
+    def messenger_limits_parsed(self) -> dict:
+        return route_config.parse_limits(self.get("messenger_limits") or "")
+
+    @property
     def send_retry_backoff_parsed(self) -> list[int]:
         """Delays before each retry. Empty means a message gets a single attempt."""
         raw = self.get("send_retry_backoff") or ""
@@ -320,6 +684,14 @@ class SettingsStore:
         for key, raw in changes.items():
             spec = SPEC_BY_KEY[key]
             validate_raw(spec.type, raw, spec.route_key)
+        # A relation between two settings, so it cannot live in `validate_raw`: either one
+        # can be the one being saved, and the other has to be read as it will stand *after*
+        # this save. Raised before the transaction opens, so a refusal leaves the stored
+        # rules exactly as they were.
+        route_config.check_every_account_is_rate_bound(
+            changes.get("messenger_brands", self.get("messenger_brands") or ""),
+            changes.get("messenger_limits", self.get("messenger_limits") or ""),
+        )
         db = await get_db()
         try:
             for key, raw in changes.items():
@@ -347,21 +719,65 @@ class SettingsStore:
 store = SettingsStore()
 
 
+# Keys the normalisers themselves read out of this store, seeded before everything else.
+# `msisdn` is rewritten against `phone_region`, and the region sits *below* the number in
+# the spec list — walked in list order, a Kazakh number would be normalised against the
+# shipped Russian region on the very boot that asked for Kazakhstan, and would be either
+# refused or rewritten into a wrong one without a word said. Seeding is the one pass where
+# a setting's value and the value another setting is validated against are decided
+# together, so the order is named here rather than left to the list.
+_READ_BY_THE_NORMALISERS = ("phone_region",)
+
+
 async def seed_from_env() -> None:
     """One-time migration: for each spec key with no row yet, insert the env value
-    (UPPERCASE name) if set, else the code default. Existing rows are never touched."""
+    (UPPERCASE name) if set, else the code default. Existing rows are never touched.
+
+    The value goes through `normalize_raw` and `validate_raw` — the same pair `set_many`
+    uses — because this is the second door that saves settings and a second door that
+    forgot the check is exactly the hole a validated setting **type** is supposed to make
+    impossible. Measured 22.09.2026 by the conformance sweep: `GATEWAY_MSISDN` set to a
+    national spelling reached an application in `RouteOffer.number` as data to build a
+    `tel:` on, and `OPERATOR_ROUTES` set to something unparseable made the routing door
+    answer 500 and left a verification offered, recorded and unplaced.
+
+    A value that does not validate is **not stored**, and the key keeps the shipped
+    default. Not stored rather than stored-as-the-default on purpose: no row means the
+    next start walks this branch again and complains again, while a default written in
+    silences the complaint for ever and leaves an operator looking at a setting nobody
+    typed.
+    """
     db = await get_db()
     async with db.execute("SELECT key FROM settings") as cur:
         existing = {row["key"] async for row in cur}
-    to_insert = []
+    candidates = []
     for spec in SETTINGS_SPEC:
         if spec.key in existing:
             continue
         env_val = os.environ.get(spec.key.upper())
-        raw = env_val if env_val is not None else to_str(spec.type, spec.default)
-        to_insert.append((spec.key, raw))
-    for key, raw in to_insert:
+        candidates.append((spec, env_val if env_val is not None
+                           else to_str(spec.type, spec.default)))
+    candidates.sort(key=lambda c: c[0].key not in _READ_BY_THE_NORMALISERS)
+    for spec, raw in candidates:
+        try:
+            raw = normalize_raw(spec.type, raw)
+            validate_raw(spec.type, raw, spec.route_key)
+        except ValueError as exc:
+            # The offending value is not logged unless the setting is not a secret: a
+            # validator's message quotes what it refused, and a token refused for its
+            # shape would put itself in the log of a gateway that keeps credentials out
+            # of the environment on purpose.
+            logger.error(
+                "Setting %s was not seeded: the value in the environment is not a valid "
+                "%s (%s). The shipped default stays in force.", spec.key, spec.type,
+                exc if not spec.is_secret else "the value is not shown, it is a secret",
+            )
+            continue
         await db.execute(
-            "INSERT INTO settings (key, value) VALUES (?, ?)", (key, raw)
+            "INSERT INTO settings (key, value) VALUES (?, ?)", (spec.key, raw)
         )
+        # Seen by the normalisation of every key after this one, exactly as `set_many`
+        # publishes what it wrote. `store.load()` rebuilds this from the rows a moment
+        # later; what it buys is the pass itself.
+        store._cache[spec.key] = raw
     await db.commit()

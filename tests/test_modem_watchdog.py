@@ -20,8 +20,10 @@ class FakeSender:
         self.reg_results = list(reg_results)
         self.soft = 0
         self.hard = 0
-        # Mirrors ATSerial, which the manager now asks about the link itself.
+        # Mirrors ATSerial, which the manager now asks about the link itself — and
+        # about the caller-ID subscription it holds, which the snapshot reports.
         self.usable = True
+        self.caller_id_subscribed = True
         self.link_lost = asyncio.Event()
 
     async def registration_ok(self):

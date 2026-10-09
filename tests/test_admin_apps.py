@@ -93,3 +93,64 @@ def test_apps_page_translates():
         assert "Приложения-клиенты" not in en.text
     finally:
         asyncio.run(close_db())
+
+
+def test_a_created_app_is_shown_as_not_allowed_to_spend():
+    """The entitlement is off for a token created a moment ago, and the page says so.
+
+    Asserted on the rendered page rather than only on the column, because the switch
+    exists to be operated: an entitlement nobody can see is one nobody reviews.
+    """
+    _db()
+    try:
+        c = _client()
+        c.post("/admin/apps/create", data={"id": "fresh", "description": ""},
+               headers=_AUTH, follow_redirects=False)
+        assert asyncio.run(queries.app_may_spend("fresh")) is False
+        page = c.get("/admin/apps", headers={**_AUTH, "Cookie": "lang=en"}).text
+        assert "May spend" in page
+        assert "Allow spending" in page, \
+            "an application that cannot spend must offer the grant, not the revocation"
+    finally:
+        asyncio.run(close_db())
+
+
+def test_the_entitlement_can_be_granted_and_revoked_from_the_page():
+    async def setup():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.create_app("payer", "tok-payer", "")
+    asyncio.run(setup())
+    try:
+        c = _client()
+        c.post("/admin/apps/entitlement", data={"id": "payer", "may_spend": "1"},
+               headers=_AUTH, follow_redirects=False)
+        assert asyncio.run(queries.app_may_spend("payer")) is True
+
+        page = c.get("/admin/apps", headers={**_AUTH, "Cookie": "lang=en"}).text
+        assert "Revoke spending" in page
+
+        c.post("/admin/apps/entitlement", data={"id": "payer", "may_spend": "0"},
+               headers=_AUTH, follow_redirects=False)
+        assert asyncio.run(queries.app_may_spend("payer")) is False
+    finally:
+        asyncio.run(close_db())
+
+
+def test_granting_the_entitlement_needs_no_restart_to_take_effect():
+    """The gate reads the row per call, so the page and the ladder cannot disagree."""
+    from app.verification import gates
+
+    async def setup():
+        await init_db(":memory:")
+        await run_migrations()
+        await queries.create_app("payer", "tok-payer", "")
+    asyncio.run(setup())
+    try:
+        c = _client()
+        assert asyncio.run(gates.entitlement_gate("payer")())
+        c.post("/admin/apps/entitlement", data={"id": "payer", "may_spend": "1"},
+               headers=_AUTH, follow_redirects=False)
+        assert asyncio.run(gates.entitlement_gate("payer")()) == ""
+    finally:
+        asyncio.run(close_db())

@@ -1,0 +1,46 @@
+# /etc/systemd/system/wg-guard-nft.service — on the house.
+#
+# Loads the tunnel guard ruleset (/etc/wireguard/wgguard.nft) after wg-burns
+# comes up, removes it when the tunnel goes down. The ruleset itself stays out
+# of this repository — it carries this installation's addresses, same as the
+# nginx blocks.
+#
+# Why a unit and not PostUp. The wg-quick AppArmor profile Ubuntu 26.04 ships
+# runs nft from PostUp inside a restricted child profile that can read no user
+# ruleset at all — its file rules name only /usr/share/iproute2 tables. Our
+# PostUp load failed with EACCES for root, wg-quick tore the interface back
+# down, and the tunnel could not come up at all: the 2026-10-04 incident, five
+# hours of sms.deralsem.ru being a TLS handshake with nobody behind it. Running
+# nft from its own unit keeps Ubuntu's confinement of wg-quick itself and moves
+# only our hook outside it. (The profile also denies wg-quick's own
+# /etc/nsswitch.conf and /etc/passwd reads; those fall back and do not block
+# startup — observed in the audit log, left as upstream's problem.)
+#
+# Pair with a drop-in so the guard follows the tunnel's whole lifecycle —
+# boot, restart, and the Restart=on-failure loop in the existing override:
+#
+#   /etc/systemd/system/wg-quick@wg-burns.service.d/guard.conf
+#   [Unit]
+#   Wants=wg-guard-nft.service
+#
+# Wants from the tunnel side (not WantedBy alone) is what makes a tunnel
+# restart re-pull the guard; BindsTo here is what makes a tunnel stop take the
+# guard — and its rules — down with it.
+
+[Unit]
+Description=nft guard rules for the wg-burns tunnel
+BindsTo=wg-quick@wg-burns.service
+After=wg-quick@wg-burns.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# Delete-then-load: after an unclean stop ExecStop may never have run, and
+# `nft -f` over a live table appends a second copy of every rule rather than
+# replacing them — nftables.conf guards against this with `flush ruleset`,
+# and this is the scoped version of the same guard.
+ExecStart=/bin/sh -c '/usr/sbin/nft delete table inet wgguard 2>/dev/null; exec /usr/sbin/nft -f /etc/wireguard/wgguard.nft'
+ExecStop=/usr/sbin/nft delete table inet wgguard
+
+[Install]
+WantedBy=multi-user.target

@@ -525,4 +525,46 @@ called "--wds-get-packet-service-status" || fail "2.6: status stopped asking the
 ok
 teardown
 
+# --- SG-40 a missing interface is a visible failure, with the real name in it ----
+
+# A netdev the qmi_wwan driver created under another name, as the 26.04 upgrade did.
+mkdir_renamed() {
+    rm -rf "$SANDBOX/sys/class/net/$IFACE_NAME"
+    mkdir -p "$SANDBOX/sys/class/net/wwp0s20f0u4i4" "$SANDBOX/drivers/qmi_wwan"
+    mkdir -p "$SANDBOX/sys/class/net/wwp0s20f0u4i4/device"
+    ln -s "$SANDBOX/drivers/qmi_wwan" "$SANDBOX/sys/class/net/wwp0s20f0u4i4/device/driver"
+}
+
+setup
+mkdir_renamed
+cat > "$BIN/alerter" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS.alerts"
+STUB
+chmod +x "$BIN/alerter"
+out=$(ALERT_SENDER="$BIN/alerter" run up)
+echo "$out" | grep -q "wwp0s20f0u4i4" || fail "SG-40: the log did not name the netdev that exists"
+[ -s "$CALLS.alerts" ] || fail "SG-40: no alert was raised for a missing interface"
+grep -q "wwp0s20f0u4i4" "$CALLS.alerts" || fail "SG-40: the alert did not carry the hint"
+ALERT_SENDER="$BIN/alerter" run up >/dev/null
+[ "$(wc -l < "$CALLS.alerts")" = 1 ] || fail "SG-40: the alert repeated on a retry of the same absence"
+ok
+teardown
+
+setup
+mkdir_renamed
+run status | grep -q ">>> .*wwp0s20f0u4i4" || fail "SG-40: status did not flag the missing interface"
+ok
+teardown
+
+setup
+rm -rf "$SANDBOX/sys/class/net/$IFACE_NAME"
+mkdir -p "$STATE"
+exec 9>"$STATE/lock"
+flock -n 9 || fail "SG-40: the harness could not take the lock"
+run up >/dev/null 2>&1 && fail "SG-40: yielded the lock with no interface — a green unit with no channel"
+exec 9>&-
+ok
+teardown
+
 echo "PASS ($PASSED assertions)"

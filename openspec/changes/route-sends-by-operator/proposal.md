@@ -27,15 +27,17 @@ subscriber's phone. It is therefore a way to deliver a *verification code*, and 
 - **A verification stops being an SMS the application composes.** The application asks the
   gateway to verify a number; the gateway generates the code, chooses how to deliver it, and
   answers whether a code the person typed is the right one. This is the contract already
-  drafted for `verify-by-inbound-code` and already sent to the parking developer — the same
-  door, with a third method behind it.
+  drafted for `verify-by-inbound-contact` (renamed from `verify-by-inbound-code` on
+  18.09.2026) — the same door, with a third method behind it. 🔴 **That contract was never
+  sent to the parking developer**; the owner said so on 18.09.2026 and the earlier claim here
+  was wrong.
 - **A send acquires a route.** The modem stops being the only way out and becomes one route
   of three: Telegram's Gateway API, uCaller's flash call, and itself.
 - **The paid way out is a ladder, not a route** — Telegram Gateway first, the flash call
   behind it — so that a subscriber the Gateway cannot reach costs nothing before the call is
   placed. Owner's decision of 18.09.2026.
 - **Route selection is a configured rule keyed on the recipient's operator**, not a branch.
-  Today it carries one entry — МегаФон to `[tg_gateway, call]` — set without deploying code,
+  Today it carries one entry — МегаФон to `[tg_gateway, flash_call]` — set without deploying code,
   and the *order* of that list is part of what is configured.
 - **Spending on a paid route is an entitlement of the application, off by default.** Three of
   the four applications never send codes; today any active token could open a paid
@@ -57,10 +59,15 @@ Explicitly **not** in this change, by the owner's decisions of 07–08.09.2026:
   spend ceiling that made escalation unsafe to talk about in the first place is now a norm of
   this change rather than a future one.
 - **no migration of the other operators.** The modem keeps МТС, Билайн, Теле2 and the rest.
-- **`verify-by-inbound-code` is not edited by this change.** It was frozen on 08.09.2026 as
-  the reserve path and unfrozen by the owner on 12.09.2026; it is still not implemented, and
-  the two changes' contract divergences are the owner's letter to write, not ours. Neither
-  change touches the other's artefacts.
+- **`verify-by-inbound-contact` (renamed from `verify-by-inbound-code`) is not edited by this
+  change, but it now edits this one.** It was frozen on 08.09.2026 as the reserve path and
+  unfrozen by the owner on 12.09.2026. On 18.09.2026 the owner decided its routes are rungs
+  **inside `phone-verification`** rather than a capability of their own, so that change carries
+  `MODIFIED` and `REMOVED` blocks against requirements authored here — including the removal of
+  `A verification request names only the number, and the gateway answers with the method`, which
+  its list-of-routes answer replaces. 🔴 **It must not be archived before this change**, or
+  those blocks address requirements the living spec does not hold and merge silently into
+  nothing; its `check-base.sh` and the registry row `sms-gate/20260918-04` hold that order.
 
 ## Measured, not quoted
 
@@ -251,6 +258,279 @@ turns the cheap rung off silently and shows up only as a bill. Hence: the balanc
 against each vendor separately, every alert names which vendor it is about, the spend ceiling
 counts the two rungs together rather than each alone, and an abandoned ability check is counted.
 
+## MAX advertises the Gateway shape and sells no product behind it, 21.09.2026
+
+Task 2.9, read from the vendor's own pages on 21.09.2026. The owner was right about what
+`business.max.ru` says, and the wording is **metadata, not a product page** — it lives in the
+page head and nowhere in the page:
+
+> `<meta name="description">` — *"Единая платформа для уведомлений по номеру телефона, кодов
+> подтверждения, рассылок и автоматизации процессов через мини-приложения и чат-боты"*
+>
+> `<meta name="keywords">` — *"…уведомления по номеру, … подтверждение кода, альтернатива SMS,
+> … 2FA в мессенджере…"*
+
+The visible page sells four things and none of them is that: чат-боты, мини-приложения, каналы,
+Цифровой ID. `dev.max.ru/docs/maxbusiness/selectionservices` names the same four as the whole of
+what a verified profile may connect. There is no fifth door, no price list, no `sendCode`.
+
+**Wall one — nothing in the API can address a phone number.** The reference at
+`dev.max.ru/docs-api` addresses `chatId` and `user_id`; the string `phone` does not occur in it
+at all (checked with `chatId` and `user_id` as positive controls, so the empty result is a fact
+about the page rather than about the grep). Every mention of a телефон in that reference travels
+**inbound**: the `request_contact` button, by which a person hands their own number to a bot they
+have already opened. So the record of 12.09.2026 — *"в MAX номером адресовать нельзя"* — needs no
+correction after all. It needed a citation, and now has one.
+
+**Wall two — the contract forbids it outright, and this is the harder wall.** *Требования к
+содержанию и функциональности Приложений Разработчиков*, `dev.max.ru/docs/legal/requirements`,
+«Редакция от 16.12.25», clause 1.5 among the things a Developer is forbidden to publish:
+
+> *"используют API либо иную техническую интеграцию с Программным обеспечением Компании для
+> формирования, передачи или отправки **Авторизационных сообщений**, Транзакционных сообщений и
+> Сервисных сообщений, а также для рассылки рекламных и маркетинговых или иных массовых сообщений
+> пользователям, **за исключением случаев, прямо предусмотренных Договором с Компанией вне
+> зависимости от наличия технической возможности**."*
+
+And the term is defined to be exactly our traffic — *Правила размещения*,
+`dev.max.ru/docs/legal/rules`, «Редакция от 11.06.26»:
+
+> *"**Авторизационные сообщения** — сообщения, содержащие либо инициирующие передачу одноразовых
+> кодов (в т.ч. QR-коды), токенов, ссылок, или иных данных, которые действительны для одного
+> сеанса, операции или транзакции, и предназначены для аутентификации, идентификации или
+> верификации при взаимодействии со сторонними информационными ресурсами."*
+
+🔴 **The clause anticipates the workaround and closes it by name.** *"Вне зависимости от наличия
+технической возможности"* means a route that happens to work is still forbidden — so no amount of
+ingenuity with bots, channels or mini-apps turns this into a permitted rung. The single exception
+is a *Договор с Компанией*: a negotiated contract, not a self-serve product. That is an owner
+move (`partner_support@max.ru`, or the «Поддержка MAX для бизнеса» chat), and until such a
+contract exists nothing on this rung may be built or asserted.
+
+**The ИП gate, answered from the vendor and not second-hand.** The reported restriction — "since
+August 2025 only Russian legal entities may create and publish bots, ИП and самозанятые excluded"
+— is **not what the vendor's current pages say**, in either direction the task warned about:
+
+> `dev.max.ru/docs/maxbusiness/connection` — *"Подключение к платформе MAX для партнёров и её
+> сервисам — чат-ботам, мини-приложениям, каналам — доступно для юрлиц, ИП и самозанятых, которые
+> являются резидентами РФ. Подключение к сервису Цифрового ID доступно только для юрлиц и ИП
+> (резидентов РФ)"*, and *"Физические лица и нерезиденты пока не смогут пройти верификацию"*.
+>
+> The *Правила* define the Developer who publishes — footnote ¹ — as *"Юридическое лицо,
+> индивидуальный предприниматель, … а также лица, применяющие специальный налоговый режим «Налог
+> на профессиональный доход» (Самозанятые)"*.
+
+So an ИП may publish bots, mini-apps, channels and Digital ID; a самозанятый everything but
+Digital ID. Registering is not narrower than publishing here — the same three categories carry
+both. The restriction as reported does not hold, and it is recorded as refuted rather than
+carried forward.
+
+⚠️ **Both quoted documents change silently by their own terms** — the *Требования* say so in
+6.1: changes take effect on publication, with no notice. The edition dates above are what pins
+this verdict; a re-read is cheap and is what should happen before anyone acts on it.
+
+**Two facts found here that belong to `reach-people-in-messengers`, not to this change.** They
+are recorded and deliberately not acted on from this branch:
+
+- MAX *does* have a verification primitive, and it is the **inbound** shape our sibling change is
+  named after: the `request_contact` button returns `attachments[].type: "contact"` with a payload
+  `{vcf_info, max_info, hash}`, where `hash == HMAC-SHA256(access_token, vcf_info)` and `vcf_info`
+  is a VCARD carrying `TEL;TYPE=cell:79990000000` — the number **without** a `+`, as uCaller also
+  returns it. Matching the hash proves the person controls the number bound to their MAX account.
+  It still requires the person to have opened the bot, so it is not a route we can initiate;
+- the user-side terms, `legal.max.ru/ps`, forbid *"использовать без специального на то разрешения
+  Компании автоматизированные скрипты (программы, боты, краулеры) … для взаимодействия с Сервисом
+  и его функциональностью"*. That change's proposal records that **no** cited term permits an
+  automated user account to carry traffic; there is now a cited term that **forbids** it absent
+  permission. It belongs in front of the same lawyer as the rest of that question.
+
+## The door that walks the ladder, 21.09.2026
+
+Task 4.56 recorded that the Telegram rung could be selected and that nothing placed it. The
+owner chose the expensive cure — build the door rather than withdraw the rung — and the
+parenthetical claiming two other tasks blocked it turned out to be wrong.
+
+**4.17 does not block, and the re-measurement is the reason to believe it.** The earlier
+reading was taken from `ladder.walk`'s call sites; this one was taken from the door's
+requirements, by assembling all four arguments `walk` demands out of what `app/` already
+held — `rule.route_for` for the order, `gates.for_paid_ladder` for the gates,
+`tg_carrier.carrier` for the one carrier that exists, and one new setting for the bound — and
+driving the walk both ways. A confirming subscriber is carried and recorded with the vendor's
+reference and cost; a declining one leaves the ladder skipping `flash_call` loudly and failing
+with a reason that names both rungs. uCaller is only the second rung's **carrier**, and its
+absence is the `absent` path that was built and guarded long before this.
+
+Two questions were the owner's, because two specs contradicted each other in plain text and
+each called its own answer the owner's. This change says the method reported is the rung that
+actually accepted; `verify-by-inbound-contact` says the gateway never moves a verification to
+another route by itself and that this "survives the ladder". **Settled 21.09.2026: the ladder
+settles inside the selection and the answer names the rung that carried.** The two norms are
+then not in conflict — what the neighbour forbids is a move after the consumer has been
+answered, and there is none: the ladder is over before the reply leaves, which is also the
+only reading under which "the response names a method rather than pending" means anything.
+
+**Second decision, same day: a rung the rule does not name for that operator is carried
+alone.** The Gateway rung is offered on a held token to any number, while the shipped rule
+sends every operator but МегаФон to the modem — so a consumer can pick Telegram for a
+subscriber the rule routes elsewhere, and the pick is honoured. The rule contributes the
+continuation of the ladder and nothing else. One consequence is named rather than taken: an
+entry set to `refuse` names no continuation either, so it does not block a rung a consumer
+selected by hand. That is unreachable today — no shipped entry refuses — and it is the
+owner's to reverse.
+
+### What the measurement found that nobody had asked about
+
+Three defects, and none of them was in the plan. The first would have blocked every Gateway
+selection while looking like correct behaviour.
+
+- 🔴 **the door's own `selected` row is money.** Both spend counters count every recorded rung
+  on a paid route whatever its outcome — deliberately, because an ability check that never
+  answered may have been charged without our learning its `request_id`. So the row the door
+  wrote for bookkeeping already counted as a paid attempt *before this session*: selecting
+  `tg_gateway` spent one unit of the ceiling and one of the subscriber's allowance while
+  placing nothing. With a walking door it would have been a paid attempt aged zero seconds
+  against a minimum gap of fifteen — and the per-number gate would have refused every single
+  selection with `too_soon`, indistinguishable from a gate working properly;
+- 🔴 **the consumer's claim would have won over the rung that carried.** `walk` marked the
+  carrier with `select_route`, which writes only where the route is still null. Correct for a
+  walk nobody claimed first; wrong for a door that must claim before spending, because the
+  claim is what stops two selections from both buying the same code. The norm it would have
+  broken was already guarded one layer down, and it would have come back through the door;
+- 🔴 **a gate's refusal left the verification open with a route claimed and nothing placed** —
+  4.56 again, one door further in.
+
+### And one that was still open: the vendor is not told where to report — closed 21.09.2026
+
+`tg_carrier` accepts a `callback_url` and nothing in `app/` supplies one, because no setting
+holds this gateway's own public address. The signed-callback door, its verification and the
+revocation sweep are all built and guarded — and if the vendor takes that address per request,
+none of them can fire in production. What is measured is our side only: whether the Gateway
+also accepts an account-side callback address is **not established**, and no capture speaks to
+it, so the work starts with the vendor's own reference rather than with a setting. Entered as
+task 4.57.
+
+🟢 **Answered, and the answer was the awkward one.** The vendor's reference and the cabinet
+were both read **by layers**, which is the discipline this change learnt the same day over
+MAX's `<meta>` advertising:
+
+- `core.telegram.org/gateway/api`, raw HTML. `callback_url` occurs four times in the whole
+  page: once as a row of `sendVerificationMessage`'s parameter table — *"An HTTPS URL where
+  you want to receive delivery reports related to the sent message, 0-256 bytes"* — and three
+  times in the *Report delivery* prose, every one of them phrased around the request: *"When
+  you include a `callback_url` parameter in your request"*, *"All reports submitted to your
+  `callback_url`, **if you provided one***". The `<meta>` layer holds six tags and speaks to
+  none of it;
+- `gateway.telegram.org`, the account side, both of the layers that can be read without an
+  account: zero occurrences of `callback` or `webhook` in the page's raw HTML, and zero in
+  `/js/gateway.js` — the bundle that carries the cabinet's own behaviour, not the marketing
+  page's. Its API-settings handler enumerates what it submits, `{account_id, ip_list}`, so
+  the enumeration is exhaustive by construction rather than by reading. Positive control on
+  the same file and the same grep: `ip_list` five times, alongside `revokeToken`,
+  `getLogHistory` and `saveApiSettings`, which is the cabinet's whole vocabulary.
+
+⚠️ **The negative names its layers.** What was not read is the cabinet behind the login — no
+account is held from here — so the claim is "neither the reference nor the two public layers
+of the cabinet holds a callback address", not "the vendor has no such setting anywhere".
+Every reading the reference does offer points the same way.
+
+So the address is ours to send on every message, and it now is: `tg_gateway_callback_base`
+holds this gateway's public address, `tg_callback.url_for` assembles it over the door's own
+`PATH`, and `placement.carriers_for` supplies it. Blank ships and stays legitimate — the rung
+carries — and what blank costs is said out loud where the carrier is assembled.
+
+🔴 **A trap the same reading turned up, and it is not about callbacks.** The one thing the
+Gateway cabinet's API settings *do* hold is `ip_list`: an allow-list of addresses the token
+may be used from. Nothing fills it today, and nothing here proposes to — but the day somebody
+does, the address to put in it is this host's **egress** address, which is already known not
+to be the one it looks like. An allow-list filled with the address someone assumes is ours
+would refuse every verification, and the vendor's refusal would read as a credential problem.
+
+**`sender_username` rode along and moved 1.11 rather than closing it.** The reference is
+specific: *"Username of the Telegram channel from which the code will be sent. The specified
+channel, if any, must be verified and owned by the same account who owns the Gateway API
+token."* It is therefore not a display name of our choosing — the only lever on what the
+subscriber sees costs a **verified channel** under the account that holds the token, which is
+the owner's to obtain. The setting exists and reaches the vendor; the channel does not exist,
+and what the vendor answers to one that fails its condition is unmeasured, because every
+probe of it is a paid message to a real person.
+
+## The rung this change routes away from could not carry, 21.09.2026
+
+The whole of this change is about when to leave the modem. It turned out the modem was
+never there to leave: `sms_out` was a name in the vocabulary, a route in the rule, and the
+second entry in the shipped offer order — and nothing in the service could carry a
+verification over it.
+
+Measured before anything was written, and each of the four is its own absence:
+
+- `placement.carriers_for` built exactly one carrier, `tg_gateway`. `ladder.walk` therefore
+  met `sms_out` as a rung nothing carries — `ABSENT`, alerted about, advanced past, **to the
+  dearer rung**;
+- `probes.build_probes` built three probes and `sms_out` was not among them, so the registry
+  could never offer it;
+- `enqueue` had four call sites — the API, the admin console twice, and the restart resume —
+  and not one of them belonged to a verification;
+- so no row in this schema had ever carried a verification's code, and the requirement that a
+  verification owns the message it creates had no message to own.
+
+**Why it read as blocked for a week.** The carrier was bundled into task 4.17, whose other
+half is the uCaller adapter, which is genuinely blocked on an account the owner has to open.
+The bundle was never true of this half: the modem is this gateway's own hardware — no account,
+no balance, no vendor. That is the same shape as the lesson of 20.09.2026, one level up: a
+statement about *requirements* was taken from where a task happened to be filed.
+
+**Three decisions were taken here, and the owner may overturn any of them.**
+
+**The modem is placed by the gateway like every other rung it acts on.** `placement`'s comment
+said the opposite — that the modem sender picks its own work up, and a ladder placing it would
+place it twice — and described a mechanism nothing had built. The ladder was already the other
+reading in code: `_MODEM_ROUTES` and the withholding rule of 20.09.2026 are a branch about a
+modem rung standing **inside** a ladder, and under the old reading they were unreachable.
+
+**The sender does not re-decide the route the ladder chose, and it learns that from the
+database.** `_send_one` asks the rule afresh and refuses anything whose *first* rung is not
+`sms_out` — so a verification the ladder placed on the modem *behind* a paid rung would have
+been refused, naming `tg_gateway` in the reason, on a message already decided. The ownership
+is a column on `messages` rather than a field on the queued item, because the restart resume
+path builds its items out of rows alone: carried in the queue, the fact would be dropped by
+the one path that re-sends, and the symptom would be a code refused on its retry.
+
+**The rung is offerable — the owner's answer of 21.09.2026, task 4.17c — and the two
+collisions that held it up are settled rather than accepted.** Registering the probe was four
+lines; it was written and withdrawn the same hour, because measuring it showed a collision
+nothing had named, and the withdrawal is what made both of these findable.
+
+*`sms_in` is not retired, and it was only ever going to be because of a conjunction.* Both
+probes were written on `modem.link_in_service`, which is two ports and-ed together, while
+`sms_in` is dropped whenever anything earlier in the order proves itself: identical
+preconditions meant `sms_out` proving was `sms_in` never being offered again — and `sms_in`
+is the whole subject of the sibling change `verify-by-inbound-contact`. They are two
+directions, and they are now two properties: `can_transmit`, the command port, for the
+gateway sending; `can_receive`, the URC port, for the subscriber sending to us. A sender port
+gone with the reader alive is a real state, and it is exactly the one in which asking the
+person to text us is the right offer rather than the dear one.
+
+*The routing rule is part of the rung's precondition, and it is read in the probe.* An
+operator the rule diverts away from the modem must not be **offered** the modem: the answer
+would be honoured — a rung the rule does not name is still carried, alone — and the code would
+go out over the route that operator has been rejecting. That is this change's whole subject,
+reached through the offer rather than through the ladder, and it would have looked like a
+consumer's free choice. In the probe rather than at the door because `offer` has three call
+sites and a rule read at each of them is a census, while a probe is asked once, about this
+number, which is the shape of the question.
+
+⚠️ **Both new properties were unguarded the moment they were written**, and that is worth
+recording because it is the same shape as everything else here: every probe test runs against
+a fake modem, so wiring `can_transmit` to the reader port and `can_receive` to the sender port
+changed nothing anywhere. A guard on the real manager closes it.
+
+🔴 **What this says about the guards that were green all week.** Everything downstream of an
+`sms_out`-borne code — the template, its save-time validation, the refusal count, the
+withholding rule — was built and guarded against a rung that could not carry. None of those
+guards was wrong; every one of them was asked about a mechanism whose input never arrived.
+That is the 21.09.2026 lesson in its second form: a guard reading what a layer *returns* is
+blind to what never reaches it at all.
+
 ## Capabilities
 
 ### New Capabilities
@@ -307,22 +587,86 @@ than questions:
 4. **Whether spending on a paid route is an entitlement of the application** — yes, and off by
    default, including for a newly issued token.
 
-**What remains open, and both are new rather than carried over:**
+**Nothing remains open. Both questions this chapter carried are answered:**
 
-1. **Whether a Gateway message that was accepted and then not delivered within its `ttl`
-   escalates to a call.** The spec's default is that it does not: the fee is refunded and the
-   verification fails with that reason. The argument for escalating is that the refund makes it
-   nearly free, and it is a real argument — which is why this is an open question and not an
-   omission. Nothing may be built as escalation until it is decided.
-2. **Which word survives for the flash-call route.** This change calls it `call`; the messenger
-   ladder proposed on 12.09.2026 calls it `flash_call` and puts it on a second axis beside a
-   direction of `outbound`/`inbound`. This change adopts `tg_gateway` and `modem` from that list
-   verbatim, so exactly one word is contested, and it is contested across two changes and one
-   contract already at the developer.
+1. ~~**Whether a Gateway message that was accepted and then not delivered within its `ttl`
+   escalates to a call.**~~ ✅ **Decided by the owner 22.09.2026: it does not.** The spec's
+   default becomes a decision. The argument for escalating was real — the refund makes the
+   attempt nearly free and the person is still at the barrier — and it loses on two counts: it
+   is the automatic escalation into a paid channel this change refuses everywhere else, reached
+   from the other side; and by the time the `ttl` has run out the person has already waited out
+   that window, so a call afterwards is no longer the same attempt to log in. A fresh
+   verification is the honest shape and it already works. See "Struck by the owner" below.
+2. ~~**Which word survives for the flash-call route.**~~ ✅ **Decided by the owner 18.09.2026:**
+   one flat field, names disambiguated — `flash_call` (the vendor dials), `call_in` (the
+   subscriber calls our SIM), `sms_out` (our SIM sends), `sms_in` (the subscriber texts us),
+   `tg_gateway`, `tg_user`, `max_user`, `app_bot`. `call` is retired outright and `modem` is
+   retired in favour of `sms_out`. Applied throughout this change.
 
-The third thing that is not a question but is not ours either: **what share of these numbers is
-reachable in Telegram has never been measured.** It is cheap and needs no message sent, but it
-means running live customer numbers through a vendor, and that is the owner's to permit.
+## Struck by the owner, 22.09.2026
+
+A refusal is recorded by the owner before archiving, never by the session that found it. Four
+tasks were put to the owner with their measurements and their costs, and struck. Their bodies
+are kept here rather than deleted: the measurement behind each is what makes the refusal
+reviewable, and a task that vanishes takes its evidence with it.
+
+### 1.10 — the size of the Gateway balance
+
+> - [ ] 1.10 **Now that 1.9 has left the IP restriction off, the balance is the only cap there is — keep it deliberately small.** A leaked Gateway token is spend authority at the vendor, and this change's spend ceiling does **not** protect it: the ceiling bounds what *our gateway* asks for, while a stolen token is spent without touching our gateway at all. The vendor-side balance is the only cap that applies, so it is the cap — a top-up sized to weeks, not to years
+
+**Struck as an action of the owner's, and the reasoning is now a norm** (`phone-verification`)
+rather than a task: the vendor-side balance is the only ceiling that applies to a stolen token,
+because this gateway's own spend ceiling bounds what *this gateway* asks for and a stolen token
+is spent without touching it at all. So the balance is held at weeks rather than years. There is
+nothing for the code to do, and a norm outlives the change while a task does not.
+
+Deliberately **not** paired with an alert on the balance falling: Telegram Gateway's
+`remaining_balance` is readable only inside the answer to a billed `checkSendAbility`, so a
+stolen token drains the account between our readings — and on a quiet gateway there are no
+readings at all.
+
+### 1.11 — what the subscriber sees on the Gateway rung
+
+> - [ ] 1.11 **Settle what the subscriber actually sees on this rung, and whether we can change any of it.** The probe's message arrived from "Verification Codes" reading *"Your code is 1173"* — no branding of ours, and in English. `sendVerificationMessage` accepts no body, so the wording is not ours to set; the one documented lever is `sender_username`, a verified channel, and it was not tried. ⚠️ **Whether the text is always English or follows the recipient's Telegram language is NOT established** and must not be assumed either way. This matters beyond taste: the spec forbids the gateway inventing default wording on the modem route precisely because a code signed by something a person does not recognise reads as fraud — and on this rung we inherit exactly that, with no template to fix it. It is also half of what task 3.1 has to describe to the parking developer 🟡 **Half settled 21.09.2026 by the vendor's reference, and it moved the lever out of the gateway's hands.** `sender_username` is *"Username of the Telegram channel from which the code will be sent. The specified channel, if any, must be verified and owned by the same account who owns the Gateway API token."* So it is not a display name of our choosing: it costs a **verified channel** under the account that holds the token, which is the owner's to obtain and not a setting to flip. The setting now exists and reaches the vendor (`tg_gateway_sender_username`, blank by default, 4.57), so the moment a channel exists this is one save away. What the vendor answers to a channel that does not meet its condition is **not measured** — every probe of it is a paid message to a real person. The language question is untouched and still must not be assumed either way
+
+**Struck, and what is known and what is not are both now norms.** The wording and the language
+of that message are the vendor's and not ours; the single lever is `sender_username`, which
+costs a **verified channel** owned by the account that holds the token, and the setting for it
+already exists and reaches the vendor (`tg_gateway_sender_username`, blank by default). So
+obtaining the channel is one save away at any later moment and blocks nothing.
+
+🔴 **The language question is recorded as unestablished and is not to be assumed in either
+direction.** It is not known whether the text is always English or follows the recipient's
+Telegram language, every probe of it is a paid message to a real person, and it will be observed
+for free the first time a Gateway verification runs in production (task 5.5).
+
+### 2.6 — escalating an undelivered Gateway message to a call
+
+> - [ ] 2.6 **Owner: whether a Gateway message that was accepted and then not delivered within its `ttl` escalates to a call.** The spec's default is that it does not — the fee is refunded and the verification fails with that reason — and nothing may be built as escalation until this is answered. The argument for escalating is real: the refund makes the attempt nearly free, and the person is still standing at the barrier. The argument against is that it is the automatic escalation into a paid channel this change otherwise refuses, arrived at from the other side
+
+**Answered: it does not escalate**, which was the spec's default, and it is now a decision
+rather than a default. The argument for escalating was real — the refund makes the attempt
+nearly free and the person is still at the barrier — and two things settle it against.
+
+It is the automatic escalation into a paid channel that this change refuses everywhere else,
+arrived at from the other side. And the `ttl` is not seconds: by the time a Gateway message has
+failed to be delivered within its window, the person has already waited out that window, and a
+call arriving afterwards is no longer the same attempt to log in. A fresh verification is the
+honest shape for it, and it already works.
+
+### 2.8 — permission to measure Telegram reachability across our numbers
+
+> - [ ] 2.8 **Owner: permission to measure what share of our numbers is reachable in Telegram.** It needs no message sent and costs nothing for an unreachable number, but it means running live customer numbers through a vendor. It is the measurement that decides whether the cheap rung is worth its check: a base with little Telegram is a ladder that pays to be declined before calling anyway
+## 3. Agree the contract with the parking developer
+
+**Refused: the measurement is not to be run.** It would mean passing live customer numbers to a
+third-party vendor, which is a disclosure of personal data, and the decision is the owner's
+alone. The ladder does not need it: a subscriber unreachable in Telegram costs nothing and is
+carried to the call rung, which is the behaviour the ladder was built for.
+
+What stays unmeasured is therefore named rather than quietly assumed: **how much latency and how
+many requests are spent on a rung that mostly declines.** That is a cost of the refusal, and it
+is accepted.
 
 ## Status
 
@@ -344,10 +688,44 @@ it.
 **Parked 11.09.2026, unparked 18.09.2026, and updated the same day** with the owner's answers to
 all four open decisions and with the ladder. The intent is the one this change was written for —
 get a code to a МегаФон subscriber without the modem — so this is an update to it and not a
-change of its own. **The critic round is not reopened**: the ceiling is one round and it was
-spent on 11.09.2026. What ran instead, before and after this update, is the mechanical pass —
-`openspec validate --strict`, `check.py`, and a diff of scenario names against the pre-update
-census of 70.
+change of its own.
+
+🔴 **A second critic round ran on 22.09.2026, by the owner's decision, and the reasoning above
+was the thing it overturned.** The sentence that stood here — "the ceiling is one round and it
+was spent on 11.09.2026" — was true of a redaction that no longer existed: between that round
+and this one the change unparked into a ladder, grew a door and a call rung, and took 66 new
+scenarios, eight new requirements and some 1561 lines of spec over 7238 lines of new code. The
+gate's rule is that the layer closes when a pass over the **final** redaction produces no
+edits, and "the spec was fresh when the round was run" is not that. The round was one, narrow,
+and a pair (`system-architect` + `gap-finder`), with its ceiling named before launch — two
+workers, about $10 — and its target the norms written after 11.09 and the code that executes
+them. It produced edits, so the premise above was wrong; it does not license a third.
+
+Seven findings, every one verified against the code rather than taken on a reviewer's word, and
+none refuted: money gates standing in front of the *free* modem ladder (found independently by
+both critics, and enough on its own to make the capability refuse every stock-settings
+verification on the day it ships); eleven bites named as the basis of a norm that exist in no
+commit on any ref; the number's paid limits read-then-acted rather than decided in one act; a
+carrier holding the ladder's bound as a duration instead of a deadline; the gateway's own number
+handed out as data without a form check; "nobody is watching this balance" said only into the
+log and only on an event; and a credential rotation silently dropping refunds in flight. One
+critic's *remedy* was wrong where its finding was right — the spec had already reasoned that
+remedy away — which is the whole reason a finding and its cure are checked separately. The
+verdicts are kept beside the spec, whole, in `critique-2026-09-22-*.md`; the resolutions are
+tasks 4.60–4.66.
+
+**Five of the seven are built, on the same day.** The free-walk gates (4.61), the deadline
+(4.63), the limits taken in one act (4.62), the gateway's own number normalised at the save
+(4.64), and all eleven missing bites written and run (4.60) — 83 mutations, no survivors. The
+remaining two are the owner's to decide and are not the session's to take: which channel says
+"nobody is watching this balance" (4.65), and whether a rotated credential is honoured for a
+grace period (4.66). The bites, in turn, found two holes of their own and re-aimed four
+mutations; both are recorded against 4.60, because "a bite confirms" and "a bite searches" are
+different claims and only the second is worth the money.
+
+Also run, before the round and after the merge: `openspec validate --strict`, `check.py`, and a
+diff of scenario names against the census taken before the merge — 135 before, 140 after, none
+lost.
 
 The vendor contracts behind the two paid rungs were taken from official references and neither
 from a live sample:

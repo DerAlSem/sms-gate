@@ -13,7 +13,7 @@ reachable by configuration rather than by deploying code during an outage.
 
 ### Requirement: Every outbound attempt is assigned exactly one route before it leaves
 
-A message or a verification SHALL be assigned a route — `modem`, `tg_gateway` or `call` —
+A message or a verification SHALL be assigned a route — `sms_out`, `tg_gateway` or `flash_call` —
 before any transmission is attempted, and that assignment SHALL be recorded against it. It
 SHALL NOT be carried by a route other than the one recorded, and SHALL NOT be carried by two
 at once.
@@ -36,23 +36,42 @@ route by a mapping this capability owns and states, and no other capability SHAL
 second vocabulary for the same decision. Two words for one choice agree while there are
 exactly two routes and disagree on the day there is a third.
 
-**That day arrived on 18.09.2026**, and the disagreement it predicted is real rather than
-hypothetical: the messenger ladder proposed on 12.09.2026 names the same three ways out
-`tg_gateway`, `modem` and `flash_call`, on a second axis separate from a direction of
-`outbound`/`inbound`. This capability adopts `tg_gateway` and `modem` from that list verbatim,
-so that the contest is down to one word — `call` here against `flash_call` there. Which of the
-two survives is the owner's decision across both changes, not this one's, and until it is
-taken the gateway SHALL hold exactly one of them in code.
+**That day arrived on 18.09.2026**, and the disagreement it predicted was real rather than
+hypothetical: the messenger ladder proposed on 12.09.2026 named the same ways out on a second
+axis separate from a direction of `outbound`/`inbound`, while a third change named the
+subscriber's own incoming call `call` as well — two mechanisms, one word, in which the modem
+either does everything or does not participate at all.
 
-[unbacked · no route concept exists in the code today]
+✅ **The owner settled it on 18.09.2026: one flat field, names disambiguated.** The values are
+`sms_out` (the gateway's SIM sends), `sms_in` (the subscriber texts the gateway), `call_in`
+(the subscriber calls the gateway's SIM), `flash_call` (the vendor dials), `tg_gateway`,
+`tg_user`, `max_user` and `app_bot`. **`call` is retired outright** and `modem` is retired in
+favour of `sms_out`, which states the direction the old name left to be inferred. The gateway
+SHALL hold exactly this vocabulary, and SHALL NOT carry a second one for the same choice.
+
+[partly backed · the vocabulary is `app/verification/routes.py` (the eight names, `call`
+absent and named as retired), and the verification half is `verification_rungs`, one row
+per rung with its own route, vendor reference and cost. **The message half arrived
+20.09.2026 with task 4.4a**: `messages.routed_route` and `messages.routed_operator`,
+written by `ModemManager._refuse` and by the passing branch of
+`_refuse_what_the_rule_routes_elsewhere` — that is, by the sender, before it hands
+anything to the modem, and on both outcomes. Guarded by
+`tests/test_send_path_operator_lookup.py`, and **`bite-lookup.sh` exists and runs since
+22.09.2026** (task 4.60): both red — the decision not recorded on the passing branch, and not
+on the refusing one.
+🔴 **Still unbacked: "SHALL NOT be carried by a route other than the one recorded" is not
+enforced for a message** — the column records what was decided, and nothing reads it back
+to check what carried it. Reading it back needs a second route to carry a message at all,
+and today only the modem does. Also unbacked: the mapping from route to the method an
+application is told about, which belongs to the verification door]
 
 #### Scenario: A route is decided and recorded before transmission
 - **WHEN** a send or a verification is accepted
 - **THEN** its route is decided and stored before any transmission is attempted
 
 #### Scenario: The recorded route is the one used
-- **WHEN** an item carries a recorded route of `call`
-- **THEN** the modem sender does not pick it up, and the reverse for `modem`
+- **WHEN** an item carries a recorded route of `flash_call`
+- **THEN** the modem sender does not pick it up, and the reverse for `sms_out`
 
 ### Requirement: The route is chosen by a configured rule keyed on the recipient's operator
 
@@ -67,7 +86,7 @@ paid way out is attempted first is a money decision, it changes as vendors' pric
 reachability change, and it is precisely the decision that must not need a deploy.
 
 No operator name SHALL appear in a branch in the sending path. The rule's initial content —
-МегаФон to `[tg_gateway, call]`, everything else to `[modem]` — is data, and the change that
+МегаФон to `[tg_gateway, flash_call]`, everything else to `[sms_out]` — is data, and the change that
 introduces it is not permitted to hard-code it, because the event this capability exists for
 is the next withdrawal rather than this one. Nor SHALL the ladder's order be hard-coded: an
 implementation that tries Telegram first because the code says so, rather than because the
@@ -101,19 +120,47 @@ The default route SHALL be an entry of the same rule, changeable by the same mea
 compiled into the sending path is the hard-coding this requirement forbids, merely spelled
 differently.
 
-[unbacked]
+Two entries name no operator and are spelled with characters an operator name cannot contain,
+so that neither can ever be shadowed by a real network. `*` answers for an operator the rule
+does not mention. `?` answers for an operator that could not be resolved at all, and it is
+separate from `*` on purpose: the numbers most likely to lack an operator row are the ones
+never messaged before, and a first-time recipient is exactly who a confirmation code is usually
+for, so the unknown case is one the owner configures rather than one arrived at by accident.
+
+A third reserved word, `refuse`, is not a way out but the absence of one, and it is expressible
+for the reason the rule is configuration at all: refusing is sometimes the correct answer and
+must not need a deploy either. It SHALL stand alone in an entry — a ladder that continues past
+a refusal is not a refusal.
+
+A rule that is readable but cannot answer for this operator — no entry, no `*`, no `?` — SHALL
+refuse rather than fall back to a route of the implementation's choosing. A default arrived at
+by accident is the silent failover this capability refuses by name elsewhere, and it would be
+arrived at exactly when the rule is half-configured.
+
+Two entries whose operator names normalise to the same thing SHALL be refused at save time.
+Which of the two wins would otherwise be decided by the order of the list, invisibly, and the
+data already holds one operator under two spellings.
+
+[backed · `app/verification/rule.py`, guarded by `tests/test_routing_rule.py` and by
+**`bite-rule.sh`, written and run 22.09.2026** (task 4.60), eight red: exact-string matching in
+place of the fold, the ladder ordered "Telegram first" by the code, an accepted unknown route, a
+broken rule read as empty, an unanswerable rule guessing the modem, an accepted `app_id`, two
+spellings of one operator accepted at save time, and a `refuse` continuing into a ladder. The
+first is the dearest of the eight: `number_operators` holds МегаФон under two spellings — 120
+numbers and 57, read 08.09.2026 — so an `==` would route a third of the subscribers correctly
+and the rest to the route that has been rejecting them, silently]
 
 #### Scenario: An operator with a configured route
-- **WHEN** the rule routes МегаФон to `[tg_gateway, call]` and a verification is requested for a МегаФон number
-- **THEN** the verification is routed `tg_gateway` first, and `call` only if that rung declines it
+- **WHEN** the rule routes МегаФон to `[tg_gateway, flash_call]` and a verification is requested for a МегаФон number
+- **THEN** the verification is routed `tg_gateway` first, and `flash_call` only if that rung declines it
 
 #### Scenario: The ladder's order is data, not code
-- **WHEN** the entry for an operator is rewritten as `[call, tg_gateway]` while the service is running
-- **THEN** subsequent verifications for that operator try `call` first, with no restart and no code change
+- **WHEN** the entry for an operator is rewritten as `[flash_call, tg_gateway]` while the service is running
+- **THEN** subsequent verifications for that operator try `flash_call` first, with no restart and no code change
 
 #### Scenario: An operator with no entry in the rule
 - **WHEN** an item is addressed to an operator the rule does not mention
-- **THEN** it is routed `modem`, the configured default
+- **THEN** it is routed `sms_out`, the configured default
 
 #### Scenario: An entry naming a route that does not exist
 - **WHEN** a rule entry naming an unknown route is saved
@@ -122,6 +169,14 @@ differently.
 #### Scenario: The rule changes without a deploy
 - **WHEN** a second operator is added to the rule while the service is running
 - **THEN** subsequent items for that operator take the new route, with no restart and no code change
+
+#### Scenario: An operator that could not be resolved at all
+- **WHEN** a verification is requested for a number whose operator the lookup could not resolve
+- **THEN** it takes the rule's `?` entry rather than its `*` entry, and either may be set to `refuse`
+
+#### Scenario: A rule that cannot answer for this operator
+- **WHEN** the rule holds neither an entry for the operator nor a `*` entry
+- **THEN** the item is refused rather than routed to a way out the implementation chose
 
 ### Requirement: A route's credentials live in `settings`, marked secret, and never in the environment
 
@@ -138,10 +193,28 @@ afterwards, and placed after, it is read by nobody. The gateway SHALL NOT read a
 credential from the environment at send time. Owner's decision of 18.09.2026, confirming what
 the code had already shown on 11.09.2026.
 
-There are two vendors behind the ladder and therefore two credentials: uCaller's, a single
-bearer string carrying both an API key and a service id, and Telegram Gateway's bearer token.
-They SHALL be separate settings. A route whose credential is absent SHALL NOT be attempted and
-SHALL NOT be called unauthenticated to find out.
+There are two vendors behind the ladder and therefore two credentials: uCaller's and Telegram
+Gateway's. They SHALL be separate settings, and a route whose credential is absent SHALL NOT be
+attempted and SHALL NOT be called unauthenticated to find out.
+
+**uCaller's credential is a pair, and SHALL be stored as two settings rather than as the joined
+bearer.** The vendor takes the same two values — a per-service secret key and a service id —
+three interchangeable ways: as `key` and `service_id` query parameters on a GET, as the same
+two fields in a JSON body, or as the header `Authorization: Bearer <key>.<service_id>`. The
+bearer is therefore a *derived* form of the pair, and the cabinet hands the two values over
+separately. The gateway SHALL assemble the header itself from the two settings, and SHALL treat
+either half missing as no credential at all.
+
+This replaces an earlier reading of "a single bearer string carrying both an API key and a
+service id" — correct about the header form and wrong about what to store. A joined value puts
+the separator in the operator's hands, and a bearer whose dot is missing or doubled is
+**indistinguishable from a configured one** on the settings page, which reports only whether a
+row is blank; it announces itself as the vendor's `401` on the first live call, and on this
+rung a live call is one somebody paid for. Two rows are each pasted verbatim, and a missing
+half reports itself as unset.
+
+[backed · vendor reference read by layers 22.09.2026 and captured verbatim in
+`captures/ucaller-reference-2026-09-22.md`, which supersedes the 08.09.2026 reading]
 
 A rung skipped for a missing credential SHALL raise an operator alert on the configuration the
 gateway ships with, and the ladder SHALL then advance past it as it would past a decline. This
@@ -152,12 +225,20 @@ this capability where a configuration gap costs money rather than traffic, and i
 down so that it is a decision rather than a discovery.
 
 **A ladder every one of whose rungs was skipped SHALL fail the verification with a reason
-naming the missing credentials, and SHALL NOT fall back to `modem`.** Advancing past the last
+naming the missing credentials, and SHALL NOT fall back to `sms_out`.** Advancing past the last
 rung leaves nothing to advance to, and the quiet answer — sending it over the modem — is the
 silent fallback this capability forbids everywhere else, reached here by exhausting a list
 rather than by deciding anything.
 
-[unbacked · `is_secret` precedent and `seed_from_env()`: app/settings_store.py]
+[partly backed · the console half is `tg_gateway_token` declared `is_secret` in `app/settings_store.py`, rendered by `_settings_view_rows` (app/admin/router.py) as `configured`/`not set` with no value and no `value=` attribute, guarded by `tests/test_vendor_credentials.py` in both locales and by **`bite-credentials.sh`, written and run 22.09.2026** (task 4.60), four red across the three layers a secret can leak through: the credential declared not secret, the view handing its value on, the page rendering a `value=` attribute — `type="password"` hides characters from a glance and nothing from the page source — and the page ceasing to distinguish configured from unset. The guard enumerates credentials by the shape of the key (`_token`, `_key`, `_secret`, `_password`) rather than by name, so uCaller's covers itself when it arrives.
+
+**The environment half is backed** by `tests/test_credentials_do_not_live_in_the_environment.py` and by **`bite-credentials-not-in-the-environment.sh`, written and run 22.09.2026** (task 6.13 — until then the seven mutations named here were run by nothing, the second time in this change that a reference to a bite was a claim about the code nobody checked). Seven, split across the two environment surfaces because they break differently — `os.environ` in `app/`, and `BaseSettings(env_file=".env")` in `app/config.py`, where pydantic does the reading and there is no `os.environ` for a census to find: precedence asserted at the `Authorization` header that leaves for the vendor rather than at the store attribute, paired with the control that a key with no row *is* seeded, and with the blank row — the state every estate ships in, written by the first start, so that from the second start `.env` has already lost even where nobody configured anything.
+
+🔴 **The boundary has two surfaces and the obvious census sees one.** "Never in the environment" is a claim about every line in `app/`, so the readers are enumerated off the syntax tree — and that census reports a single sanctioned reader while `app/config.py` reads `.env` on every start through `BaseSettings(env_file=".env")`, with no `os.environ` anywhere in it for a census to find. A vendor credential declared there is the defect in its purest form: read from `.env` at every start, absent from the settings page, unchangeable without a restart. Both surfaces are asserted, the second as a whitelist of one — `admin_password` is the console's own door, kept in `.env` deliberately so that a bad settings write cannot lock an operator out of the page they would fix it from, and that is a gateway credential rather than a vendor's.
+
+uCaller's half now has a home: `ucaller_key` (secret, and covered by the guard above through the shape of its name) and `ucaller_service_id`, declared 22.09.2026, with the bearer assembled in `app/verification/ucaller.py` from both halves or from neither. Guarded by `tests/test_ucaller_credentials.py` and eight mutations in `bite-ucaller.sh` — the dot dropped, the halves swapped, one half accepted as a whole credential, the paste left unstripped, the reader taking the key twice, the secret declared not secret, the row shipped with a value, and the second half never declared. ✅ **Production reads the bearer, since 22.09.2026** (task 6.11): task 4.17 landed and 1.1 with it. `ucaller.configured_bearer()` is read by `app/verification/probes.py`, which registers a `flash_call` probe, and by `app/verification/placement.py`, which builds the carrier from it; the adapter is `app/verification/ucaller.py`, and this change bites it in `bite-flash-call.sh`.
+
+The rung-skipping clauses below are backed too: the skip and its alert are in `app/verification/ladder.py`, the ladder that advances past a rung with no carrier is the same file, and the setting that says which rungs exist is `app/settings_store.py`. What is still unbacked here is **a number**, not a path: no uCaller charge has been observed, every captured authorisation being a free test one]
 
 #### Scenario: A credential placed in the environment after the first run
 - **WHEN** a vendor credential is written to `.env` for a key that already has a row in `settings`
@@ -166,6 +247,10 @@ rather than by deciding anything.
 #### Scenario: A secret is not rendered
 - **WHEN** an operator opens the settings page
 - **THEN** it says whether each vendor credential is configured, and shows neither value
+
+#### Scenario: Half of uCaller's credential
+- **WHEN** one of the two settings holding uCaller's key and service id is blank
+- **THEN** the rung has no credential, and nothing is sent to the vendor to find out
 
 #### Scenario: A rung with no credential
 - **WHEN** the first rung of a ladder has no credential configured
@@ -219,12 +304,50 @@ with the default route when it could not.
 
 This matters more than it looks: the numbers most likely to lack an operator row are the ones
 never messaged before, and a first-time recipient is exactly who a confirmation code is
-usually for. Today a send resolves such a number synchronously — `record_operator` is awaited
-before the message is created and waits on the lookup up to its timeout — so what is unknown
-at routing time is not "every new number" but every number whose lookup failed, and for those
-the default route is a guess.
+usually for.
 
-[normative · evidence: app/lookup/operator.py:23-45 (awaited before create_message at app/api/router.py:26, and waits on a cache miss) · conf: high]
+🔴 **Where the waiting happens is the whole of this requirement, and the owner settled it on
+20.09.2026.** The application's answer SHALL NOT wait for the lookup: the enrichment is not
+the application's business and an unreachable lookup must not show up as a slow API. **The
+send path MAY resolve a missing operator under a short bound of its own**, and SHALL treat
+the bound expiring as the unknown-operator case.
+
+That division is forced rather than chosen. Since the route is read from the operator, "the
+lookup has not answered yet" and "the lookup will not answer" are different facts with
+different right answers, and only the send path is in a position to tell them apart without
+making the application wait. Were the door to stop waiting and the sender not to start, the
+first message ever addressed to a diverted operator's subscriber would be routed on an empty
+cache — it would take the unknown-operator entry and go out over the modem, which is the
+route that operator has been rejecting. **The entry `?` therefore means "the lookup did not
+answer", never "the lookup has not been asked."**
+
+The bound SHALL be spent only where the cache holds no operator at all. A stale row still
+names one, and refreshing it changes no routing decision this rule can make: operators move
+numbers on a scale of years and the rule is reviewed on a scale of months, so waiting on a
+refresh would buy nothing and cost every send behind it in the queue.
+
+Nothing SHALL be failed when the bound expires or the lookup raises. The unknown-operator
+entry answers, whatever it is configured to be, and the item is recorded as having been
+routed without a known operator so the case stays countable.
+
+[normative · evidence: `app/lookup/operator.py` — `resolve_within_bound`, which **is** this
+requirement in one function: the cached operator used as it stands however stale, the bound
+spent only where there is no operator at all, and nothing ever failed for want of one. Both
+callers ask it: the sender through `ModemManager._operator_for`, and `POST /verifications`,
+which owes the synchronous resolve because its answer names a method. 🔴 **The door had its own
+unconditional `record_operator` until 22.09.2026** (task 6.4): a row 400 days old held the
+request for 3.01 seconds, and the budget being spent was `voxlink_timeout` — the patience of
+one HTTP call — rather than the routing bound. Two callers that must decide alike are one
+function, or they are one function and a copy that falls behind. `POST /sms/send` still spawns
+the lookup without awaiting it, which is the other half of the same decision.
+
+The countable half is `messages.routed_route` / `messages.routed_operator` for what the modem
+sends, and — since 22.09.2026, task 6.8 — `verifications.routed_operator` for what a ladder
+carries: a verification borne by `tg_gateway` or `flash_call` creates no `messages` row at all,
+so on the paid rungs the case this clause exists for was recorded by nothing. It is written
+once per walk and **before** the refusals, and the unknown case is the word `?` rather than a
+NULL, because a NULL cannot tell "routed for nobody" from "written before the column existed".
+· tests/test_send_path_operator_lookup.py · tests/test_ladder_walk.py · conf: high]
 
 #### Scenario: A first-time number whose lookup has not resolved
 - **WHEN** a message is addressed to a number with no row in `number_operators`
@@ -240,8 +363,8 @@ the default route is a guess.
 
 ### Requirement: A route carries only what it is capable of carrying
 
-Each route SHALL declare what it can carry. The `modem` route carries arbitrary text. The
-`call` route carries a verification code and nothing else: the code is the last four digits of
+Each route SHALL declare what it can carry. The `sms_out` route carries arbitrary text. The
+`flash_call` route carries a verification code and nothing else: the code is the last four digits of
 the calling number, so there is no field in which words, a link or a second sentence could
 travel. The `tg_gateway` route carries a verification code and nothing else either, for a
 different reason — `sendVerificationMessage` accepts a `code` and a `code_length` and no
@@ -260,14 +383,37 @@ route and what it cannot carry.
 The alternative — quietly sending such a message over the modem instead — is the automatic
 failover this change refuses, arrived at by accident rather than by decision.
 
-[unbacked]
+**The route an item is assigned is the first one its entry names, and only it.** The
+requirement forbids rerouting in the same sentence as it forbids attempting, so an entry
+reading `[tg_gateway, sms_out]` does not hand free text to the modem: it refuses it, out
+loud, counted. Nothing in the rule in force distinguishes the two readings — no entry
+names a modem route behind a paid one — so the narrower one costs nothing today, and it
+is the one that cannot put the modem back underneath a paid rung by accident. ⚠️ **This
+is a reading of the requirement rather than something the requirement said**, taken
+20.09.2026 because an implementation had to take one; the owner may widen it, and the
+cost of having taken the narrow side is a refusal an operator sees on the first message
+rather than a silence they find out about later.
+
+**A route this gateway has not declared able to carry an item carries nothing.** The
+three messenger ways out are named in the vocabulary with no adapter behind them and no
+wire contract anybody here has read; "not a paid rung" is not "mine", and a sender that
+read it that way would put free text out over a route the rule did not name.
+
+[normative · evidence: app/verification/routes.py:74-111 (`_CARRIES`, `carries`) ·
+app/modem/manager.py:558-653 (`_refuse_what_the_rule_routes_elsewhere` and `_refuse`,
+called at the head of `_send_one` before `encode_submit` and before the modem gate) · app/verification/refusals.py:49 (counted and
+alerted on `routing`, which ships on) · tests/test_send_path_refuses_an_uncarryable_route.py
+· the scenario below in which the modem **does** carry a code is backed from 21.09.2026 by
+app/verification/sms_carrier.py and app/verification/probes.py (`_sms_out_probe`), tasks
+4.17b and 4.17c; before them the rung was named everywhere and could carry nothing
+· conf: high]
 
 #### Scenario: Free text addressed to an operator routed to the call route
-- **WHEN** an application sends arbitrary text to a number whose operator is routed `call`
+- **WHEN** an application sends arbitrary text to a number whose operator is routed `flash_call`
 - **THEN** the message is refused with a reason naming the route, and no AT command is issued
 
 #### Scenario: A verification addressed to an operator routed to the modem
-- **WHEN** a verification is requested for a number whose operator is routed `modem`
+- **WHEN** a verification is requested for a number whose operator is routed `sms_out`
 - **THEN** it is carried as an SMS, because the modem route can carry a code
 
 ### Requirement: A paid ladder tries its rungs in order, and nothing is bought before every gate that could refuse has been passed
@@ -277,8 +423,32 @@ written, SHALL attempt each rung of a verification's ladder at most once, and SH
 the next rung only when the current one **declines to carry** the verification — not when it
 carries it and then fails.
 
+That makes three classes of outcome rather than two, and the third is the expensive one: a rung
+that **carried and then failed** SHALL stop the ladder and fail the verification with that rung
+named. Advancing there would buy the same code at the second vendor while the first vendor's
+fee cannot be refunded until its `ttl` runs out — paying twice for one login, which is the
+single most expensive mistake this ladder can make.
+
+A rung that cannot carry **this particular item** SHALL be recorded as such and SHALL NOT be
+counted as a decline. The case that exists today is a verification with less life left than the
+vendor's `ttl` floor of thirty seconds: inflating the `ttl` to reach the floor would hand the
+vendor a message outliving the verification it belongs to, while the automatic refund on
+non-delivery is tied to that same `ttl`. A decline is a statement about the **subscriber**, and
+a rung that appears to decline everyone is a rung that will be taken out of the rule for the
+wrong reason.
+
+Each rung's attempt SHALL be recorded **before** its vendor is contacted, and completed
+afterwards. The ordering is the money's: a process that dies between a vendor's confirmation
+and our record leaves a fee that belongs to nothing, and the only symptom of that is a balance
+that drifts.
+
+A route named by the rule that nothing is configured to carry SHALL NOT be attempted, SHALL
+raise an operator alert, and the ladder SHALL advance past it. This is the one configuration
+gap that costs money rather than traffic — every verification still completes, by the dearer
+rung — and it is therefore the one that must be loud on stock settings.
+
 On `tg_gateway`, declining is `checkSendAbility` reporting that the subscriber cannot be
-reached, or not answering within the acceptance bound. On `call`, there is no declining rung
+reached, or not answering within the acceptance bound. On `flash_call`, there is no declining rung
 below it; a ladder SHALL end in a route that either carries or fails.
 
 🔴 **`checkSendAbility` is not a free probe, and the design must not be built as though it
@@ -291,7 +461,7 @@ specified `ttl`, the request fee will be refunded automatically."*
 
 So the ladder is cheap for exactly two reasons, and neither is "the check is free": an
 **unreachable** subscriber costs nothing, and a **confirmed but undelivered** one is refunded.
-Against that, the `call` rung is charged for a call that was *placed*, whether or not anyone
+Against that, the `flash_call` rung is charged for a call that was *placed*, whether or not anyone
 read the digits.
 
 Two consequences follow, and both are normative:
@@ -306,23 +476,91 @@ Two consequences follow, and both are normative:
    carrying its `request_id`.** It SHALL NOT be abandoned, and SHALL NOT be repeated with the
    same `request_id`, which the vendor answers with an error rather than a second message.
 
+   **One exception, and it is named rather than discovered (task 6.5, 22.09.2026): a
+   verification that ended between the confirmed check and the send SHALL NOT be sent.** The
+   code it would carry no longer exists — it is destroyed at every terminal ending — so the
+   send would either have to resurrect a secret this capability spends its whole length
+   destroying, or tell a person to type back a code for a verification that is already over.
+   The fee is recorded against the rung with its `request_id` and counted as spend that bought
+   nothing; it is not refundable, because the refund is tied to non-delivery within a `ttl` and
+   a `ttl` only starts when a message is sent. Measured 22.09.2026: the only reachable way in
+   is the owning application exhausting its own attempts through `POST /verifications/{id}/check`
+   inside the vendor's ~250 ms window — self-inflicted, by the holder of the token, and costing
+   the person at the barrier nothing, because their verification had already ended.
+
 An ability check that does not answer within the bound SHALL be recorded as **possibly
 charged** and counted separately from both outcomes. A confirmation we never saw is a fee that
 cannot be spent and cannot be refunded, and without a count an unexplained fall in the vendor's
 reported balance has no name to look for.
 
+🟢 **The decline this whole ladder is built on is spelled `PHONE_NUMBER_NOT_AVAILABLE`, and
+that spelling comes from a captured refusal rather than from any document.** The vendor's
+reference names exactly one error string — `ACCESS_TOKEN_INVALID` — and for "this subscriber
+is not in Telegram" says only that "an appropriate error will be returned". Task 1.7, run
+20.09.2026 against a real working number whose owner has no Telegram, is what closed the gap:
+`{"ok": false, "error": "PHONE_NUMBER_NOT_AVAILABLE"}`, on HTTP 200, charged nothing. The
+gateway SHALL recognise it as a decline of the **subscriber**.
+
+⚠️ **One capture fixes the spelling and does not bound the meaning.** Whether the vendor
+answers the same string for a number that is malformed, unallocated or merely unroutable is
+not established, and SHALL NOT be assumed in either direction. Nothing turns on it while both
+readings send the ladder the same way; what will turn on it is the decline count, because a
+rung that appears to decline everyone is a rung taken out of the rule for the wrong reason.
+
+An `ok: false` the gateway still cannot place SHALL be treated as **unclassified**: the ladder
+SHALL advance past it as it would past a decline, **and** the operator SHALL be alerted. Both,
+because the two ways of guessing fail in opposite directions and each is invisible. Read as a
+decline, a rotated token would advance every verification to the dearer rung and tell nobody —
+the bill would be the only symptom. Read as a failure, an ordinary unreachable subscriber
+would raise an alert per verification and the noise would bury the real one. Advancing and
+alerting is wrong in neither direction; it is merely loud, and with the ordinary decline now
+named it is no longer loud about the ordinary case.
+
+An error string the gateway *can* place — today only `ACCESS_TOKEN_INVALID` — SHALL be
+recorded as a refusal of **us** rather than of the subscriber, and SHALL NOT be counted as a
+decline against the rung: a rung that appears to decline every subscriber is a rung that will
+be taken out of the rule for the wrong reason.
+
 **Whether a message the Gateway accepted and then failed to deliver within its `ttl` escalates
-to the `call` rung is not decided by this change.** Until the owner decides it, such a
+to the `flash_call` rung is not decided by this change.** Until the owner decides it, such a
 verification SHALL fail with that reason and SHALL NOT be escalated. The safe default is the
 one that cannot spend money on a decision nobody has taken; the argument for the other is that
 the fee is refunded anyway, and it is a real argument, which is why this is an open question
 and not an omission.
 
-[unbacked · vendor reference: Telegram Gateway API, `checkSendAbility`, `sendVerificationMessage`, read 18.09.2026 — no live sample captured]
+[backed · live samples captured 20.09.2026 by task 1.7 and kept in `captures/`: `probe-1.7-check-declined.json` (the decline, free), `probe-1.7-check-able.json` (the confirmation, `request_cost: 0.01`, `remaining_balance: 99.99`) and `probe-1.7-send.json` (the send carrying the returned `request_id`). Guarded by `tests/test_tg_gateway_adapter.py`. Two halves remain on the vendor reference and are marked where they are asserted: that a second call with the same `request_id` is refused rather than billed, and that an undelivered message is refunded at the end of its `ttl` — no sample shows either, and `is_refunded` has now been absent from ten captures running. The driver itself —
+`app/verification/ladder.py` and `app/verification/tg_carrier.py` — is guarded by
+`tests/test_ladder_walk.py` and `tests/test_tg_gateway_carrier.py`. **`bite-ladder.sh` (nine)
+and `bite-carrier.sh` (eight) exist and run since 22.09.2026**, task 4.60, and between them turn
+all seventeen red: gates that do not run first and a gate's refusal ignored, the order held in
+the code as "Telegram first", silence recorded as a decline, the bound handed to each rung
+again, the rung's row not saying it is in flight, a rung that carried and then failed advancing,
+the verification named after the first rung tried, the last rung's silence failing the
+verification instead of leaving it in flight — and on the carrier, the rung bought below the
+vendor's `ttl` floor, that refusal counted against the subscriber, the fee recorded only after
+the send, a constant `ttl` handed to the vendor, a failed send advancing, the outcome map
+collapsing a refusal of *us* into a decline, both loud refusals passing silently, and the
+control that a carrier which never carries is caught.
+
+⚠️ **Two of the seventeen had to be re-aimed, and both lessons generalise.** Mutating the
+*value* of an outcome constant (`REFUSED = "declined"`) proves nothing: the guard compares the
+outcome against that same constant, so the mutation is the identity on the test's own data. The
+place that distinguishes a refusal of us from a decline is the carrier's `_OUTCOME` map, and
+that is where the mutation now lives. And a script that ran only its own file's tests reported
+"carried and then failed advances the ladder" as a survivor, because the guard for it lives in
+the *other* file — so both scripts run both files, since the property crosses the boundary]
 
 #### Scenario: The subscriber is not reachable in Telegram
-- **WHEN** `checkSendAbility` reports the subscriber cannot be reached
-- **THEN** nothing is charged for it, the ladder advances to `call`, and the decline is recorded against the `tg_gateway` rung
+- **WHEN** `checkSendAbility` answers `ok: false` with `PHONE_NUMBER_NOT_AVAILABLE`
+- **THEN** nothing is charged for it, the ladder advances to `flash_call`, and the decline is recorded against the `tg_gateway` rung
+
+#### Scenario: The vendor refuses with an error string the gateway cannot place
+- **WHEN** `checkSendAbility` answers `ok: false` with an error the gateway does not recognise
+- **THEN** the ladder advances to `flash_call` as it would past a decline, and the operator is alerted
+
+#### Scenario: The vendor refuses us rather than the subscriber
+- **WHEN** `checkSendAbility` answers `ok: false` with `ACCESS_TOKEN_INVALID`
+- **THEN** it is recorded as a refusal of the gateway, is not counted as a decline against the rung, and the operator is alerted
 
 #### Scenario: The subscriber is reachable in Telegram
 - **WHEN** `checkSendAbility` confirms the subscriber
@@ -330,11 +568,23 @@ and not an omission.
 
 #### Scenario: The ability check does not answer in time
 - **WHEN** `checkSendAbility` has not answered within the acceptance bound
-- **THEN** the ladder advances to `call` and the check is counted as possibly charged rather than as a decline
+- **THEN** the ladder advances to `flash_call` and the check is counted as possibly charged rather than as a decline
 
 #### Scenario: A gate that would refuse is reached after the money
 - **WHEN** a verification would be refused by the spend ceiling or by the application's entitlement
 - **THEN** it is refused before any rung is contacted, and no ability check is made
+
+#### Scenario: A rung that carried and then failed
+- **WHEN** a confirmed ability check is followed by a send the vendor refuses
+- **THEN** the ladder stops rather than advancing, the verification fails naming that rung, and the fee already incurred stays recorded
+
+#### Scenario: A rung that cannot carry this verification
+- **WHEN** a verification has less life left than the vendor's `ttl` floor
+- **THEN** the rung is not bought at all, and the outcome recorded is not a decline
+
+#### Scenario: A route nothing is configured to carry
+- **WHEN** the rule names a route for which no carrier is configured
+- **THEN** it is not attempted, the operator is alerted on stock settings, and the ladder advances to the next rung
 
 #### Scenario: The Gateway took the message and did not deliver it
 - **WHEN** a message the Gateway accepted is not delivered within its `ttl`
@@ -352,9 +602,24 @@ paid verification, and three of the four applications on this gateway never send
 route exists to carry. A default of on would mean that the first mistake in any of them is
 billed rather than logged.
 
+**The default SHALL also apply to every application that already exists when the entitlement
+arrives**, and not only to applications created afterwards. Recorded as a norm because it is
+the half a schema change silently gets wrong: a default written to take effect for new rows
+leaves the guarantee empty on exactly the installations that have the defect, which are the
+ones already running. The change that introduces the entitlement SHALL therefore switch every
+existing application off, and SHALL be reversible by deploying the previous code rather than
+by removing what an operator has since decided — a column dropped on the way back revokes that
+decision silently the next time the newer code is deployed.
+
+**Being active remains the stronger switch.** An application an operator has deactivated SHALL
+NOT spend, whatever its entitlement says. The two answer different questions — whether an
+application may talk to this gateway at all, and whether it may spend money doing so — and a
+deactivated application that went on buying verifications because a second switch was left on
+from before would be the deactivation failing to mean anything.
+
 A refusal for want of the entitlement SHALL place no vendor call and make no ability check,
 SHALL NOT be reported to the application as a vendor failure, and SHALL NOT be quietly carried
-over the `modem` route instead — for a МегаФон subscriber that is the route that has been
+over the `sms_out` route instead — for a МегаФон subscriber that is the route that has been
 refusing, so the fallback would read as a delivery and behave as a silence.
 
 The entitlement SHALL NOT be part of the routing rule. The rule answers what reaches a
@@ -365,7 +630,7 @@ changeable without a restart, by the same means as the rule.
 **Owner's decision of 18.09.2026.** It was raised by the critic round of 11.09.2026 as a
 finding left for the owner rather than written as a norm; it is now written as one.
 
-[unbacked · no entitlement concept exists in the model today; token store at app/db/queries.py]
+[backed · `apps.may_spend`, added by `app/db/migrate.py` as an `ALTER` so that its default reaches the rows already there; the gate is `gates.entitlement_gate` in `app/verification/gates.py`, read per call so that no restart is needed; operated at `POST /admin/apps/entitlement`. Guarded by `tests/test_paid_entitlement.py` and `tests/test_admin_apps.py`, including a test that builds the table in its pre-change shape, populates it and then migrates. ✅ **Reachable since 22.09.2026** (task 6.11): the door that walks the paid ladder is in this change after all — `POST /verifications/{id}/route` in `app/api/router.py` calls `placement.place`, which asks `gates.for_paid_ladder`, which is where `entitlement_gate` stands. The router is mounted in `app/main.py`. The claim it replaces — "the gate has no production caller" — was true when written and expired the day the door landed, silently: **a statement that nothing calls something is refuted by the next wiring and nothing goes red**, which is the whole of why it is worth re-reading annotations against the code]
 
 #### Scenario: An application without the entitlement
 - **WHEN** an application whose entitlement is off requests a verification for an operator routed to a paid ladder
@@ -379,6 +644,14 @@ finding left for the owner rather than written as a norm; it is now written as o
 - **WHEN** an application whose entitlement is on requests the same verification
 - **THEN** the ladder is attempted normally
 
+#### Scenario: An application that existed before the entitlement did
+- **WHEN** the change that introduces the entitlement is deployed onto an installation whose applications predate it
+- **THEN** every one of them is switched off, and none of them can open a paid verification until an operator grants it
+
+#### Scenario: A deactivated application that still holds the entitlement
+- **WHEN** an application an operator has deactivated requests a paid verification
+- **THEN** it is refused, whatever its entitlement says
+
 ### Requirement: A route that cannot be used fails loudly and does not silently fall back
 
 If the assigned route cannot carry an item it is capable of carrying — the vendor is
@@ -389,6 +662,23 @@ operator SHALL be alerted.
 Automatic failover between routes is deliberately absent. Escalating into a paid channel
 without a spend ceiling turns a modem fault into an unbounded bill, and escalating out of one
 turns a vendor outage into traffic on a route an operator has already refused.
+
+🔴 **That holds even where a rule names the modem behind a paid rung, and the owner settled
+it on 20.09.2026.** A ladder written `[tg_gateway, sms_out]` is configuration rather than
+failover, and the gateway honours it — but not on a refusal of **us**. When a vendor refuses
+this gateway rather than the subscriber, a modem rung later in the same ladder SHALL NOT be
+attempted: it SHALL be recorded as withheld, with the rung whose vendor refused named in the
+log, and the ladder SHALL continue past it.
+
+The two cases are separated by whom the vendor refused, and nothing else. A **decline of the
+subscriber** is a statement about one person — that person is not in Telegram — and a modem
+rung behind it is an ordinary fallback that goes on working. A **refusal of us** is
+gateway-wide: a rotated token or an empty account refuses every verification, and refuses them
+all inside the same minute. Carrying those over the modem is precisely the flood the paragraph
+above forbids, arriving through the one door a rule can open.
+
+Withholding SHALL NOT raise a second alert. The refusal that caused it already woke the
+operator with the vendor named, and two lines about one event is how the first one is buried.
 
 That argument applies to the paid route itself, not only to escalation into it. A paid route
 SHALL have a configured ceiling on how many paid items it may carry per rolling hour and per
@@ -407,12 +697,39 @@ verifications spend twice the intended amount by advancing from one rung to the 
 is exactly what the ladder does by design. What is being bounded is the bill, and the bill is
 one.
 
+**The ceiling SHALL count every attempt on a paid route, including the ones that turn out to
+cost nothing.** A ceiling counted over confirmed charges would be blind to exactly the
+attempts most likely to have cost money in silence: an ability check that never answered may
+have been confirmed and billed at the vendor without our ever learning its `request_id`, which
+is the one class of spend this design cannot attribute to anything. Counting attempts also
+makes the ceiling decidable before a vendor is contacted, which is what lets it refuse without
+spending.
+
+**Its windows SHALL roll rather than reset on a clock**, for the reason the per-number limits
+do: this database stores naive UTC and both vendors are Russian, and a calendar window read in
+the wrong zone resets early and spends confidently in the gap.
+
+**Its numbers SHALL be settings, and SHALL be set against observed traffic rather than
+chosen.** A ceiling below the busiest hour this gateway has really had stops being a guard
+against a runaway and becomes a refusal of legitimate work — and that failure is the harder of
+the two to attribute, because it presents as a gateway that has quietly stopped verifying
+anyone.
+
 Every alert this requirement raises SHALL name **which** vendor it is about. With one paid
 route "the vendor is out of credit" was unambiguous; with two it is the question the operator
 has to answer before they can act, and answering it by reading a log is the difference between
 a two-minute top-up and an outage.
 
-[unbacked]
+[partly backed · the spend ceiling is `gates.ceiling_gate` in `app/verification/gates.py`, counting `verification_rungs` over `routes.PAID_ROUTES` in rolling windows, with `verification_paid_per_hour` and `verification_paid_per_day` as its settings; guarded by `tests/test_spend_ceiling.py`. 🔴 The shipped numbers are measured rather than chosen — read from this gateway's own live database on 20.09.2026: 2391 messages between 17.04.2026 and 20.09.2026, 601 of them to МегаФон (both spellings matched by hand, since `upper()` is ASCII-only in this build and counts 397 of the 601). The busiest МегаФон hour in five months held 20 messages and the busiest day 47; a verification may consume two paid rungs, so the worst load ever observed is about 40 attempts an hour and 94 a day, and the ceilings of 100 and 300 sit above that with room while stopping a runaway in minutes. The vendor-credential and out-of-credit halves stay unbacked on the uCaller side, which has no adapter (task 4.17, blocked on task 1.1). 🔴 **"SHALL NOT be transmitted over the other route" is guarded as the absence of *automatic* failover, and measurement is what fixed that reading** (task 4.14, `tests/test_vendor_failure_spares_the_modem.py`, and **`bite-modem.sh` exists and runs since
+22.09.2026** (task 4.60), five red: the modem appended to the tail of the walk, the modem tried
+once nothing has carried — the sneaky form the stand is built for — both loud refusals passing
+silently, an unplaceable refusal read as a decline of the subscriber, and the control that
+reading *every* refusal as a refusal of us withholds a modem that ought to carry): driven directly, `ladder.walk` does carry a verification over an `sms_out` rung when the rule names one behind a paid rung, and that is configuration with an operator's name on it rather than a fallback. What the gateway guarantees, and what is now guarded, is that the rungs attempted are exactly `rule.route_for`'s answer — nothing is appended when a vendor refuses us for credentials or for want of credit, and when every rung the rule named has refused, the verification fails rather than finding its way onto the modem. 🟢 **The owner settled on 20.09.2026 that a rule naming `sms_out` behind a paid rung is not honoured on a refusal of *us*, and that is now implemented** (task 4.14a, `ladder._MODEM_ROUTES` and the withholding branch of `ladder.walk`, `WITHHELD` recorded as the rung's outcome). Guarded by the same file and by **`bite-withhold.sh`, written and run 22.09.2026**, six red:
+the withholding removed, the norm reaching too far to a decline of the *subscriber*, the
+withholding applied to every modem walk at all, the withheld rung not recorded, a second alert
+raised on the one event, and the reason ceasing to name the withheld rung. The second of those
+turns the **positive control** red rather than a negative assertion, and that is what keeps the
+rule narrow enough to leave a working modem working]
 
 #### Scenario: The vendor rejects our credentials
 - **WHEN** a vendor answers with an authentication error
@@ -421,6 +738,14 @@ a two-minute top-up and an outage.
 #### Scenario: The vendor is out of credit
 - **WHEN** a vendor reports insufficient balance
 - **THEN** the operator is alerted with that reason and that vendor's name, and nothing is rerouted
+
+#### Scenario: A rule names the modem behind the rung whose vendor refused us
+- **WHEN** an operator's ladder is `[tg_gateway, sms_out]` and the Telegram rung answers with a refusal of this gateway
+- **THEN** the modem rung is recorded as withheld rather than attempted, the verification fails naming it, and no second alert is raised
+
+#### Scenario: A rule names the modem behind a rung the subscriber declined
+- **WHEN** the same ladder's Telegram rung declines the subscriber rather than refusing this gateway
+- **THEN** the modem rung carries the verification as the rule configured it
 
 #### Scenario: The ceiling counts the ladder, not the rung
 - **WHEN** verifications advance from the first rung to the second often enough that the two rungs together reach the configured ceiling
@@ -437,7 +762,19 @@ the rule will still be in force, and the applications that do not send codes wil
 refused — with nothing on any screen to say so. A count is the difference between a rule that
 is reviewed and a rule that is forgotten.
 
-[unbacked]
+[backed · `app/verification/refusals.py`, counting rows of `route_refusals` grouped on the
+folded operator name (`rule.fold` — NFKC + casefold, in Python, never in SQL), reachable at
+`/admin/stats` beside the message counters and under the same period control. Guarded by
+`tests/test_route_refusals.py` and by **`bite-refusals.sh`, written and run 22.09.2026** (task
+4.60), thirteen red: the refusal not counted at all, grouped on the unfolded name, the
+application or the route dropped from the row, an unresolved operator left unnamed, the alert
+hung on `notify_send_errors` — off on a stock install, and every install with this defect is a
+stock install — deduplicated per item and then per operator alone, a changed entry not
+restarting its review period, a dropped entry still watched, the period hard-coded, the report
+firing every tick, and `*`/`?` pulled into it. ✅ **Counted is produced, since 22.09.2026** (task 6.11): both halves of the old warning are
+false now. `ladder.walk` is called in production by `app/verification/placement.py`, reached
+from the selection door; and `refusals.record` has a second caller of its own — the send path
+in `app/modem/manager.py`, which is the one that produces the measured seventy a month]
 
 The count SHALL be answerable per application as well as per operator: it decides whether to
 call the developer of a particular application or to drop the rule, and "seventy refusals"
@@ -447,16 +784,37 @@ The count SHALL NOT be relied upon as evidence that the route has recovered. Onc
 force, the modem route to that operator receives no attempts at all — codes leave by the other
 route and text is refused before any AT command — so the one source of proof that the refusal
 has ended is the thing the rule switches off. The gateway SHALL therefore retain a way to
-observe recovery: either a rate-bounded probe send to that operator over the `modem` route,
+observe recovery: either a rate-bounded probe send to that operator over the `sms_out` route,
 counted separately, or an alert once a rule entry has been in force longer than a configured
 review period.
+
+**The entries that name no operator are outside that report.** `*` and `?` are the gateway's
+baseline rather than a diversion — they answer for an operator with no entry and for one that
+could not be resolved — and a rule holding only them has diverted nothing to review. Reporting
+them every review period would teach an operator to ignore the channel that also carries the
+entries that did divert. Either set to `refuse` remains audible: every item it refuses is
+counted and alerted as a refusal.
+
+**When an entry's routes change, its review period SHALL start again**, because the decision
+was revisited and that is what the period measures. An entry removed from the rule SHALL stop
+being reported: a rule that no longer names an operator is not one anybody needs reminding
+about.
 
 A refusal SHALL reach the operator on the configuration the gateway ships with. It SHALL NOT
 depend on a notification toggle that is off by default — `notify_send_errors` is such a toggle
 — and it SHALL be deduplicated on the operator and the route rather than raised once per
 refused message, since the measured traffic is about seventy refusals a month and rising.
 
-[unbacked · the default-off toggle: app/settings_store.py, notify_send_errors]
+[backed · `refusals.record` raises it on the `routing` category, which `notify_routing_errors`
+carries and which ships **on** — `notify_send_errors` is untouched by this path — with
+`dedup_extra=f"refused:{folded operator}:{route}"`. The review report is `refusals.review_step`,
+hourly from `main.py` as the non-essential `routing-review` loop, bounded by the
+`operator_route_review_days` setting (30) and raised at most once per period per operator.
+Guarded by `tests/test_route_refusals.py`, which drives the real `notify` over a fake notifier
+so the toggle is exercised rather than stepped over, and by the mutations above — the alert
+moved to the default-off toggle, the dedup key losing the route, losing the operator, and
+dropped entirely; the review reported on every tick; the baseline entries reported; and the
+review period hard-coded]
 
 #### Scenario: Refusals accumulate against an operator
 - **WHEN** three applications are refused for one operator over a day
@@ -468,7 +826,15 @@ refused message, since the measured traffic is about seventy refusals a month an
 
 #### Scenario: A rule outlives the outage that justified it
 - **WHEN** an operator's entry has been in force longer than the configured review period
-- **THEN** the operator is alerted that the rule is still in force and has not been reviewed
+- **THEN** the operator is alerted that the rule is still in force and has not been reviewed, once per period rather than once per check, and the alert names what the entry has cost since it came into force
+
+#### Scenario: An entry that was revisited
+- **WHEN** an entry's routes are rewritten
+- **THEN** its review period starts again, and it is not reported until the new period has passed
+
+#### Scenario: The rule holds only its baseline entries
+- **WHEN** the rule holds `*` and `?` and no operator entry, for longer than the review period
+- **THEN** nothing is reported, because neither entry diverts anything to review
 
 #### Scenario: The refusal alert arrives on the shipped configuration
 - **WHEN** a message is refused for want of a usable route on a gateway whose settings are untouched

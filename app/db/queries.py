@@ -3,6 +3,13 @@ from typing import Any
 import aiosqlite
 from app import periods
 from app.db.connection import get_db
+from app.verification.routes import PAID_ROUTES
+
+# The paid rungs, read from the one place that names them rather than spelled again here.
+# Sorted so the SQL below is stable between runs, and expanded into placeholders so that
+# adding a third paid vendor is a change to the vocabulary and not to these statements.
+_PAID_ROUTE_VALUES = tuple(sorted(PAID_ROUTES))
+_PAID_PLACEHOLDERS = ", ".join("?" * len(_PAID_ROUTE_VALUES))
 
 # Statuses that owe nothing further. `expired` is deliberately absent: a report can
 # still arrive for it and correct it to `delivered` while the part it names is inside
@@ -38,7 +45,8 @@ async def get_app_by_token(token: str) -> aiosqlite.Row | None:
 
 
 async def create_message(
-    app_id: str, phone: str, text: str, resent_from: int | None = None
+    app_id: str, phone: str, text: str, resent_from: int | None = None,
+    verification_id: int | None = None,
 ) -> int:
     db = await get_db()
     async with db.execute(
@@ -46,23 +54,61 @@ async def create_message(
         # loses to a restart is still recoverable. In the normal path the sender claims
         # it long before then and clears the time.
         """
-        INSERT INTO messages (app_id, phone, text, resent_from, next_attempt_at)
-        VALUES (?, ?, ?, ?, datetime('now', '+60 seconds'))
+        INSERT INTO messages
+               (app_id, phone, text, resent_from, verification_id, next_attempt_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '+60 seconds'))
         """,
-        (app_id, phone, text, resent_from),
+        (app_id, phone, text, resent_from, verification_id),
     ) as cursor:
         await db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
 
+async def verification_of_message(message_id: int) -> int | None:
+    """The verification this message carries the code of, or None for ordinary traffic.
+
+    Asked of the database rather than carried on the queued item, and that is the whole
+    of why it is a query. The restart resume path builds its items out of `messages`
+    rows and nothing else, so an ownership living only in the queue would be dropped by
+    the one path that re-sends — and the symptom would be a code refused on its retry,
+    with the routing rule named for it.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT verification_id FROM messages WHERE id = ?", (message_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row["verification_id"] if row is not None else None
+
+
 async def get_message(message_id: int, app_id: str) -> aiosqlite.Row | None:
+    """A message of the application's own traffic — the read behind `GET /sms/{id}`.
+
+    `verification_id IS NULL` is the border, not a filter for tidiness. The `sms_out`
+    rung composes a verification's code into `text` and stores it under the same
+    `app_id`, so without this line the door hands an application the code of a
+    verification it opened, and the application confirms that verification without the
+    message ever reaching the person — measured end to end on 22.09.2026. The code is
+    the one value in this capability that is a secret, and "the code never appears in an
+    API response" cannot be held by any door that answers with this row.
+
+    Placed here rather than at the door because this is the single place a `messages` row
+    leaves to the owning application; the admin console, which is not bound to one
+    application and is allowed to read its own traffic, has `get_message_any`.
+
+    The answer is "no such message" rather than a stripped text: the code is nulled at
+    every terminal ending while the text keeps the digits forever, so a strip would stop
+    stripping the moment the verification ends. The id was never the application's to
+    hold either — nothing hands it back, and no delivery webhook is pushed for a
+    verification's message.
+    """
     db = await get_db()
     async with db.execute(
         """
         SELECT id, phone, text, status, created_at, sent_at, delivered_at, error,
                attempts, delivery_inferred
         FROM messages
-        WHERE id = ? AND app_id = ?
+        WHERE id = ? AND app_id = ? AND verification_id IS NULL
         """,
         (message_id, app_id),
     ) as cursor:
@@ -81,11 +127,17 @@ async def get_message_any(message_id: int) -> aiosqlite.Row | None:
 
 
 async def get_message_delivery_context(message_id: int) -> aiosqlite.Row | None:
-    """What the delivery webhook needs about a message: who owns it, and whether it
-    replaces an earlier one."""
+    """What the delivery webhook needs about a message: who owns it, whether it replaces
+    an earlier one, and whether it belongs to a verification at all.
+
+    `verification_id` is read here rather than by a second query at the door, because the
+    door's decision is whether to push *this* row: a message belonging to a verification
+    raises no message-status push, and a receiver that only ever asked about a
+    verification must never be handed a raw message id to act on.
+    """
     db = await get_db()
     async with db.execute(
-        "SELECT id, app_id, resent_from FROM messages WHERE id = ?",
+        "SELECT id, app_id, resent_from, verification_id FROM messages WHERE id = ?",
         (message_id,),
     ) as cursor:
         return await cursor.fetchone()
@@ -836,6 +888,895 @@ async def list_inbound(
         return list(await cursor.fetchall())
 
 
+# What a code is replaced by in text that leaves the matcher. Visible rather than removed:
+# an operator reading "the vendor refused (BAD_CODE ****)" can tell that something was
+# taken out, and a reason that silently loses a word reads as a vendor that said less than
+# it did.
+_CODE_HIDDEN = "****"
+
+
+def _without_the_code(text: str | None, code: str | None) -> str | None:
+    """Free text about to be stored against a verification, with that verification's own
+    code taken out of it.
+
+    This is the one border where text from outside this gateway becomes text this gateway
+    hands back. `reason`, on both the verification and its rungs, is filled from a
+    vendor's error string and from an exception's message, and neither is ours to write —
+    so the requirement that a code appears in no API response cannot be held by writing
+    careful strings. Measured on 21.09.2026: a reason carrying the code reached
+    `GET /verifications/{id}` and the console with the whole suite green.
+
+    Placed on the **write** rather than on the reads, for the reason every boundary in
+    this change is: the readers are many — the poll, the expanded row in the console, an
+    alert quoting a reason — and a census of readers is never complete and goes stale in
+    silence. There is one place text becomes stored, and this is it.
+    """
+    if not text or not code:
+        return text
+    return text.replace(code, _CODE_HIDDEN)
+
+
+async def _code_of(verification_id: int) -> str | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT code FROM verifications WHERE id = ?", (verification_id,)
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def _code_behind_rung(rung_id: int) -> str | None:
+    db = await get_db()
+    async with db.execute(
+        "SELECT v.code FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id WHERE r.id = ?",
+        (rung_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def create_verification(
+    app_id: str, phone: str, *, code: str, ttl_seconds: int,
+) -> int:
+    """Persist a verification before anything is placed on its behalf.
+
+    The deadline is computed by the database rather than by the caller, so that it is
+    comparable with `CURRENT_TIMESTAMP` in every conditional update below — the whole
+    point of those being single statements is lost if the times they compare were written
+    by two different clocks.
+    """
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO verifications (app_id, phone, code, expires_at) "
+        "VALUES (?, ?, ?, datetime('now', ? || ' seconds'))",
+        # `:+d`, the idiom this module already uses for a signed interval: a plain
+        # "+" prefix turns a negative interval into "+-1", which SQLite reads as no date
+        # at all and the NOT NULL constraint then reports as a missing deadline.
+        (app_id, phone, code, f"{int(ttl_seconds):+d}"),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def open_codes_for(phone: str) -> set[str]:
+    """The codes currently live on this number, so a new one can differ from all of them.
+
+    Two open verifications sharing a code would make an arriving answer attributable to
+    neither with certainty, which is the one job a code has on the routes that carry one.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT code FROM verifications "
+        "WHERE phone = ? AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP "
+        "AND code IS NOT NULL",
+        (phone,),
+    ) as cursor:
+        return {row[0] for row in await cursor.fetchall()}
+
+
+async def select_route(verification_id: int, app_id: str, *, route: str) -> str:
+    """Record the consumer's choice of rung. Answers what happened, in one word.
+
+    One of: `selected`, `already_selected`, `expired`, `not_found`. A verification is
+    carried by exactly one route at a time and the gateway never moves it to another by
+    itself — a list to choose from is not a licence to hop — so this is the single moment
+    at which a verification acquires a route, and it is a conditional update for the same
+    reason the confirmation is: two selections can arrive together.
+
+    Nothing is placed here. Placement is the caller's act, after this returns `selected`.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET route = ? "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' AND route IS NULL "
+        "   AND expires_at > CURRENT_TIMESTAMP",
+        (route, verification_id, app_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "selected"
+    row = await get_verification(verification_id, app_id)
+    if row is None:
+        return "not_found"
+    if row["route"] is not None:
+        return "already_selected"
+    return "expired"
+
+
+async def set_carrying_route(verification_id: int, app_id: str, *, route: str) -> str:
+    """Point an open verification at the rung that actually carried it.
+
+    The one sanctioned move of a verification from one route to another, and the reason it
+    is not `select_route`: that one writes only where `route IS NULL`, because a consumer's
+    second choice must not be able to overwrite the first. This is the other case
+    entirely. The door claims the consumer's pick *before* a penny is spent — that claim is
+    what stops two selections from both walking the ladder and both buying the same code —
+    and which rung then carried is a **fact about what happened** rather than a choice.
+    Without this, the claim wins and the verification names a rung that declined it, which
+    is exactly what `phone-verification` forbids: an application told to expect a Telegram
+    message for a person the Gateway declined puts the wrong instruction on the screen, and
+    the person waits in the wrong place while a phone they are holding rings.
+
+    Answers `carried`, `ended` or `not_found`. A verification that has stopped being open
+    is never moved: on a paid rung that is money spent on a verification nobody is waiting
+    for any more, and the caller's warning line is what says so.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET route = ? "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP",
+        (route, verification_id, app_id),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "carried"
+    return "not_found" if await get_verification(verification_id, app_id) is None \
+        else "ended"
+
+
+async def shorten_verification_window(verification_id: int, *, ttl_seconds: int) -> None:
+    """Bring a verification's deadline in to this rung's own window, never out.
+
+    A rung may hold a shorter window than the capability's default and may not hold a
+    longer one: the deadline the application was told at creation is the ceiling, and a
+    configuration saying otherwise is clamped rather than obeyed. `MIN` does that in the
+    statement itself, so there is no read between the decision and the write.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE verifications "
+        "   SET expires_at = MIN(expires_at, datetime('now', ? || ' seconds')) "
+        " WHERE id = ? AND status = 'pending'",
+        (f"{int(ttl_seconds):+d}", verification_id),
+    )
+    await db.commit()
+
+
+async def fail_verification(verification_id: int, *, reason: str) -> bool:
+    """End an open verification with a named reason, and say whether this call did it.
+
+    Used where a verification stops being carryable for a reason that is not the clock:
+    the selected route lost the precondition it was offered on, or the modem went out of
+    service under it. "Expired" told to a person who did call, on time, from the right
+    number, is the gateway reporting the one thing that did not happen.
+
+    The boolean says whether this call is the one that ended it, which a caller wants for
+    its own log line. It is deliberately *not* what makes the announcement exactly-once —
+    that is the announcer's own claim — because a writer that both ends and announces is a
+    writer that can be added without announcing.
+    """
+    db = await get_db()
+    # Read before the statement that nulls it: this is the last moment the code is there
+    # to be taken out of a reason written from a vendor's words.
+    reason = _without_the_code(reason, await _code_of(verification_id))
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'failed', reason = ?, code = NULL "
+        " WHERE id = ? AND status = 'pending'",
+        (reason, verification_id),
+    )
+    await db.commit()
+    return cursor.rowcount == 1
+
+
+async def record_verification_rung(
+    verification_id: int, *, route: str, vendor_ref: str | None = None,
+    cost: float | None = None, outcome: str | None = None, reason: str | None = None,
+) -> int:
+    """One rung attempted, with what it cost and what became of it.
+
+    Per rung rather than per verification: a ladder has more than one, and a verification
+    that tried Telegram and then placed a call holds two vendor identifiers and two costs
+    against one code.
+    """
+    db = await get_db()
+    reason = _without_the_code(reason, await _code_of(verification_id))
+    async with db.execute(
+        "INSERT INTO verification_rungs "
+        "       (verification_id, route, vendor_ref, cost, outcome, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (verification_id, route, vendor_ref, cost, outcome, reason),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+_PAID_FOR_NUMBER = (
+    "SELECT COUNT(*) FROM verification_rungs r "
+    "  JOIN verifications v ON v.id = r.verification_id "
+    f" WHERE v.phone = ? AND r.verification_id <> ? AND r.route IN ({_PAID_PLACEHOLDERS}) "
+    "   AND r.started_at > datetime('now', ? || ' seconds')"
+)
+
+
+def _for_number(phone: str, verification_id: int, within_seconds: int) -> tuple:
+    """The parameters of `_PAID_FOR_NUMBER`, in its order."""
+    return (phone, verification_id, *_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}")
+
+
+async def claim_paid_rung(
+    verification_id: int, *, route: str, phone: str, outcome: str, gap_seconds: int,
+    per_minute: int, per_day: int, window_seconds: int,
+) -> int | None:
+    """Take this number's paid allowance and record the attempt, in one statement.
+
+    Answers the id of the row written, or `None` where the allowance refused it. This is
+    the whole of the norm: the limits are **decided and taken in one act** rather than
+    read by a gate and acted on afterwards. Read-then-act let two verifications for one
+    number — which this capability explicitly permits — both read an empty history, both
+    pass, and both reach a vendor inside the fifteen-second gap the gateway promised. The
+    claim on the route does not close that: it is keyed on the verification, and these are
+    two verifications. What is at stake is not the second call but the vendor holding the
+    number for ten hours.
+
+    The obvious remedy is forbidden and the shape is the one this schema already uses
+    where two requests arrive together: a single conditional statement, the way confirming
+    a code and consuming an attempt are each one conditional update. A row written first
+    and then read would be a paid attempt aged zero seconds against a minimum gap of
+    fifteen — it would refuse the very selection that wrote it.
+
+    🔴 **This verification's own rungs are excluded, and that is not an economy.** A ladder
+    claims its second paid rung while its first one's row is zero seconds old, so a count
+    that read its own walk would make the ladder unable to advance at all — the same trap,
+    one level deeper. They still count for every *other* request, which is what the norm
+    asks for: what the vendor counts is an authorisation placed, and one verification
+    places more than one.
+
+    The three conditions are the vendor's, and they are passed in rather than read here
+    because they are settings: the numbers are the vendor's and not ours.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "INSERT INTO verification_rungs (verification_id, route, outcome) "
+        "SELECT ?, ?, ? "
+        # The three limits, one clause each and one statement for all of them. Kept on
+        # separate lines with the limit each enforces named, so that a mutation can drop
+        # exactly one of them and a reader can see which is missing.
+        f" WHERE ({_PAID_FOR_NUMBER}) = 0 "   # the gap since the last attempt
+        f"   AND ({_PAID_FOR_NUMBER}) < ? "   # the ceiling per rolling minute
+        f"   AND ({_PAID_FOR_NUMBER}) < ?",   # the ceiling per rolling window
+        (verification_id, route, outcome,
+         *_for_number(phone, verification_id, gap_seconds),
+         *_for_number(phone, verification_id, 60), per_minute,
+         *_for_number(phone, verification_id, window_seconds), per_day),
+    )
+    await db.commit()
+    return cursor.lastrowid if cursor.rowcount == 1 else None
+
+
+async def paid_attempts_for_number(
+    phone: str, *, within_seconds: int, excluding_verification: int | None = None,
+) -> list[int]:
+    """How long ago each paid rung was attempted for this number, newest first.
+
+    Counted over the rungs rather than over the verifications, because the thing the
+    vendor counts is an authorisation placed and a verification may place more than one —
+    that is what a ladder is. Both paid rungs are counted together for the same reason.
+
+    Ages in whole seconds, by the database's clock, so that the gate comparing them is
+    comparing against the clock that wrote them.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT CAST(strftime('%s', 'now') - strftime('%s', r.started_at) AS INTEGER) "
+        "  FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id "
+        f" WHERE v.phone = ? AND r.verification_id <> ? "
+        f"   AND r.route IN ({_PAID_PLACEHOLDERS}) "
+        "   AND r.started_at > datetime('now', ? || ' seconds') "
+        " ORDER BY r.started_at DESC",
+        (phone, excluding_verification or -1, *_PAID_ROUTE_VALUES,
+         f"{-int(within_seconds):+d}"),
+    ) as cursor:
+        return [max(0, int(row[0])) for row in await cursor.fetchall()]
+
+
+async def paid_attempts_since(within_seconds: int) -> int:
+    """How many paid rungs this gateway has attempted in the last `within_seconds`.
+
+    Across every number and every application, and across **both** paid routes together.
+    That is the whole difference between this count and `paid_attempts_for_number`: the
+    vendors' limits are per number, and a loop over five hundred numbers violates none of
+    them while spending four hundred roubles. What is bounded here is the bill, and the
+    bill is one.
+
+    Every attempt counts, including the ones that turned out to cost nothing. A ceiling
+    that counted only confirmed charges would be blind to exactly the attempts most
+    likely to have cost money without saying so — an ability check that never answered
+    may have been confirmed and billed at the vendor without our ever learning its
+    `request_id`.
+
+    The window rolls, for the reason the per-number one does: this database stores naive
+    UTC and the vendors are Russian, and a calendar day read in the wrong zone resets
+    three hours early.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM verification_rungs "
+        f" WHERE route IN ({_PAID_PLACEHOLDERS}) "
+        "   AND started_at > datetime('now', ? || ' seconds')",
+        (*_PAID_ROUTE_VALUES, f"{-int(within_seconds):+d}"),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def verification_seconds_left(verification_id: int) -> int:
+    """How much of this verification's life is left, in whole seconds, by the database's
+    clock rather than ours.
+
+    The same clock that wrote the deadline, for the same reason every conditional update
+    here is a single statement: a lifetime computed against a second clock is a lifetime
+    that disagrees with the one the application was promised. Zero for a verification that
+    is gone or already past its deadline — a rung asked to carry that is being asked to
+    buy nothing.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT CAST(strftime('%s', expires_at) - strftime('%s', 'now') AS INTEGER) "
+        "  FROM verifications WHERE id = ?",
+        (verification_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row is None or row[0] is None:
+        return 0
+    return max(0, int(row[0]))
+
+
+async def set_rung_outcome(
+    rung_id: int, *, outcome: str, reason: str | None = None,
+    vendor_ref: str | None = None, cost: float | None = None,
+) -> None:
+    """Finish the row the ladder wrote before it contacted this rung.
+
+    The row is written first and updated here so that the order on disk is the order of
+    the money: a crash between a vendor's confirmation and our record would otherwise
+    leave a fee attributable to nothing. For the same reason `vendor_ref` and `cost` are
+    written only when this call has them — a carrier that already recorded a charge and
+    then failed must not have that charge erased by the outcome that follows it.
+
+    The one exception runs the other way: a rung the vendor has refunded keeps its spend
+    at nothing. Nothing in the ordinary sequence writes a cost after a refund — the
+    charge is recorded between the ability check and the send, and the refund arrives
+    with a callback long after — but the rule belongs at the write rather than in a note,
+    because a resurrected charge would be a bill nobody could explain.
+    """
+    db = await get_db()
+    reason = _without_the_code(reason, await _code_behind_rung(rung_id))
+    await db.execute(
+        "UPDATE verification_rungs "
+        "   SET outcome = ?, "
+        "       reason = COALESCE(?, reason), "
+        "       vendor_ref = COALESCE(?, vendor_ref), "
+        "       cost = CASE WHEN refunded THEN cost ELSE COALESCE(?, cost) END "
+        " WHERE id = ?",
+        (outcome, reason, vendor_ref, cost, rung_id),
+    )
+    await db.commit()
+
+
+async def verification_rungs(verification_id: int) -> list[aiosqlite.Row]:
+    """Every rung attempted for this verification, oldest first.
+
+    A ladder has more than one, and the question a support call asks — "what did this
+    person's login cost" — is answered by the list rather than by a last value.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM verification_rungs WHERE verification_id = ? "
+        " ORDER BY started_at, id",
+        (verification_id,),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def record_rung_delivery(
+    vendor_ref: str, *, route: str, outcome: str, reason: str | None = None,
+    refunded: bool = False,
+) -> int | None:
+    """Record a vendor's delivery outcome against the rung holding `vendor_ref`.
+
+    Returns the verification the rung belongs to, or None when no rung claims that
+    reference — which is not an error and not a rejection: a correctly signed callback
+    naming a request we have no record of is the vendor's, and arguing with it is not
+    this layer's job.
+
+    Matched on the pair, not on the reference alone. A vendor reference is unique at its
+    own vendor and this gateway has more than one; the day a second vendor issues the
+    same digits, an unqualified match would move the wrong rung.
+
+    `refunded` is written only when it is True. The column cannot say "the vendor did not
+    mention it", so the affirmative is the only thing it is allowed to assert, and what
+    the vendor actually said belongs in `reason`.
+
+    **A refund lowers the recorded spend to nothing rather than standing beside it as an
+    asterisk.** A verification whose fee came back cost nothing, and a ledger that keeps
+    the charge and files the refund next to it overstates the bill in the one direction
+    that makes the paid route look worse than it is — silently, because every reader
+    would have to remember to subtract. What the vendor actually said stays in `reason`,
+    which is where the vendor's own words belong; `refunded` stays as the fact.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, verification_id FROM verification_rungs "
+        " WHERE vendor_ref = ? AND route = ? ORDER BY started_at DESC, id DESC LIMIT 1",
+        (vendor_ref, route),
+    ) as cursor:
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    await db.execute(
+        "UPDATE verification_rungs SET outcome = ?, reason = ?, "
+        "       refunded = CASE WHEN ? THEN 1 ELSE refunded END, "
+        "       cost = CASE WHEN ? THEN 0 ELSE cost END "
+        " WHERE id = ?",
+        (outcome, reason, 1 if refunded else 0, 1 if refunded else 0, row["id"]),
+    )
+    await db.commit()
+    return row["verification_id"]
+
+
+async def rungs_awaiting_report(route: str) -> int:
+    """How many rungs of this route hold a vendor reference and no outcome from it yet.
+
+    That count is the size of one specific loss: the callback is the only path a refund
+    ever takes, so a credential rotated now drops the refund of every one of these. Asked
+    at the moment a signed callback is refused, because that is the moment an operator
+    can still act on it — either by putting the previous credential back, or by knowing
+    what the recorded spend is about to overstate.
+
+    A rung with no reference was never bought and has nothing to report.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM verification_rungs "
+        " WHERE route = ? AND vendor_ref IS NOT NULL "
+        "   AND (outcome IS NULL OR outcome = 'carried')",
+        (route,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return int(row[0]) if row else 0
+
+
+async def confirm_by_inbound_call(phone: str, *, method: str) -> int | None:
+    """Confirm the open `call_in` verification for this caller, at most once.
+
+    Returns the id confirmed, or None when the call confirmed nothing — no open
+    verification on that rung for that number, or one that had already closed.
+
+    A single conditional update, like the check door's, and for a sharper reason:
+    repetition is not an edge case here. The modem reports one call fifteen times in
+    sixteen seconds, so a read-then-write would see "pending" fourteen times after the
+    first confirmation and race itself.
+
+    Nothing about the call is required beyond its number, because nothing else is
+    carried. Attribution rests on the number and the single open window, which is why
+    the rung is separately forbidden from having two windows open on one number.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?, code = NULL, "
+        "       notified = 0 "
+        " WHERE id = (SELECT id FROM verifications "
+        "              WHERE phone = ? AND route = 'call_in' AND status = 'pending' "
+        "                AND expires_at > CURRENT_TIMESTAMP "
+        "              ORDER BY id LIMIT 1)",
+        (method, phone),
+    )
+    await db.commit()
+    if cursor.rowcount != 1:
+        return None
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE phone = ? AND route = 'call_in' AND status = 'confirmed' "
+        " ORDER BY confirmed_at DESC, id DESC LIMIT 1",
+        (phone,),
+    ) as c:
+        row = await c.fetchone()
+    return row[0] if row else None
+
+
+async def confirm_by_inbound_message(phone: str, *, code: str, method: str) -> int | None:
+    """Confirm on the pair of originating number **and** code. Neither half alone.
+
+    The code binds the arriving message to one open verification; the originating number
+    is what binds the person to the number. A message carrying a valid open code from
+    another number confirms nothing and consumes nothing, and a wrong code from the right
+    number leaves the verification pending — deliberately without spending an attempt,
+    because on this rung the only party who can spend them is the person themselves,
+    mistyping, and counting those locks a real person out of a barrier they are at.
+    """
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = ?, code = NULL, "
+        "       notified = 0 "
+        " WHERE id = (SELECT id FROM verifications "
+        "              WHERE phone = ? AND code = ? AND route = 'sms_in' "
+        "                AND status = 'pending' AND expires_at > CURRENT_TIMESTAMP "
+        "              ORDER BY id LIMIT 1)",
+        (method, phone, code),
+    )
+    await db.commit()
+    if cursor.rowcount != 1:
+        return None
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE phone = ? AND route = 'sms_in' AND status = 'confirmed' "
+        " ORDER BY confirmed_at DESC, id DESC LIMIT 1",
+        (phone,),
+    ) as c:
+        row = await c.fetchone()
+    return row[0] if row else None
+
+
+async def unnotified_terminal_verifications() -> list[aiosqlite.Row]:
+    """Verifications that reached a terminal state and have not been announced yet.
+
+    Every writer of a terminal state leaves `notified` at 0 for this to pick up, so that
+    "who tells the application" has one answer rather than one per writer — including the
+    expiry sweep, which has no privilege here despite holding its own list. A writer that
+    announced its own would be a writer somebody could add without announcing, and the
+    guard in `tests/test_verification_outcome_reaches_the_app.py` enforces exactly that.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, status, confirmed_by, reason, route FROM verifications "
+        " WHERE status != 'pending' AND notified = 0 ORDER BY id"
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def unresolved_rungs(route: str, *, within_seconds: float) -> list[aiosqlite.Row]:
+    """Rungs whose vendor took the work and never said what became of it.
+
+    The row the ladder wrote holds the vendor's reference, and the reference is the only
+    handle by which a call already paid for can be asked about afterwards. Rungs are
+    returned with their verification beside them because what is done with the answer
+    depends on whether anybody is still waiting: an open verification is failed or left
+    carrying, an ended one gets only its cost recorded — and the cost is not optional,
+    because a week whose recorded spend disagrees with the vendor's balance is exactly
+    what the two counters exist to catch.
+
+    `within_seconds` is a **give-up**, not a schedule. A rung older than it is left saying
+    `unresolved` for ever, which is the truthful record: past the verification's own
+    lifetime the answer can no longer change anything a person sees, and chasing it is a
+    request per sweep for ever against a vendor that rate-limits per IP.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT r.id AS rung_id, r.verification_id, r.vendor_ref, "
+        "       v.app_id, v.status, v.code "
+        "  FROM verification_rungs r "
+        "  JOIN verifications v ON v.id = r.verification_id "
+        " WHERE r.route = ? AND r.outcome = ? AND r.vendor_ref IS NOT NULL "
+        "   AND strftime('%s', 'now') - strftime('%s', r.started_at) <= ? "
+        " ORDER BY r.id",
+        (route, "unresolved", int(within_seconds)),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def mark_verification_notified(verification_id: int) -> bool:
+    """Claim the right to announce this one. True only for the caller that won it."""
+    db = await get_db()
+    cursor = await db.execute(
+        "UPDATE verifications SET notified = 1 WHERE id = ? AND notified = 0",
+        (verification_id,),
+    )
+    await db.commit()
+    return cursor.rowcount == 1
+
+
+async def has_open_verification(
+    phone: str, *, route: str, excluding: int | None = None,
+) -> bool:
+    """Whether this number already has a live verification on this rung.
+
+    Asked by the `call_in` rung, which carries no code: attribution there rests entirely
+    on the calling number and a single open window, so a second window on one number
+    would leave an arriving call belonging to neither with certainty.
+
+    `excluding` is for re-proving a rung *under* an open verification. Without it the
+    question answers itself — the verification being checked is the open window — and the
+    sweep that watches for dead routes would end every call verification a minute after
+    it was selected. The positive control in
+    `tests/test_verification_outcome_reaches_the_app.py` is what caught that.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM verifications "
+        " WHERE phone = ? AND route = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP AND id IS NOT ? LIMIT 1",
+        (phone, route, excluding),
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def get_verification(verification_id: int, app_id: str) -> aiosqlite.Row | None:
+    """Scoped to the owning application, and indistinguishable from missing to any other.
+
+    Unscoped reads exist elsewhere in this module for the admin console; this door is not
+    one of them. An application walking another's verifications by id does worse than
+    read them — it spends their attempts.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT * FROM verifications WHERE id = ? AND app_id = ?",
+        (verification_id, app_id),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def open_verifications_with_a_route() -> list[aiosqlite.Row]:
+    """Open verifications that are being carried by a rung right now.
+
+    Asked once a minute so that a rung which has died under one of them is noticed while
+    the person is still waiting, rather than at the deadline — where the only word the
+    gateway has left is "expired", which is the one thing that did not happen.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, phone, route FROM verifications "
+        " WHERE status = 'pending' AND route IS NOT NULL "
+        "   AND expires_at > CURRENT_TIMESTAMP"
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def check_verification(
+    verification_id: int, app_id: str, *, code: str, max_attempts: int,
+) -> str:
+    """Answer whether `code` is this verification's, and say what happened.
+
+    One of: `confirmed`, `wrong_code`, `already_confirmed`, `expired`, `no_attempts_left`,
+    `not_found`. A bare no is not an answer — the caller is a barrier with a person
+    standing at it, and "expired" and "wrong" mean different things to them.
+
+    `max_attempts` is required rather than defaulted on purpose. It is a setting, this
+    layer does not read settings, and a default here would be a quiet hole: a new call
+    site that forgot it would pass, silently bounded by somebody else's number.
+
+    Both the confirmation and the spent attempt are single conditional updates, decided on
+    the rows they changed. Reading the state and writing it back loses the race that
+    actually happens: a person double-taps Confirm, and both reads see a pending
+    verification with attempts to spare.
+    """
+    db = await get_db()
+    limit = int(max_attempts)
+    cursor = await db.execute(
+        "UPDATE verifications SET status = 'confirmed', "
+        "       confirmed_at = CURRENT_TIMESTAMP, confirmed_by = 'check', code = NULL "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP AND attempts < ? AND code = ?",
+        (verification_id, app_id, limit, code),
+    )
+    await db.commit()
+    if cursor.rowcount == 1:
+        return "confirmed"
+
+    # It was not confirmed. Spend an attempt under the same conditions, so that a wrong
+    # code costs one and a code offered to something already finished costs nothing.
+    cursor = await db.execute(
+        "UPDATE verifications SET attempts = attempts + 1 "
+        " WHERE id = ? AND app_id = ? AND status = 'pending' "
+        "   AND expires_at > CURRENT_TIMESTAMP AND attempts < ?",
+        (verification_id, app_id, limit),
+    )
+    await db.commit()
+    spent = cursor.rowcount == 1
+    if spent:
+        # The attempt that reaches the limit finishes the verification, and a finished
+        # verification stops holding a usable secret.
+        await db.execute(
+            "UPDATE verifications SET status = 'failed', reason = 'no_attempts_left', "
+            "       code = NULL "
+            " WHERE id = ? AND status = 'pending' AND attempts >= ?",
+            (verification_id, limit),
+        )
+        await db.commit()
+        return "wrong_code"
+
+    # Nothing changed, so why is a read — used to explain, never to decide.
+    row = await get_verification(verification_id, app_id)
+    if row is None:
+        return "not_found"
+    if row["status"] == "confirmed":
+        return "already_confirmed"
+    if row["status"] == "expired":
+        return "expired"
+    if row["status"] == "failed":
+        return "no_attempts_left"
+
+    # Still pending, so what refused the two updates above was either the deadline or the
+    # attempt ceiling, and the row's status cannot tell them apart. Both are reachable:
+    # the sweep may simply not have run yet, and the ceiling is a **setting** — lowering
+    # `verification_max_attempts` while verifications are open leaves rows pending with
+    # more attempts spent than the limit now allows.
+    #
+    # The deadline is asked of the database rather than compared here. The row's times
+    # were written by SQLite's clock, and comparing them against this process's is the
+    # two-clock mistake every conditional update in this module exists to avoid.
+    #
+    # Asked in this order because the deadline is the older word and the one the
+    # application was told at creation: a verification that is both out of time and out of
+    # attempts is over for the reason the person can see on their own screen.
+    if await _is_past_its_deadline(verification_id):
+        return "expired"
+    return "no_attempts_left"
+
+
+async def _is_past_its_deadline(verification_id: int) -> bool:
+    """Whether this row's deadline has passed, by the clock that wrote it."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT expires_at <= CURRENT_TIMESTAMP FROM verifications WHERE id = ?",
+        (verification_id,),
+    ) as cursor:
+        row = await cursor.fetchone()
+    return bool(row and row[0])
+
+
+async def expire_due_verifications() -> list[int]:
+    """Move open verifications past their deadline to expired, and hand back which.
+
+    The rows are left **unannounced** — `notified` stays 0 — because who tells the
+    application is one answer for the whole capability and not one per writer: the
+    announcer claims each row with a conditional update of its own, which is what makes
+    the telling exactly-once whichever writer ended it.
+
+    An expiry computed only when somebody next asks never fires for the case that matters.
+    The person who never got the call has no reason to come back with a code, so nothing
+    triggers a lazy check and the application waits for an answer that is never computed.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id FROM verifications "
+        " WHERE status = 'pending' AND expires_at <= CURRENT_TIMESTAMP"
+    ) as cursor:
+        ids = [row[0] for row in await cursor.fetchall()]
+    if not ids:
+        return []
+    marks = ",".join("?" * len(ids))
+    await db.execute(
+        # `window_expired`, not a second `expired`: the status already says the row ran
+        # out of time, and the word repeated says nothing it had not said — while the
+        # same word, from the vendor's delivery field, means a fee coming back. Every
+        # reading of `expired` in this capability names the field it came from.
+        f"UPDATE verifications SET status = 'expired', reason = 'window_expired', "
+        f"       code = NULL "
+        f" WHERE id IN ({marks}) AND status = 'pending'",
+        ids,
+    )
+    await db.commit()
+    return ids
+
+
+async def prune_verifications(max_age_days: int) -> int:
+    """Delete finished verifications past their retention, and report how many went.
+
+    Finished, not merely old: an open verification past the window is a person still
+    waiting, and deleting it answers their barrier with a 404.
+
+    🔴 **The rungs go with the verification, in this function and nowhere else.** Measured
+    on 21.09.2026: deleting the verification alone left its rungs standing and every guard
+    green. A rung is half of the record — the vendor's identifier for a message placed to
+    a subscriber's phone, and a `reason` filled from the vendor's own words — and
+    `verification_rungs` carries no retention of its own, so the half that survived was
+    the half a retention rule exists to remove. There is no foreign key to cascade through
+    (the table is written by id, never joined on delete), so the deletion is spelled out
+    here, at the one moment the row it belongs to stops existing.
+
+    The second delete is the same rule applied to rows that already lost their half before
+    this function learned to take them: nothing reads a rung except through a live
+    `verification_id`, so an orphan is unreachable by every screen and every counter, and
+    would otherwise sit in the table for as long as the database lives.
+    """
+    db = await get_db()
+    await db.execute(
+        "DELETE FROM verification_rungs "
+        " WHERE verification_id IN ("
+        "       SELECT id FROM verifications "
+        "        WHERE status != 'pending' "
+        "          AND created_at < datetime('now', ? || ' days'))",
+        (f"-{int(max_age_days)}",),
+    )
+    await db.execute(
+        "DELETE FROM verification_rungs "
+        " WHERE NOT EXISTS (SELECT 1 FROM verifications v "
+        "                    WHERE v.id = verification_rungs.verification_id)"
+    )
+    cursor = await db.execute(
+        "DELETE FROM verifications "
+        " WHERE status != 'pending' "
+        "   AND created_at < datetime('now', ? || ' days')",
+        (f"-{int(max_age_days)}",),
+    )
+    await db.commit()
+    return cursor.rowcount
+
+
+async def record_inbound_call(
+    *, phone: str | None = None, raw_number: str | None = None, outcome: str,
+    reason: str | None = None,
+) -> int:
+    """Write down one incoming call, whatever became of it.
+
+    Written on the first `RING`, before anything is known about who is calling: the event
+    is the call, and the number is a fact that may or may not follow it. A call recorded
+    only once its number arrived would lose exactly the calls this store exists to make
+    visible — the nameless ones.
+    """
+    db = await get_db()
+    async with db.execute(
+        "INSERT INTO inbound_calls (phone, raw_number, outcome, reason) "
+        "VALUES (?, ?, ?, ?)",
+        (phone, raw_number, outcome, reason),
+    ) as cursor:
+        await db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+
+async def attach_inbound_call_number(
+    call_id: int, *, phone: str | None, raw_number: str, outcome: str,
+    verification_id: int | None = None,
+) -> None:
+    """The first `+CLIP` of a call, joined to the row its `RING` opened.
+
+    `phone` stays None when what arrived is not a number we can match against; the raw
+    form is recorded regardless, so "who called us" has an answer even where "which
+    verification was this" does not.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE inbound_calls SET phone = ?, raw_number = ?, outcome = ?, "
+        "       verification_id = ? WHERE id = ?",
+        (phone, raw_number, outcome, verification_id, call_id),
+    )
+    await db.commit()
+
+
+async def count_inbound_calls() -> int:
+    db = await get_db()
+    async with db.execute("SELECT COUNT(*) FROM inbound_calls") as cursor:
+        return (await cursor.fetchone())[0]
+
+
+async def count_calls_without_number() -> int:
+    """How many calls arrived that nothing can be attributed by.
+
+    The only detector for a caller-ID subscription dropped without a `CFUN` cycle: the
+    gateway's record of its own `AT+CLIP=1` cannot see that happen, and a rate of
+    nameless calls can.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT COUNT(*) FROM inbound_calls WHERE phone IS NULL"
+    ) as cursor:
+        return (await cursor.fetchone())[0]
+
 
 async def delete_inbound(message_id: int) -> None:
     db = await get_db()
@@ -929,6 +1870,145 @@ async def _delete_refusal_reason(message_id: int) -> str:
         return "too_young"
     return "refused"
 
+
+
+# The outcome a rung carries when its vendor did not answer inside the bound: the fee may
+# have been confirmed and charged with the `request_id` never reaching us. Spelled here to
+# keep this module below `app.verification.ladder` rather than beside it, and kept equal to
+# `ladder.UNANSWERED` by a guard.
+POSSIBLY_CHARGED = "unanswered"
+
+
+def _spend_window(period: str) -> tuple[str, list]:
+    """The period clause for a spend query, bounded on when the rung was started.
+
+    On the rung's own clock rather than the verification's: what is being counted is
+    authorisations placed at a vendor, and a ladder can begin in one window and place its
+    second paid rung in the next.
+    """
+    lower = periods.bound(period)
+    if lower is None:
+        return "", []
+    return " AND r.started_at > datetime('now', ?)", [lower]
+
+
+async def verification_spend(period: str = "all") -> list[aiosqlite.Row]:
+    """What each paid rung cost in this period, and what it may have cost.
+
+    Four numbers per route, and they are four because folding any two of them together
+    loses the question somebody is asking:
+
+    - `attempts` — rows, so a spend of nothing can be told from a rung nobody used;
+    - `spend` — the vendors' own reported costs added up. A refund has already lowered its
+      row to zero (`record_rung_delivery`), so nothing here has to remember to subtract;
+    - `refunded` — how many of those rows came back. Kept visible beside a spend that has
+      already been reduced, because a number that silently shrank is one nobody can check;
+    - `possibly_charged` — a **count**, never a sum. An ability check that did not answer
+      inside the bound may have been confirmed and charged at the vendor, and there is no
+      figure to add: what exists is the number of times it happened. Folded into the spend
+      it would be a guess; left out altogether it is a balance that drifts for no reason.
+
+    Only routes that have a paid row appear. A free rung listed at zero invites the
+    question of which vendor it is with, and the modem has none.
+    """
+    where, params = _spend_window(period)
+    db = await get_db()
+    async with db.execute(
+        f"""
+        SELECT r.route                                              AS route,
+               COUNT(*)                                             AS attempts,
+               COALESCE(SUM(COALESCE(r.cost, 0)), 0)                AS spend,
+               SUM(CASE WHEN r.refunded = 1 THEN 1 ELSE 0 END)      AS refunded,
+               SUM(CASE WHEN r.outcome = ? THEN 1 ELSE 0 END)       AS possibly_charged
+          FROM verification_rungs r
+         WHERE r.route IN ({_PAID_PLACEHOLDERS}){where}
+         GROUP BY r.route
+         ORDER BY r.route
+        """,
+        [POSSIBLY_CHARGED, *_PAID_ROUTE_VALUES, *params],
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def verification_spend_by_app(period: str = "all") -> list[aiosqlite.Row]:
+    """Which application spent it, from the application recorded on each verification.
+
+    Applications that spent nothing are absent rather than listed at zero: "which
+    applications are there" is the apps page's question, and answering it here would make
+    a spend report grow a row every time somebody registers a consumer.
+    """
+    where, params = _spend_window(period)
+    db = await get_db()
+    async with db.execute(
+        f"""
+        SELECT v.app_id                                             AS app_id,
+               COUNT(*)                                             AS attempts,
+               COALESCE(SUM(COALESCE(r.cost, 0)), 0)                AS spend,
+               SUM(CASE WHEN r.outcome = ? THEN 1 ELSE 0 END)       AS possibly_charged
+          FROM verification_rungs r
+          JOIN verifications v ON v.id = r.verification_id
+         WHERE r.route IN ({_PAID_PLACEHOLDERS}){where}
+         GROUP BY v.app_id
+         ORDER BY spend DESC, v.app_id
+        """,
+        [POSSIBLY_CHARGED, *_PAID_ROUTE_VALUES, *params],
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+# What `verifications.routed_operator` holds where the lookup did not answer. The rule's
+# own entry for that case, spelled the same way (`app.verification.rule.UNKNOWN`) and kept
+# equal to it by a guard, because the two are one decision: the store writes the word and
+# the rule reads it, and apart they drift into a count that matches nothing.
+#
+# Spelled here rather than imported to keep this module free of the verification package
+# above it; `app.verification.routes` is the one exception already made, and it holds
+# vocabulary rather than behaviour.
+ROUTED_WITHOUT_A_KNOWN_OPERATOR = "?"
+
+
+async def record_verification_routing(
+    verification_id: int, *, operator: str | None
+) -> None:
+    """The operator this verification's ladder was routed for, recorded once per walk.
+
+    On the verification rather than on each rung because it is one fact per walk: the
+    ladder is the rule's answer for this subscriber's operator, and every rung of it was
+    routed for the same one.
+
+    `None` becomes `?` at this border rather than at the caller's. A caller that has to
+    remember to convert is a caller that can forget, and what it would write instead is a
+    NULL — indistinguishable from a row written before the column existed, which is
+    precisely the invisibility the requirement is about.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE verifications SET routed_operator = ? WHERE id = ?",
+        (operator or ROUTED_WITHOUT_A_KNOWN_OPERATOR, verification_id),
+    )
+    await db.commit()
+
+
+async def record_message_routing(
+    message_id: int, *, route: str, operator: str | None
+) -> None:
+    """What the rule answered for this message, and the operator it was answered for.
+
+    Written at the moment the sender decides, because that is the only moment both facts
+    are true together: a lookup that resolves the number afterwards would make this
+    message look as though it had been routed for an operator nobody knew at the time.
+
+    The pair is the point. `routed_operator IS NULL` on its own cannot tell an unresolved
+    operator from a row older than the column; `routed_route IS NOT NULL AND
+    routed_operator IS NULL` is exactly "routed without a known operator", which is the
+    case the rule's cost is read from.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE messages SET routed_route = ?, routed_operator = ? WHERE id = ?",
+        (route, operator, message_id),
+    )
+    await db.commit()
 
 
 async def get_number_operator(phone: str) -> aiosqlite.Row | None:
@@ -1100,9 +2180,55 @@ async def stale_part_groups(max_age_seconds: int) -> list[aiosqlite.Row]:
 async def list_apps() -> list[aiosqlite.Row]:
     db = await get_db()
     async with db.execute(
-        "SELECT id, token, description, is_active, created_at FROM apps ORDER BY created_at DESC, id"
+        "SELECT id, token, description, is_active, may_spend, created_at FROM apps ORDER BY created_at DESC, id"
     ) as cursor:
         return list(await cursor.fetchall())
+
+
+async def get_app(app_id: str) -> aiosqlite.Row | None:
+    """One application by its id, or None when there is no such application.
+
+    Read per call rather than cached, because both switches on the row have to take
+    effect without a restart — a restart drops sending sessions, which is the deploy the
+    configurable rule exists to avoid, merely spelled differently.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, is_active, may_spend FROM apps WHERE id = ?", (app_id,)
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def get_app_full(app_id: str) -> aiosqlite.Row | None:
+    """One application's row for its own admin page: id, description and both
+    switches. `get_app` above stays as it is — its callers on the send path have no
+    use for the description — this is the app-detail page's own read."""
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, description, is_active, may_spend FROM apps WHERE id = ?",
+        (app_id,),
+    ) as cursor:
+        return await cursor.fetchone()
+
+
+async def app_may_spend(app_id: str) -> bool:
+    """Whether this application holds the entitlement to spend on a paid route.
+
+    False for an application that does not exist, which is the same answer as one
+    switched off: a lookup that had no opinion about an unknown id would let a deleted
+    application go on buying verifications.
+    """
+    row = await get_app(app_id)
+    return bool(row is not None and row["may_spend"])
+
+
+async def set_app_may_spend(app_id: str, allowed: bool) -> None:
+    """Grant or revoke the entitlement. The operator's decision, and revocable."""
+    db = await get_db()
+    await db.execute(
+        "UPDATE apps SET may_spend = ? WHERE id = ?", (1 if allowed else 0, app_id)
+    )
+    await db.commit()
 
 
 async def create_app(app_id: str, token: str, description: str = "") -> None:
@@ -1134,4 +2260,237 @@ async def app_message_count(app_id: str) -> int:
 async def delete_app(app_id: str) -> None:
     db = await get_db()
     await db.execute("DELETE FROM apps WHERE id = ?", (app_id,))
+    await db.commit()
+
+
+async def verifications_for_phone(
+    phone: str, limit: int = 20
+) -> list[aiosqlite.Row]:
+    """This number's verifications, newest first, **without the code**.
+
+    The columns are listed rather than starred, and that is the guarantee rather than a
+    style: `SELECT *` here would hand a live secret to a template, and the one screen
+    that renders a subscriber's number renders it next to their conversation. A column
+    added to the table later must be added here deliberately.
+
+    Capped for the reason the dialog is: the panel is re-rendered after every action on
+    the list page.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT id, app_id, status, route, confirmed_by, reason, attempts, "
+        "       created_at, expires_at, confirmed_at "
+        "  FROM verifications WHERE phone = ? "
+        " ORDER BY created_at DESC, id DESC LIMIT ?",
+        (phone, limit),
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def rungs_for_verifications(
+    verification_ids: list[int],
+) -> dict[int, list[aiosqlite.Row]]:
+    """Every rung of each of these verifications, oldest first, keyed by verification.
+
+    One query rather than one per verification: the panel is rendered inside the list
+    page, and a query per row is a cost paid on every redirect of every action.
+    """
+    if not verification_ids:
+        return {}
+    db = await get_db()
+    marks = ",".join("?" for _ in verification_ids)
+    grouped: dict[int, list[aiosqlite.Row]] = {v: [] for v in verification_ids}
+    async with db.execute(
+        f"SELECT * FROM verification_rungs WHERE verification_id IN ({marks}) "
+        " ORDER BY started_at, id",
+        tuple(verification_ids),
+    ) as cursor:
+        async for row in cursor:
+            grouped[row["verification_id"]].append(row)
+    return grouped
+
+
+# --- Ported from the messengers branch (reach-people-in-messengers) for the `tg_user`
+# verification rung. SG-32. Only the six functions the rung actually calls are brought
+# over — `record_reachability_question`, `last_reach_per_route`, `routes_ever_offered`,
+# `route_health`, `withhold_from_messengers`/`allow_messengers` and `disclosures_for`
+# belong to the reachability door and the aggregate alert, neither of which exists on
+# this branch, and porting them here would be code with no caller. ---
+
+
+async def record_rung(
+    *,
+    message_id: int | None,
+    phone: str,
+    route: str,
+    outcome: str,
+    reason: str = "",
+    brand: str = "",
+    account: str = "",
+    offered: bool,
+) -> None:
+    """Append one rung's outcome. Task 2.8 on the messengers branch, append-only by
+    construction.
+
+    The source of the rate windows, of the route alerting, and of the answer to a person
+    who asks how their number was used.
+
+    `offered` has no default on purpose. Every value it could default to is a lie for some
+    caller — `miss` means the route was asked, `unavailable` may mean either — and a
+    silent default would put the lie in the one column the reachability door trusts to
+    tell "we never tried" from "it did not answer". The writer is made to say which.
+    """
+    db = await get_db()
+    await db.execute(
+        """
+        INSERT INTO rung_ledger
+            (message_id, phone, route, brand, account, outcome, offered, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (message_id, phone, route, brand or None, account or None, outcome,
+         1 if offered else 0, reason or None),
+    )
+    await db.commit()
+
+
+async def accounts_that_have_written_to(phone: str) -> set[tuple[str, str]]:
+    """Task 5.3 on the messengers branch — the (route, account) pairs that have had a
+    message *accepted* to this number, which is the set of conversations this person has
+    already seen opened.
+
+    **The predicate is `outcome = 'accepted'`, not `offered = 1`.** `offered` is the unit
+    of the reachability door and of the aggregate alert, and it is the wrong unit here
+    twice over. A rung that resolved the number and missed was offered, disclosed the
+    number to the vendor and wrote nothing — read as "already written to", the person
+    would receive every future code bare from an account they have never heard from. The
+    disclosure ledger has the same defect for the same reason: it records the *offer*,
+    before any verdict exists.
+
+    `indeterminate` is deliberately absent too. It means the send may have left the
+    process, and treating "may have" as "did" is the direction that never introduces at
+    all; the other direction costs one redundant sentence to a person who already had it.
+
+    **The key is the pair, never the route alone and never the brand.** A recipient sees
+    an account. The account behind a brand is replaced the day one is banned, and that
+    replacement opens a conversation the person has never seen — keyed on the brand it
+    would open with a bare payment code.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT DISTINCT route, account FROM rung_ledger "
+        "WHERE phone = ? AND outcome = 'accepted' AND account IS NOT NULL AND account <> ''",
+        (phone,),
+    ) as cursor:
+        return {(row["route"], row["account"]) async for row in cursor}
+
+
+async def is_withheld_from_messengers(phone: str) -> bool:
+    """Whether this number is withheld from messenger lookup.
+
+    Kept apart from `is_phone_blocked` deliberately, and the two must never be folded: a
+    refusal to be written to in Telegram is not consent to stop receiving SMS, and a
+    blacklisted number is not a person who asked a messenger account to leave them alone.
+    Folding either into the other cuts somebody off from their codes entirely.
+
+    A boolean here and not in the reachability door, which forbids them, because these are
+    different kinds of fact. Reachability is an observation about the world that decays as
+    SIMs change hands; this is a decision we recorded, and it is true until it is revoked.
+    """
+    db = await get_db()
+    async with db.execute(
+        "SELECT 1 FROM messenger_suppressions WHERE phone = ? LIMIT 1", (phone,)
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def record_disclosure(*, phone: str, route: str, account: str | None = None) -> None:
+    """A number was sent to a vendor. Whatever the outcome — resolution discloses it
+    before any verdict is reached, so a miss is a disclosure too."""
+    db = await get_db()
+    await db.execute(
+        "INSERT INTO messenger_disclosures (phone, route, account) VALUES (?, ?, ?)",
+        (phone, route, account),
+    )
+    await db.commit()
+
+
+async def claim_rate_allowance(
+    *,
+    message_id: int,
+    route: str,
+    account: str,
+    phone: str,
+    per_hour: int,
+    per_day: int,
+    recipient_window_seconds: int,
+) -> bool:
+    """Consume one unit of `account`'s allowance for this send. Task 3.4 on the
+    messengers branch.
+
+    True when the claim was granted and the route may be offered the message; False when
+    any bound is already spent, which the ladder reports as `unavailable`.
+
+    **One statement, and that is the mechanism rather than a tidiness.** A count read in
+    one await and an insert written in the next hands the last remaining slot to both of
+    two concurrent sends: the second coroutine reads an allowance the first has claimed
+    and not yet written. Everything the decision rests on is therefore evaluated inside
+    the insert, where no other coroutine can run.
+
+    Three bounds, two of them about us and one about the person:
+
+    - the rolling hour and the rolling day on the account, counting **every** claim,
+      settled or not. The vendor is asked to resolve the number before it is asked to
+      send, so a lookup that found nobody still spent the budget this bound holds down;
+    - the recipient window, counting only claims that **may have reached** somebody and
+      only from *another* account. One account writing twice is one conversation; two
+      accounts inside the window is the pattern that gets both of them reported.
+
+    `ON CONFLICT DO NOTHING` carries the "cannot be granted twice for the same send" half
+    of the rule. It is not an integrity error deliberately: an exception here would escape
+    the ladder's per-route containment and lose the message entirely, where a refusal
+    costs it only this rung.
+    """
+    db = await get_db()
+    async with db.execute(
+        """
+        INSERT INTO messenger_rate_claims (message_id, route, account, phone)
+        SELECT ?, ?, ?, ?
+        WHERE (SELECT COUNT(*) FROM messenger_rate_claims
+               WHERE account = ? AND claimed_at > datetime('now', ?)) < ?
+          AND (SELECT COUNT(*) FROM messenger_rate_claims
+               WHERE account = ? AND claimed_at > datetime('now', ?)) < ?
+          AND NOT EXISTS (
+               SELECT 1 FROM messenger_rate_claims
+               WHERE phone = ? AND account <> ? AND may_have_reached = 1
+                 AND claimed_at > datetime('now', ?))
+        ON CONFLICT (message_id, route) DO NOTHING
+        """,
+        (
+            message_id, route, account, phone,
+            account, "-3600 seconds", per_hour,
+            account, "-86400 seconds", per_day,
+            phone, account, f"-{int(recipient_window_seconds)} seconds",
+        ),
+    ) as cursor:
+        granted = cursor.rowcount == 1
+    await db.commit()
+    return granted
+
+
+async def settle_rate_claim(*, message_id: int, route: str, may_have_reached: bool) -> None:
+    """Record whether the send this claim paid for may have reached the person.
+
+    Only the recipient window reads it. The account's own bound counts the claim either
+    way, because the account was put in front of the vendor either way.
+
+    A settlement for a claim that was never granted is a no-op rather than an error: the
+    ladder settles the rung it claimed, and a route refused at the bound has nothing to
+    settle.
+    """
+    db = await get_db()
+    await db.execute(
+        "UPDATE messenger_rate_claims SET may_have_reached = ? "
+        "WHERE message_id = ? AND route = ?",
+        (1 if may_have_reached else 0, message_id, route),
+    )
     await db.commit()

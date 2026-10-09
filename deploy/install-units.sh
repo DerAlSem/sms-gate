@@ -97,6 +97,7 @@ install_one 644 "$SRC/sms-gate.service"                    /etc/systemd/system/s
 install_one 644 "$SRC/sms-gate-notify@.service"            /etc/systemd/system/sms-gate-notify@.service
 
 install_one 755 "$SRC/wwan-backup/wwan-backup.sh"          /usr/local/sbin/wwan-backup
+install_one 644 "$SRC/wwan-backup/10-wwan0.link"         /etc/systemd/network/10-wwan0.link
 install_one 644 "$SRC/wwan-backup/wwan-backup.service"     /etc/systemd/system/wwan-backup.service
 install_one 644 "$SRC/wwan-backup/wwan-watchdog.service"   /etc/systemd/system/wwan-watchdog.service
 install_one 644 "$SRC/wwan-backup/wwan-watchdog.timer"     /etc/systemd/system/wwan-watchdog.timer

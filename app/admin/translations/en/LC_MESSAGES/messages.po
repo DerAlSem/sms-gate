@@ -3,7 +3,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-08-01 14:56+0300\n"
+"POT-Creation-Date: 2026-09-26 21:41+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: en\n"
@@ -13,6 +13,622 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+
+#: app/admin/settings_layout.py:33
+msgid "Subscriber's call to our number"
+msgstr ""
+
+#: app/admin/settings_layout.py:34
+msgid "Subscriber's SMS to our number"
+msgstr ""
+
+#: app/admin/settings_layout.py:35
+msgid "SMS carrying the code"
+msgstr ""
+
+#: app/admin/settings_layout.py:36
+msgid "Flash call (uCaller)"
+msgstr ""
+
+#: app/admin/settings_layout.py:37
+msgid "Telegram Gateway"
+msgstr ""
+
+#: app/admin/settings_layout.py:38 app/admin/templates/settings.html:113
+msgid "Telegram account"
+msgstr ""
+
+#: app/admin/settings_layout.py:39
+msgid "MAX account"
+msgstr ""
+
+#: app/admin/settings_layout.py:40
+msgid "Application's bot"
+msgstr ""
+
+#: app/admin/settings_layout.py:69
+msgid "Modem and sending"
+msgstr ""
+
+#: app/admin/settings_layout.py:70
+msgid "Max parts per multipart SMS"
+msgstr ""
+
+#: app/admin/settings_layout.py:71
+msgid ""
+"How many parts one SMS may be split into. Longer text is refused before "
+"sending, rather than sent cut short."
+msgstr ""
+
+#: app/admin/settings_layout.py:73
+msgid "Retry delays for a failed send"
+msgstr ""
+
+#: app/admin/settings_layout.py:74
+msgid ""
+"How many seconds to wait before each retry after a transient send "
+"failure. As many delays as retries. None at all means one attempt only, "
+"no retry."
+msgstr ""
+
+#: app/admin/settings_layout.py:77
+msgid "Auto-recover the modem"
+msgstr ""
+
+#: app/admin/settings_layout.py:78
+msgid "Automatically recover the modem when it loses network registration."
+msgstr ""
+
+#: app/admin/settings_layout.py:79
+msgid "Recover on repeated send failures too"
+msgstr ""
+
+#: app/admin/settings_layout.py:80
+msgid ""
+"Also treat repeated send failures as a reason to recover the modem. Off "
+"means only lost registration triggers recovery."
+msgstr ""
+
+#: app/admin/settings_layout.py:82
+msgid "Default country for phone numbers"
+msgstr ""
+
+#: app/admin/settings_layout.py:83
+msgid "ISO country code used to validate phone numbers, e.g. RU, US, GB."
+msgstr ""
+
+#: app/admin/settings_layout.py:84
+msgid "Give up waiting for delivery after"
+msgstr ""
+
+#: app/admin/settings_layout.py:85
+msgid "Seconds after which a message stuck as \"sent\" is marked \"expired\"."
+msgstr ""
+
+#: app/admin/settings_layout.py:86
+msgid "Block a number after this many failures"
+msgstr ""
+
+#: app/admin/settings_layout.py:87
+msgid "How many permanent failures in a row before a number is blocked."
+msgstr ""
+
+#: app/admin/settings_layout.py:89
+msgid "Telegram alerts"
+msgstr ""
+
+#: app/admin/settings_layout.py:90
+msgid "Telegram bot token"
+msgstr ""
+
+#: app/admin/settings_layout.py:91
+msgid ""
+"The alerting bot's own API token. Blank disables Telegram alerting "
+"entirely."
+msgstr ""
+
+#: app/admin/settings_layout.py:93
+msgid "Where alerts go — the Telegram chat"
+msgstr ""
+
+#: app/admin/settings_layout.py:94
+msgid "The chat id alerts are sent to."
+msgstr ""
+
+#: app/admin/settings_layout.py:95
+msgid "Name shown in notifications"
+msgstr ""
+
+#: app/admin/settings_layout.py:96
+msgid ""
+"Label shown in every notification, so alerts from several gateways can be"
+" told apart. Blank uses the server's hostname."
+msgstr ""
+
+#: app/admin/settings_layout.py:98
+msgid "Notify on system errors"
+msgstr ""
+
+#: app/admin/settings_layout.py:99
+msgid "Send crashes and exceptions (error-level log records) to Telegram."
+msgstr ""
+
+#: app/admin/settings_layout.py:100
+msgid "Notify when a send fails"
+msgstr ""
+
+#: app/admin/settings_layout.py:101
+msgid "Notify when an outbound SMS fails to send."
+msgstr ""
+
+#: app/admin/settings_layout.py:102
+msgid "Notify on delivery failure"
+msgstr ""
+
+#: app/admin/settings_layout.py:103
+msgid "Notify on a delivery failure, or when a number is blacklisted."
+msgstr ""
+
+#: app/admin/settings_layout.py:104
+msgid "Notify on an unmatched delivery report"
+msgstr ""
+
+#: app/admin/settings_layout.py:105
+msgid ""
+"Notify when a delivery report could not be matched to any message. The "
+"report itself is recorded either way."
+msgstr ""
+
+#: app/admin/settings_layout.py:107
+msgid "Notify on every inbound SMS"
+msgstr ""
+
+#: app/admin/settings_layout.py:108
+msgid "Notify on every inbound SMS received. Can be noisy on a busy gateway."
+msgstr ""
+
+#: app/admin/settings_layout.py:109
+msgid "Notify when an inbound webhook fails"
+msgstr ""
+
+#: app/admin/settings_layout.py:110
+msgid ""
+"Notify when delivering an inbound SMS to the application's webhook fails "
+"— otherwise the drop is silent."
+msgstr ""
+
+#: app/admin/settings_layout.py:112
+msgid "Notify when a route is refused"
+msgstr ""
+
+#: app/admin/settings_layout.py:113
+msgid "Notify when a route is refused, unreadable, or cannot be attempted at all."
+msgstr ""
+
+#: app/admin/settings_layout.py:115
+msgid "Allow replying to alerts to send an SMS"
+msgstr ""
+
+#: app/admin/settings_layout.py:116
+msgid ""
+"Reply to a notification in Telegram to send an SMS back. Takes effect "
+"after a restart."
+msgstr ""
+
+#: app/admin/settings_layout.py:119
+msgid "Number verification"
+msgstr ""
+
+#: app/admin/settings_layout.py:120
+msgid "Order of verification rungs"
+msgstr ""
+
+#: app/admin/settings_layout.py:121
+msgid ""
+"Rungs are tried top to bottom, cheapest first. A rung nothing can prove "
+"is never offered, wherever it stands."
+msgstr ""
+
+#: app/admin/settings_layout.py:123
+msgid "The gateway's own phone number"
+msgstr ""
+
+#: app/admin/settings_layout.py:124
+msgid ""
+"The number a subscriber must call or text. Blank means the rungs that "
+"need it are never offered."
+msgstr ""
+
+#: app/admin/settings_layout.py:126
+msgid "How long a verification stays open"
+msgstr ""
+
+#: app/admin/settings_layout.py:127
+msgid "Seconds before an open verification expires."
+msgstr ""
+
+#: app/admin/settings_layout.py:128
+msgid "How long the call-in rung stays open"
+msgstr ""
+
+#: app/admin/settings_layout.py:129
+msgid ""
+"Seconds a call_in verification stays open; capped by how long the "
+"verification itself stays open, above."
+msgstr ""
+
+#: app/admin/settings_layout.py:131
+msgid "Wrong codes allowed"
+msgstr ""
+
+#: app/admin/settings_layout.py:132
+msgid ""
+"How many wrong codes are tolerated before a verification stops accepting "
+"any."
+msgstr ""
+
+#: app/admin/settings_layout.py:134
+msgid "SMS wording for verification codes"
+msgstr ""
+
+#: app/admin/settings_layout.py:135
+msgid ""
+"Set on each application's own page (Apps), not here — an application with"
+" no template there never gets a code by SMS."
+msgstr ""
+
+#: app/admin/settings_layout.py:138
+msgid "Routes by operator"
+msgstr ""
+
+#: app/admin/settings_layout.py:139
+msgid "Which way out each operator takes"
+msgstr ""
+
+#: app/admin/settings_layout.py:140
+msgid ""
+"Rungs are tried top to bottom for each operator. \"Any other operator\" "
+"answers for one with no row of its own; \"Not resolved\" answers when the"
+" operator could not be told at all; \"Refuse\" means not sending at all."
+msgstr ""
+
+#: app/admin/settings_layout.py:144
+msgid "Flag a routing rule after this many days"
+msgstr ""
+
+#: app/admin/settings_layout.py:145
+msgid ""
+"Report a routing-rule entry that has stood this many days without being "
+"revisited — a rule set during an outage can outlive it."
+msgstr ""
+
+#: app/admin/settings_layout.py:147
+msgid "Look up the operator for a number"
+msgstr ""
+
+#: app/admin/settings_layout.py:148
+msgid "Enable looking up a number's operator and region."
+msgstr ""
+
+#: app/admin/settings_layout.py:150
+msgid "Vendors"
+msgstr ""
+
+#: app/admin/settings_layout.py:151
+msgid "Telegram Gateway API token"
+msgstr ""
+
+#: app/admin/settings_layout.py:152
+msgid ""
+"Access token for the Telegram Gateway verification rung. Blank means that"
+" rung is never offered."
+msgstr ""
+
+#: app/admin/settings_layout.py:154
+msgid "Telegram Gateway sender channel"
+msgstr ""
+
+#: app/admin/settings_layout.py:155
+msgid ""
+"Username of the verified Telegram channel codes are sent from. Blank uses"
+" the vendor's own sender."
+msgstr ""
+
+#: app/admin/settings_layout.py:157
+msgid "This gateway's public address for delivery reports"
+msgstr ""
+
+#: app/admin/settings_layout.py:159
+msgid ""
+"This gateway's own public HTTPS address, so the Telegram Gateway can "
+"report deliveries back to it, e.g. https://sms.example.org. Blank means "
+"no delivery reports and no refunds are ever recorded."
+msgstr ""
+
+#: app/admin/settings_layout.py:162
+msgid "uCaller secret key"
+msgstr ""
+
+#: app/admin/settings_layout.py:163
+msgid ""
+"The secret key half of the uCaller credential, from the cabinet under "
+"\"Мои сервисы\". Blank means the flash_call rung is never offered."
+msgstr ""
+
+#: app/admin/settings_layout.py:165
+msgid "uCaller service id"
+msgstr ""
+
+#: app/admin/settings_layout.py:166
+msgid ""
+"The service id half of the uCaller credential, the second half of the "
+"pair above."
+msgstr ""
+
+#: app/admin/settings_layout.py:168
+msgid "Messenger accounts and brands"
+msgstr ""
+
+#: app/admin/settings_layout.py:169
+msgid ""
+"JSON: the account each brand owns on each messenger. Which application "
+"may send under which brand is set on that application's own page (Apps), "
+"not here."
+msgstr ""
+
+#: app/admin/settings_layout.py:172
+msgid "Messenger sending limits"
+msgstr ""
+
+#: app/admin/settings_layout.py:173
+msgid ""
+"JSON: hourly and daily sending maxima per account, and the minimum time "
+"between two messages to the same recipient."
+msgstr ""
+
+#: app/admin/settings_layout.py:176
+msgid "Money limits and protection"
+msgstr ""
+
+#: app/admin/settings_layout.py:177
+msgid "Paid verifications allowed per hour"
+msgstr ""
+
+#: app/admin/settings_layout.py:178
+msgid ""
+"How many paid rungs (call or Telegram) this gateway may attempt per "
+"rolling hour, across every number and application together."
+msgstr ""
+
+#: app/admin/settings_layout.py:180
+msgid "Paid verifications allowed per day"
+msgstr ""
+
+#: app/admin/settings_layout.py:181
+msgid ""
+"How many paid rungs this gateway may attempt per rolling day, across "
+"every number and application together."
+msgstr ""
+
+#: app/admin/settings_layout.py:183
+msgid "Alert below this Telegram Gateway balance"
+msgstr ""
+
+#: app/admin/settings_layout.py:184
+msgid ""
+"Alert when the last-seen Telegram Gateway balance falls below this, in "
+"the vendor's own units."
+msgstr ""
+
+#: app/admin/settings_layout.py:186
+msgid "Alert below this uCaller balance"
+msgstr ""
+
+#: app/admin/settings_layout.py:187
+msgid ""
+"Alert when the uCaller balance falls below this. 0 means not configured —"
+" there is no account to watch yet."
+msgstr ""
+
+#: app/admin/settings_layout.py:189
+msgid "Minimum time between two paid attempts"
+msgstr ""
+
+#: app/admin/settings_layout.py:190
+msgid ""
+"Seconds that must pass between two paid verification attempts on the same"
+" number."
+msgstr ""
+
+#: app/admin/settings_layout.py:192
+msgid "Paid attempts per number per minute"
+msgstr ""
+
+#: app/admin/settings_layout.py:193
+msgid "How many paid attempts one number may have within a rolling minute."
+msgstr ""
+
+#: app/admin/settings_layout.py:194
+msgid "Paid attempts per number per day"
+msgstr ""
+
+#: app/admin/settings_layout.py:195
+msgid "How many paid attempts one number may have within a rolling day."
+msgstr ""
+
+#: app/admin/settings_layout.py:197
+msgid "Webhooks"
+msgstr ""
+
+#: app/admin/settings_layout.py:198
+msgid "Inbound SMS webhooks"
+msgstr ""
+
+#: app/admin/settings_layout.py:199
+msgid ""
+"Where an inbound SMS goes: by the text's prefix, to an application's "
+"webhook."
+msgstr ""
+
+#: app/admin/settings_layout.py:201
+msgid "Delivery status webhooks"
+msgstr ""
+
+#: app/admin/settings_layout.py:202
+msgid "Set on each application's own page (Apps), not here."
+msgstr ""
+
+#: app/admin/settings_layout.py:204
+msgid "Advanced"
+msgstr ""
+
+#: app/admin/settings_layout.py:205
+msgid "Suppress repeated identical alerts for"
+msgstr ""
+
+#: app/admin/settings_layout.py:206
+msgid "Seconds during which an identical alert is not sent again."
+msgstr ""
+
+#: app/admin/settings_layout.py:207
+msgid "Backup relay for alerts"
+msgstr ""
+
+#: app/admin/settings_layout.py:208
+msgid ""
+"Base URL of a relay that can reach Telegram when this host cannot. Tried "
+"first; the direct route is the fallback. Blank disables the relay."
+msgstr ""
+
+#: app/admin/settings_layout.py:211
+msgid "Webhook POST retries"
+msgstr ""
+
+#: app/admin/settings_layout.py:212
+msgid "How many times delivery of an inbound webhook is retried."
+msgstr ""
+
+#: app/admin/settings_layout.py:213
+msgid "Webhook POST timeout"
+msgstr ""
+
+#: app/admin/settings_layout.py:214
+msgid "Seconds to wait for a webhook POST to answer."
+msgstr ""
+
+#: app/admin/settings_layout.py:215
+msgid "Precondition probe budget"
+msgstr ""
+
+#: app/admin/settings_layout.py:216
+msgid ""
+"Seconds allowed for the whole set of precondition probes together, before"
+" offering a rung."
+msgstr ""
+
+#: app/admin/settings_layout.py:218
+msgid "Verification ladder time budget"
+msgstr ""
+
+#: app/admin/settings_layout.py:219
+msgid ""
+"Seconds allowed for the whole ladder once a rung has been selected — one "
+"bound for every rung together, never one each."
+msgstr ""
+
+#: app/admin/settings_layout.py:221
+msgid "How stale a proof may be"
+msgstr ""
+
+#: app/admin/settings_layout.py:222
+msgid ""
+"Refuse a route whose precondition was last proven longer ago than this, "
+"in seconds."
+msgstr ""
+
+#: app/admin/settings_layout.py:224
+msgid "Keep finished verifications for"
+msgstr ""
+
+#: app/admin/settings_layout.py:225
+msgid "Delete finished verifications after this many days."
+msgstr ""
+
+#: app/admin/settings_layout.py:226
+msgid "Length of the daily ceiling window"
+msgstr ""
+
+#: app/admin/settings_layout.py:227
+msgid ""
+"The window the daily paid-attempt ceilings count in, rolling backwards "
+"from now, in hours."
+msgstr ""
+
+#: app/admin/settings_layout.py:230
+msgid "Callback signature time tolerance"
+msgstr ""
+
+#: app/admin/settings_layout.py:231
+msgid ""
+"Refuse a signed Telegram Gateway callback whose timestamp is further than"
+" this from now, in seconds — guards against replay."
+msgstr ""
+
+#: app/admin/settings_layout.py:233
+msgid "Operator lookup time budget"
+msgstr ""
+
+#: app/admin/settings_layout.py:234
+msgid ""
+"How long the sender waits for an unknown recipient's operator before "
+"routing by the rule's \"?\" entry, in seconds. The lookup itself keeps "
+"running either way."
+msgstr ""
+
+#: app/admin/settings_layout.py:237
+msgid "Operator lookup endpoint"
+msgstr ""
+
+#: app/admin/settings_layout.py:238
+msgid "The URL used to look up a number's operator and region."
+msgstr ""
+
+#: app/admin/settings_layout.py:239
+msgid "Operator lookup timeout"
+msgstr ""
+
+#: app/admin/settings_layout.py:240
+msgid "Seconds allowed for one operator-lookup request."
+msgstr ""
+
+#: app/admin/settings_layout.py:241
+msgid "Re-check an operator after"
+msgstr ""
+
+#: app/admin/settings_layout.py:242
+msgid "Days after which a cached operator/region lookup is refreshed."
+msgstr ""
+
+#: app/admin/settings_layout.py:243
+msgid "Ignore delivery reports older than"
+msgstr ""
+
+#: app/admin/settings_layout.py:244
+msgid ""
+"Stop considering a delivery report once the message it names is older "
+"than this many hours. The report is still recorded."
+msgstr ""
+
+#: app/admin/settings_layout.py:247
+msgid "Refuse contradicting delivery reports"
+msgstr ""
+
+#: app/admin/settings_layout.py:248
+msgid ""
+"Refuse a delivery report whose recipient address contradicts the only "
+"candidate message, instead of recording the contradiction and attributing"
+" it anyway."
+msgstr ""
 
 #: app/admin/templates/_period.html:7
 msgid "24 hours"
@@ -32,6 +648,189 @@ msgstr ""
 
 #: app/admin/templates/_period.html:11
 msgid "All time"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:3
+msgid "All applications"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:8
+msgid ""
+"There is no application with this id — these are its leftover records; "
+"they can be removed here."
+msgstr ""
+
+#: app/admin/templates/app_detail.html:12 app/admin/templates/apps.html:25
+msgid "Active"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:12
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
+#: app/admin/templates/apps.html:43 app/admin/templates/apps.html:44
+#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
+#: app/admin/templates/settings.html:132
+msgid "yes"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:12
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:43
+#: app/admin/templates/apps.html:44 app/admin/templates/settings.html:132
+msgid "no"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:25
+msgid "May spend"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:15
+msgid "switched on the applications list"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:26
+msgid "Text with the code"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:27
+#: app/admin/templates/app_detail.html:70
+#: app/admin/templates/app_detail.html:116 app/admin/templates/settings.html:34
+msgid "unsaved"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:30
+#: app/admin/templates/app_detail.html:73
+#: app/admin/templates/app_detail.html:118
+#: app/admin/templates/settings.html:190 app/admin/templates/settings.html:202
+msgid "Saved"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:33
+#, python-brace-format
+msgid ""
+"Each text carries exactly one placeholder: {code} — the code in digits, "
+"or {code_words} — the code spelled out in capital words, one per digit. "
+"An empty field means no record."
+msgstr ""
+
+#: app/admin/templates/app_detail.html:36
+msgid "Common text"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:37
+msgid "Used by SMS and Telegram when they have no text of their own"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:40
+msgid "SMS only"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:43
+#: app/admin/templates/app_detail.html:46
+msgid "SMS goes with its own text"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:44
+#: app/admin/templates/app_detail.html:46
+msgid "SMS goes with the common text"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:45
+#: app/admin/templates/app_detail.html:46
+msgid "no text — no code will be sent by SMS"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:50
+msgid "Telegram only"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:53
+#: app/admin/templates/app_detail.html:56
+msgid "Telegram goes with its own text"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:54
+#: app/admin/templates/app_detail.html:56
+msgid "Telegram goes with the common text"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:55
+#: app/admin/templates/app_detail.html:56
+msgid "no text — the Telegram account rung is not used"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:59
+#: app/admin/templates/app_detail.html:99
+#: app/admin/templates/app_detail.html:112
+#: app/admin/templates/app_detail.html:130
+#: app/admin/templates/settings.html:103
+msgid "error"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:60
+#: app/admin/templates/app_detail.html:100
+#: app/admin/templates/app_detail.html:131
+msgid "Save"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:69
+msgid "Delivery status webhook"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:77
+#, python-format
+msgid "%(n)s more record(s) for this application do not act — the first one wins"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:82 app/admin/templates/settings.html:231
+msgid "Webhook URL"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:86 app/admin/templates/settings.html:232
+msgid "Bearer"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:89
+msgid "configured (blank — keep)"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:89
+msgid "not configured"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:94
+msgid "remove the bearer"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:106
+msgid "Messenger brands"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:109
+msgid "No brands are set up — that is done in Settings, section Vendors."
+msgstr ""
+
+#: app/admin/templates/app_detail.html:110 app/admin/templates/base.html:96
+#: app/admin/templates/settings.html:3
+msgid "Settings"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:121
+msgid "Brand"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:121
+msgid "Allowed"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:121
+msgid "Default"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:183
+msgid "characters:"
+msgstr ""
+
+#: app/admin/templates/app_detail.html:183
+msgid "SMS parts:"
 msgstr ""
 
 #: app/admin/templates/apps.html:3
@@ -72,67 +871,92 @@ msgid "Messages"
 msgstr ""
 
 #: app/admin/templates/apps.html:25
-msgid "Active"
+msgid "SMS text"
 msgstr ""
 
-#: app/admin/templates/apps.html:32
-msgid "yes"
-msgstr ""
-
-#: app/admin/templates/apps.html:32
-msgid "no"
+#: app/admin/templates/apps.html:34
+msgid "unreadable"
 msgstr ""
 
 #: app/admin/templates/apps.html:38
+msgid "not needed — internal sender"
+msgstr ""
+
+#: app/admin/templates/apps.html:40
+msgid "no — no code will be sent by SMS"
+msgstr ""
+
+#: app/admin/templates/apps.html:50
 msgid "Deactivate"
 msgstr ""
 
-#: app/admin/templates/apps.html:38
+#: app/admin/templates/apps.html:50
 msgid "Activate"
 msgstr ""
 
-#: app/admin/templates/apps.html:42
+#: app/admin/templates/apps.html:53
+#, python-format
+msgid ""
+"Allow %(app_id)s to spend money on paid verifications? Calls and Telegram"
+" are billed to our own prepaid accounts."
+msgstr ""
+
+#: app/admin/templates/apps.html:56
+msgid "Revoke spending"
+msgstr ""
+
+#: app/admin/templates/apps.html:56
+msgid "Allow spending"
+msgstr ""
+
+#: app/admin/templates/apps.html:60
 msgid "Delete app"
 msgstr ""
 
-#: app/admin/templates/apps.html:44 app/admin/templates/messages.html:123
+#: app/admin/templates/apps.html:62 app/admin/templates/messages.html:124
 msgid "Delete"
 msgstr ""
 
-#: app/admin/templates/apps.html:47
+#: app/admin/templates/apps.html:65
 msgid "internal"
 msgstr ""
 
-#: app/admin/templates/base.html:87
-msgid "SMS"
-msgstr ""
-
-#: app/admin/templates/base.html:88
-msgid "Blacklist"
-msgstr ""
-
-#: app/admin/templates/base.html:89
-msgid "Prefixes"
-msgstr ""
-
-#: app/admin/templates/base.html:90
-msgid "Statistics"
+#: app/admin/templates/apps.html:73
+msgid "Records of deleted applications remain"
 msgstr ""
 
 #: app/admin/templates/base.html:91
-msgid "Apps"
+msgid "SMS"
 msgstr ""
 
-#: app/admin/templates/base.html:92 app/admin/templates/settings.html:3
-msgid "Settings"
+#: app/admin/templates/base.html:92
+msgid "Blacklist"
 msgstr ""
 
 #: app/admin/templates/base.html:93
+msgid "Prefixes"
+msgstr ""
+
+#: app/admin/templates/base.html:94
+msgid "Statistics"
+msgstr ""
+
+#: app/admin/templates/base.html:95 app/admin/templates/settings.html:55
+msgid "Apps"
+msgstr ""
+
+#: app/admin/templates/base.html:97
 msgid "Modem"
 msgstr ""
 
+#: app/admin/templates/base.html:109
+msgid ""
+"Modem not detected — nothing can be sent or received. Messages are being "
+"held."
+msgstr ""
+
 #: app/admin/templates/blacklist.html:6 app/admin/templates/messages.html:27
-#: app/admin/templates/messages.html:52
+#: app/admin/templates/messages.html:53
 msgid "Phone"
 msgstr ""
 
@@ -165,11 +989,15 @@ msgid "List is empty"
 msgstr ""
 
 #: app/admin/templates/messages.html:14
-msgid "Still in flight — an unsent or expired message can still get a delivery report."
+msgid ""
+"Still in flight — an unsent or expired message can still get a delivery "
+"report."
 msgstr ""
 
 #: app/admin/templates/messages.html:15
-msgid "Too recent to delete: the owning application can still poll for its status."
+msgid ""
+"Too recent to delete: the owning application can still poll for its "
+"status."
 msgstr ""
 
 #: app/admin/templates/messages.html:16
@@ -200,11 +1028,11 @@ msgstr ""
 msgid "All"
 msgstr ""
 
-#: app/admin/templates/messages.html:42 app/admin/templates/messages.html:63
+#: app/admin/templates/messages.html:42 app/admin/templates/messages.html:64
 msgid "Outbound"
 msgstr ""
 
-#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:63
+#: app/admin/templates/messages.html:44 app/admin/templates/messages.html:64
 msgid "Inbound"
 msgstr ""
 
@@ -213,94 +1041,136 @@ msgstr ""
 msgid "%(count)s records"
 msgstr ""
 
-#: app/admin/templates/messages.html:52 app/admin/templates/ranges.html:9
+#: app/admin/templates/messages.html:53 app/admin/templates/ranges.html:9
+#: app/admin/templates/settings.html:225 app/admin/templates/stats.html:61
+#: app/admin/templates/stats.html:153
 msgid "Operator"
 msgstr ""
 
-#: app/admin/templates/messages.html:53
+#: app/admin/templates/messages.html:54
 msgid "Text"
 msgstr ""
 
-#: app/admin/templates/messages.html:53
+#: app/admin/templates/messages.html:54 app/admin/templates/messages.html:147
 msgid "Status"
 msgstr ""
 
-#: app/admin/templates/messages.html:54
+#: app/admin/templates/messages.html:55
 msgid "Created"
 msgstr ""
 
-#: app/admin/templates/messages.html:54
+#: app/admin/templates/messages.html:55
 msgid "Sent"
 msgstr ""
 
-#: app/admin/templates/messages.html:55
+#: app/admin/templates/messages.html:56
 msgid "Delivered"
 msgstr ""
 
-#: app/admin/templates/messages.html:55
+#: app/admin/templates/messages.html:56
 msgid "Error"
 msgstr ""
 
-#: app/admin/templates/messages.html:80
+#: app/admin/templates/messages.html:81
 #, python-format
 msgid "retry %(n)s"
 msgstr "retry %(n)s"
 
-#: app/admin/templates/messages.html:95
+#: app/admin/templates/messages.html:96
 #, python-format
 msgid "last %(shown)s of %(total)s"
 msgstr ""
 
-#: app/admin/templates/messages.html:98
+#: app/admin/templates/messages.html:99
 msgid "collapse"
 msgstr ""
 
-#: app/admin/templates/messages.html:112 app/admin/templates/messages.html:114
+#: app/admin/templates/messages.html:113 app/admin/templates/messages.html:115
 msgid "Resend"
 msgstr ""
 
-#: app/admin/templates/messages.html:119
+#: app/admin/templates/messages.html:120
 msgid "Delete this message? This cannot be undone."
 msgstr ""
 
-#: app/admin/templates/messages.html:128
+#: app/admin/templates/messages.html:129
 msgid "No messages in this conversation"
 msgstr ""
 
 #: app/admin/templates/messages.html:139
-msgid "Reply"
+msgid "Verifications for this number"
 msgstr ""
 
-#: app/admin/templates/messages.html:140
-msgid "Send"
+#: app/admin/templates/messages.html:146 app/admin/templates/stats.html:125
+msgid "Application"
 msgstr ""
 
 #: app/admin/templates/messages.html:148
-msgid "Remove from blacklist"
+msgid "Proved by"
 msgstr ""
 
 #: app/admin/templates/messages.html:149
+msgid "Rung"
+msgstr ""
+
+#: app/admin/templates/messages.html:150
+msgid "Vendor outcome"
+msgstr ""
+
+#: app/admin/templates/messages.html:151
+msgid "Vendor reference"
+msgstr ""
+
+#: app/admin/templates/messages.html:152
+msgid "Cost"
+msgstr ""
+
+#: app/admin/templates/messages.html:153 app/admin/templates/stats.html:98
+msgid "Refunded"
+msgstr ""
+
+#: app/admin/templates/messages.html:154
+msgid "Started"
+msgstr ""
+
+#: app/admin/templates/messages.html:177
+msgid "No rung was attempted"
+msgstr ""
+
+#: app/admin/templates/messages.html:203
+msgid "Reply"
+msgstr ""
+
+#: app/admin/templates/messages.html:204
+msgid "Send"
+msgstr ""
+
+#: app/admin/templates/messages.html:212
+msgid "Remove from blacklist"
+msgstr ""
+
+#: app/admin/templates/messages.html:213
 msgid "Add to blacklist"
 msgstr ""
 
-#: app/admin/templates/messages.html:155
+#: app/admin/templates/messages.html:219
 msgid "This sender is not a phone number — no reply, no blacklist."
 msgstr ""
 
-#: app/admin/templates/messages.html:161
+#: app/admin/templates/messages.html:225
 msgid "No records"
 msgstr ""
 
-#: app/admin/templates/messages.html:168
+#: app/admin/templates/messages.html:233
 msgid "‹ Back"
 msgstr ""
 
-#: app/admin/templates/messages.html:170
+#: app/admin/templates/messages.html:235
 #, python-format
 msgid "Page %(page)s of %(pages)s"
 msgstr ""
 
-#: app/admin/templates/messages.html:172
+#: app/admin/templates/messages.html:237
 msgid "Forward ›"
 msgstr ""
 
@@ -352,20 +1222,197 @@ msgstr ""
 msgid "Cache is empty"
 msgstr ""
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:39
+#, python-format
+msgid "changed: %(n)s"
+msgstr ""
+
+#: app/admin/templates/settings.html:55
+msgid "set on the application's own page"
+msgstr ""
+
+#: app/admin/templates/settings.html:57
 msgid "configured (blank = keep)"
 msgstr ""
 
-#: app/admin/templates/settings.html:15
+#: app/admin/templates/settings.html:57 app/admin/templates/settings.html:120
+#: app/admin/templates/settings.html:124 app/admin/templates/settings.html:128
 msgid "not set"
 msgstr ""
 
-#: app/admin/templates/settings.html:32
-msgid "error"
+#: app/admin/templates/settings.html:73
+msgid "On"
 msgstr ""
 
-#: app/admin/templates/settings.html:39
-msgid "Save"
+#: app/admin/templates/settings.html:73
+msgid "Off"
+msgstr ""
+
+#: app/admin/templates/settings.html:86
+msgid ""
+"Could not be read as expected — edit it as text below, or fix it and try "
+"the form again."
+msgstr ""
+
+#: app/admin/templates/settings.html:89 app/admin/templates/settings.html:91
+msgid "Edit as JSON"
+msgstr ""
+
+#: app/admin/templates/settings.html:89 app/admin/templates/settings.html:91
+msgid "Edit as text"
+msgstr ""
+
+#: app/admin/templates/settings.html:90
+msgid "Back to form"
+msgstr ""
+
+#: app/admin/templates/settings.html:97
+msgid "Insert example"
+msgstr ""
+
+#: app/admin/templates/settings.html:115
+msgid "could not be read"
+msgstr ""
+
+#: app/admin/templates/settings.html:120 app/admin/templates/settings.html:124
+#: app/admin/templates/settings.html:128
+msgid "set"
+msgstr ""
+
+#: app/admin/templates/settings.html:131
+msgid "tg_user in the rung order"
+msgstr ""
+
+#: app/admin/templates/settings.html:139
+msgid "connected"
+msgstr ""
+
+#: app/admin/templates/settings.html:149
+msgid "Stage tg_user is enabled"
+msgstr ""
+
+#: app/admin/templates/settings.html:151
+#, python-format
+msgid ""
+"Stage tg_user is enabled for %(wired)s of %(total)s applications — the "
+"reasons for the rest are above"
+msgstr ""
+
+#: app/admin/templates/settings.html:153
+msgid "Stage tg_user is not enabled: it is not in the order of verification rungs"
+msgstr ""
+
+#: app/admin/templates/settings.html:155
+#, python-format
+msgid "Stage tg_user is not enabled: %(reason)s"
+msgstr ""
+
+#: app/admin/templates/settings.html:157
+msgid ""
+"Stage tg_user is not enabled: no application has a tg_user account "
+"configured"
+msgstr ""
+
+#: app/admin/templates/settings.html:162
+msgid "How to set it up"
+msgstr ""
+
+#: app/admin/templates/settings.html:164
+msgid ""
+"The three variables above are set in the file named by EnvironmentFile= "
+"in deploy/sms-gate.service — on the production host, /opt/sms-gate/.env."
+msgstr ""
+
+#: app/admin/templates/settings.html:165
+msgid ""
+"TG_SESSION_DIR must be an absolute path; it holds one "
+"&lt;account&gt;.session file per sender account."
+msgstr ""
+
+#: app/admin/templates/settings.html:166
+msgid ""
+"Signing an account in for the first time is deploy/tg-sign-in.py — see "
+"its own docstring for the environment variables it needs."
+msgstr ""
+
+#: app/admin/templates/settings.html:167
+msgid "After editing .env, the service must be restarted:"
+msgstr ""
+
+#: app/admin/templates/settings.html:194 app/admin/templates/settings.html:206
+msgid "Save section"
+msgstr ""
+
+#: app/admin/templates/settings.html:216
+msgid "unknown rung"
+msgstr ""
+
+#: app/admin/templates/settings.html:217
+msgid "move up"
+msgstr ""
+
+#: app/admin/templates/settings.html:218
+msgid "move down"
+msgstr ""
+
+#: app/admin/templates/settings.html:219
+msgid "remove"
+msgstr ""
+
+#: app/admin/templates/settings.html:220
+msgid "Add a stage…"
+msgstr ""
+
+#: app/admin/templates/settings.html:221
+msgid "Empty — no retries, a single attempt only"
+msgstr ""
+
+#: app/admin/templates/settings.html:222
+msgid "after"
+msgstr ""
+
+#: app/admin/templates/settings.html:223
+msgid "s"
+msgstr ""
+
+#: app/admin/templates/settings.html:224
+msgid "Add a retry"
+msgstr ""
+
+#: app/admin/templates/settings.html:226
+msgid "Refuse"
+msgstr ""
+
+#: app/admin/templates/settings.html:227
+msgid "Any other operator"
+msgstr ""
+
+#: app/admin/templates/settings.html:228
+msgid "Operator not resolved"
+msgstr ""
+
+#: app/admin/templates/settings.html:229
+msgid "Add operator"
+msgstr ""
+
+#: app/admin/templates/settings.html:230
+msgid "Prefix"
+msgstr ""
+
+#: app/admin/templates/settings.html:233
+msgid "already set (blank — keep it)"
+msgstr ""
+
+#: app/admin/templates/settings.html:234
+msgid "Add a route"
+msgstr ""
+
+#: app/admin/templates/settings.html:235
+msgid "No routes — inbound SMS is not forwarded anywhere"
+msgstr ""
+
+#: app/admin/templates/settings.html:236
+msgid "Replace the current content with the example?"
 msgstr ""
 
 #: app/admin/templates/stats.html:14
@@ -384,20 +1431,92 @@ msgstr ""
 msgid "By month"
 msgstr ""
 
-#: app/admin/templates/stats.html:27
+#: app/admin/templates/stats.html:28
 msgid "Period"
 msgstr ""
 
-#: app/admin/templates/stats.html:31
+#: app/admin/templates/stats.html:32
 msgid "Total"
 msgstr ""
 
-#: app/admin/templates/stats.html:45
+#: app/admin/templates/stats.html:46
 msgid "No data"
 msgstr ""
 
-#: app/admin/templates/base.html:107
-msgid "Modem not detected — nothing can be sent or received. Messages are being held."
+#: app/admin/templates/stats.html:55
+msgid "Refused for want of a route"
+msgstr ""
+
+#: app/admin/templates/stats.html:62
+msgid "Refused"
+msgstr ""
+
+#: app/admin/templates/stats.html:63
+msgid "By application"
+msgstr ""
+
+#: app/admin/templates/stats.html:64
+msgid "By route"
+msgstr ""
+
+#: app/admin/templates/stats.html:65
+msgid "Last"
+msgstr ""
+
+#: app/admin/templates/stats.html:78
+msgid "Nothing has been refused for want of a route"
+msgstr ""
+
+#: app/admin/templates/stats.html:89
+msgid "What verifications cost"
+msgstr ""
+
+#: app/admin/templates/stats.html:95
+msgid "Route"
+msgstr ""
+
+#: app/admin/templates/stats.html:96 app/admin/templates/stats.html:126
+msgid "Attempts"
+msgstr ""
+
+#: app/admin/templates/stats.html:97 app/admin/templates/stats.html:127
+msgid "Spend"
+msgstr ""
+
+#: app/admin/templates/stats.html:99 app/admin/templates/stats.html:128
+msgid "Possibly charged"
+msgstr ""
+
+#: app/admin/templates/stats.html:112
+msgid "No paid rung has been attempted"
+msgstr ""
+
+#: app/admin/templates/stats.html:119
+msgid "Who spent it"
+msgstr ""
+
+#: app/admin/templates/stats.html:140
+msgid "Nothing has been spent on a verification"
+msgstr ""
+
+#: app/admin/templates/stats.html:147
+msgid "The rule in force"
+msgstr ""
+
+#: app/admin/templates/stats.html:154
+msgid "Routes"
+msgstr ""
+
+#: app/admin/templates/stats.html:155
+msgid "In force since"
+msgstr ""
+
+#: app/admin/templates/stats.html:156
+msgid "Days"
+msgstr ""
+
+#: app/admin/templates/stats.html:168
+msgid "No entry has been seen in force yet"
 msgstr ""
 
 #~ msgid "Dialogs"
@@ -428,5 +1547,84 @@ msgstr ""
 #~ msgstr ""
 
 #~ msgid "Day"
+#~ msgstr ""
+
+#~ msgid "Let this app spend money on paid verifications?"
+#~ msgstr ""
+
+#~ msgid "Save"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "JSON list, one template per application,"
+#~ " exactly one {code} placeholder each. "
+#~ "An application with no entry never "
+#~ "gets a code by SMS."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "JSON: which application may send under"
+#~ " which brand, and the account each"
+#~ " brand owns on each messenger."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "JSON list of routes that receive "
+#~ "outbound delivery statuses by application, "
+#~ "e.g. "
+#~ "[{\"app_id\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
+#~ msgstr ""
+
+#~ msgid "characters"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Comma-separated seconds to wait before"
+#~ " each retry after a transient send"
+#~ " failure. The number of delays sets"
+#~ " the number of retries. Empty means"
+#~ " one attempt only, no retry."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Comma-separated list of rungs offered,"
+#~ " cheapest first. A rung nothing can"
+#~ " prove is never offered, whatever its"
+#~ " place here."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "JSON list naming the routes tried "
+#~ "for each operator, in order. \"*\" "
+#~ "answers for an operator with no "
+#~ "entry, \"?\" for one that could "
+#~ "not be resolved."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "JSON list of routes that receive "
+#~ "inbound SMS by prefix, e.g. "
+#~ "[{\"prefix\":\"X\",\"webhook_url\":\"https://...\",\"bearer\":\"...\"}]."
+#~ msgstr ""
+
+#~ msgid "SMS text with the code"
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Exactly one {code} placeholder. Empty —"
+#~ " no entry, and this application will"
+#~ " not get a code by SMS (the "
+#~ "call and Telegram rungs still work). "
+#~ "Count {code} as 6 characters when "
+#~ "judging length."
+#~ msgstr ""
+
+#~ msgid ""
+#~ "Each text carries exactly one "
+#~ "placeholder: {code} — the code in "
+#~ "digits, or {code_words} — the code "
+#~ "spelled out in capitals (ОДИН ДВА "
+#~ "ТРИ ЧЕТЫРЕ). An empty field means "
+#~ "no record."
 #~ msgstr ""
 
