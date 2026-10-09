@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+
+{# Query fragment that reproduces the current view, for the pager's links. The phone is
+   urlencoded: an E.164 number starts with `+`, which decodes to a space in a query. #}
+{% set keep = (('&phone=' ~ phone|urlencode) if phone else '')
+             ~ (('&period=' ~ period) if period != '30d' else '') %}
+
+{% include "_period.html" %}
+
+<form class="filters" method="get">
+  <input type="hidden" name="period" value="{{ period }}">
+  <input type="text" name="phone" placeholder="{{ _('Phone') }}" value="{{ phone }}">
+  <button type="submit">{% trans %}Filter{% endtrans %}</button>
+  <span class="info">{% trans count=total %}{{ count }} records{% endtrans %}</span>
+</form>
+
+{% if verifications %}
+  {# Every rung is inline rather than behind a click: the question this page answers —
+     "what happened to this login and what did it cost" — is asked about whichever row
+     the eye lands on, and the messages view already owns the expand-in-place pattern
+     for a number that has messages to expand. #}
+  {% set with_phone = True %}
+  {% include "_verifications_table.html" %}
+{% else %}
+  <div class="muted">{% trans %}No records{% endtrans %}</div>
+{% endif %}
+
+{% set pager_qs = keep %}
+{% include "_pager.html" %}
+{% endblock %}

@@ -130,67 +130,15 @@
       {% endfor %}
       </div>
 
-      {# This number's verifications, under its conversation. The code is absent by
-         construction — `verifications_for_phone` does not select it — and the cost is
-         printed as recorded: a refund zeroes it, and a gross figure beside it would put
-         back the asterisk that removing it was meant to retire. #}
+      {# This number's verifications, under its conversation — the same table the
+         verifications page shows for every number, without the phone column (the
+         number is the context here, not the question). #}
       {% if verifications %}
       <div class="thread-head" style="margin-top:12px;">
         <strong>{% trans %}Verifications for this number{% endtrans %}</strong>
       </div>
-      <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>{% trans %}Application{% endtrans %}</th>
-            <th>{% trans %}Status{% endtrans %}</th>
-            <th>{% trans %}Proved by{% endtrans %}</th>
-            <th>{% trans %}Rung{% endtrans %}</th>
-            <th>{% trans %}Vendor outcome{% endtrans %}</th>
-            <th>{% trans %}Vendor reference{% endtrans %}</th>
-            <th>{% trans %}Cost{% endtrans %}</th>
-            <th>{% trans %}Refunded{% endtrans %}</th>
-            <th>{% trans %}Started{% endtrans %}</th>
-          </tr>
-        </thead>
-        <tbody>
-        {% for v in verifications %}
-          {% set mine = rungs.get(v.id, []) %}
-          <tr id="verification-{{ v.id }}">
-            <td rowspan="{{ [mine | length, 1] | max }}"><code>{{ v.id }}</code></td>
-            <td rowspan="{{ [mine | length, 1] | max }}"><code>{{ v.app_id }}</code></td>
-            <td rowspan="{{ [mine | length, 1] | max }}">
-              <span class="status status-{{ v.status }}">{{ v.status }}</span>
-              {% if v.reason %}<br><span class="muted" style="font-size:11px;">{{ v.reason }}</span>{% endif %}
-            </td>
-            <td rowspan="{{ [mine | length, 1] | max }}">{{ v.confirmed_by or '—' }}</td>
-            {% if mine %}
-              {% set r = mine[0] %}
-              <td><code>{{ r.route }}</code></td>
-              <td>{{ r.outcome or '—' }}{% if r.reason %}<br><span class="muted" style="font-size:11px;">{{ r.reason }}</span>{% endif %}</td>
-              <td class="muted">{{ r.vendor_ref or '—' }}</td>
-              <td>{% if r.cost is none %}—{% else %}{{ r.cost }}{% endif %}</td>
-              <td>{% if r.refunded %}{% trans %}yes{% endtrans %}{% else %}—{% endif %}</td>
-              <td class="muted">{{ r.started_at | msk }}</td>
-            {% else %}
-              <td colspan="6" class="muted">{% trans %}No rung was attempted{% endtrans %}</td>
-            {% endif %}
-          </tr>
-          {% for r in mine[1:] %}
-          <tr>
-            <td><code>{{ r.route }}</code></td>
-            <td>{{ r.outcome or '—' }}{% if r.reason %}<br><span class="muted" style="font-size:11px;">{{ r.reason }}</span>{% endif %}</td>
-            <td class="muted">{{ r.vendor_ref or '—' }}</td>
-            <td>{% if r.cost is none %}—{% else %}{{ r.cost }}{% endif %}</td>
-            <td>{% if r.refunded %}{% trans %}yes{% endtrans %}{% else %}—{% endif %}</td>
-            <td class="muted">{{ r.started_at | msk }}</td>
-          </tr>
-          {% endfor %}
-        {% endfor %}
-        </tbody>
-      </table>
-      </div>
+      {% set with_phone = False %}
+      {% include "_verifications_table.html" %}
       {% endif %}
 
       {# Reply and block are offered only for a counterparty we could actually send
@@ -228,13 +176,6 @@
 </table>
 </div>
 
-<div class="pager">
-  {% if page > 1 %}
-    <a href="?page={{ page - 1 }}{{ keep }}{% if open_key %}&open={{ open_key }}{% endif %}">{% trans %}‹ Back{% endtrans %}</a>
-  {% endif %}
-  <span class="info">{% trans page=page, pages=pages or 1 %}Page {{ page }} of {{ pages }}{% endtrans %}</span>
-  {% if page < pages %}
-    <a href="?page={{ page + 1 }}{{ keep }}{% if open_key %}&open={{ open_key }}{% endif %}">{% trans %}Forward ›{% endtrans %}</a>
-  {% endif %}
-</div>
+{% set pager_qs = keep ~ (('&open=' ~ open_key) if open_key else '') %}
+{% include "_pager.html" %}
 {% endblock %}

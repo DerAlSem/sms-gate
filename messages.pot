@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2026-09-26 21:41+0300\n"
+"POT-Creation-Date: 2026-10-09 14:48+0300\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -633,6 +633,19 @@ msgid ""
 " it anyway."
 msgstr ""
 
+#: app/admin/templates/_pager.html:6
+msgid "‹ Back"
+msgstr ""
+
+#: app/admin/templates/_pager.html:8
+#, python-format
+msgid "Page %(page)s of %(pages)s"
+msgstr ""
+
+#: app/admin/templates/_pager.html:10
+msgid "Forward ›"
+msgstr ""
+
 #: app/admin/templates/_period.html:7
 msgid "24 hours"
 msgstr ""
@@ -653,6 +666,65 @@ msgstr ""
 msgid "All time"
 msgstr ""
 
+#: app/admin/templates/_verifications_table.html:15
+#: app/admin/templates/blacklist.html:6 app/admin/templates/messages.html:27
+#: app/admin/templates/messages.html:53
+#: app/admin/templates/verifications.html:13
+msgid "Phone"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:16
+#: app/admin/templates/stats.html:125
+msgid "Application"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:17
+#: app/admin/templates/messages.html:54
+msgid "Status"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:18
+msgid "Proved by"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:19
+msgid "Rung"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:20
+msgid "Vendor outcome"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:21
+msgid "Vendor reference"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:22
+msgid "Cost"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:23
+#: app/admin/templates/stats.html:98
+msgid "Refunded"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:24
+msgid "Started"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:46
+#: app/admin/templates/_verifications_table.html:62
+#: app/admin/templates/app_detail.html:12
+#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
+#: app/admin/templates/apps.html:43 app/admin/templates/apps.html:44
+#: app/admin/templates/settings.html:132
+msgid "yes"
+msgstr ""
+
+#: app/admin/templates/_verifications_table.html:53
+msgid "No rung was attempted"
+msgstr ""
+
 #: app/admin/templates/app_detail.html:3
 msgid "All applications"
 msgstr ""
@@ -665,14 +737,6 @@ msgstr ""
 
 #: app/admin/templates/app_detail.html:12 app/admin/templates/apps.html:25
 msgid "Active"
-msgstr ""
-
-#: app/admin/templates/app_detail.html:12
-#: app/admin/templates/app_detail.html:14 app/admin/templates/apps.html:36
-#: app/admin/templates/apps.html:43 app/admin/templates/apps.html:44
-#: app/admin/templates/messages.html:174 app/admin/templates/messages.html:186
-#: app/admin/templates/settings.html:132
-msgid "yes"
 msgstr ""
 
 #: app/admin/templates/app_detail.html:12
@@ -811,7 +875,7 @@ msgstr ""
 msgid "No brands are set up — that is done in Settings, section Vendors."
 msgstr ""
 
-#: app/admin/templates/app_detail.html:110 app/admin/templates/base.html:96
+#: app/admin/templates/app_detail.html:110 app/admin/templates/base.html:103
 #: app/admin/templates/settings.html:3
 msgid "Settings"
 msgstr ""
@@ -928,39 +992,38 @@ msgstr ""
 msgid "Records of deleted applications remain"
 msgstr ""
 
-#: app/admin/templates/base.html:91
+#: app/admin/templates/base.html:94
 msgid "SMS"
 msgstr ""
 
-#: app/admin/templates/base.html:92
+#: app/admin/templates/base.html:98
+msgid "Verifications"
+msgstr ""
+
+#: app/admin/templates/base.html:99
 msgid "Blacklist"
 msgstr ""
 
-#: app/admin/templates/base.html:93
+#: app/admin/templates/base.html:100
 msgid "Prefixes"
 msgstr ""
 
-#: app/admin/templates/base.html:94
+#: app/admin/templates/base.html:101
 msgid "Statistics"
 msgstr ""
 
-#: app/admin/templates/base.html:95 app/admin/templates/settings.html:55
+#: app/admin/templates/base.html:102 app/admin/templates/settings.html:55
 msgid "Apps"
 msgstr ""
 
-#: app/admin/templates/base.html:97
+#: app/admin/templates/base.html:104
 msgid "Modem"
 msgstr ""
 
-#: app/admin/templates/base.html:109
+#: app/admin/templates/base.html:116
 msgid ""
 "Modem not detected — nothing can be sent or received. Messages are being "
 "held."
-msgstr ""
-
-#: app/admin/templates/blacklist.html:6 app/admin/templates/messages.html:27
-#: app/admin/templates/messages.html:53
-msgid "Phone"
 msgstr ""
 
 #: app/admin/templates/blacklist.html:6
@@ -1024,6 +1087,7 @@ msgid "— any status —"
 msgstr ""
 
 #: app/admin/templates/messages.html:34
+#: app/admin/templates/verifications.html:14
 msgid "Filter"
 msgstr ""
 
@@ -1040,6 +1104,7 @@ msgid "Inbound"
 msgstr ""
 
 #: app/admin/templates/messages.html:46
+#: app/admin/templates/verifications.html:15
 #, python-format
 msgid "%(count)s records"
 msgstr ""
@@ -1052,10 +1117,6 @@ msgstr ""
 
 #: app/admin/templates/messages.html:54
 msgid "Text"
-msgstr ""
-
-#: app/admin/templates/messages.html:54 app/admin/templates/messages.html:147
-msgid "Status"
 msgstr ""
 
 #: app/admin/templates/messages.html:55
@@ -1100,81 +1161,33 @@ msgstr ""
 msgid "No messages in this conversation"
 msgstr ""
 
-#: app/admin/templates/messages.html:139
+#: app/admin/templates/messages.html:138
 msgid "Verifications for this number"
 msgstr ""
 
-#: app/admin/templates/messages.html:146 app/admin/templates/stats.html:125
-msgid "Application"
-msgstr ""
-
-#: app/admin/templates/messages.html:148
-msgid "Proved by"
-msgstr ""
-
-#: app/admin/templates/messages.html:149
-msgid "Rung"
-msgstr ""
-
-#: app/admin/templates/messages.html:150
-msgid "Vendor outcome"
-msgstr ""
-
 #: app/admin/templates/messages.html:151
-msgid "Vendor reference"
-msgstr ""
-
-#: app/admin/templates/messages.html:152
-msgid "Cost"
-msgstr ""
-
-#: app/admin/templates/messages.html:153 app/admin/templates/stats.html:98
-msgid "Refunded"
-msgstr ""
-
-#: app/admin/templates/messages.html:154
-msgid "Started"
-msgstr ""
-
-#: app/admin/templates/messages.html:177
-msgid "No rung was attempted"
-msgstr ""
-
-#: app/admin/templates/messages.html:203
 msgid "Reply"
 msgstr ""
 
-#: app/admin/templates/messages.html:204
+#: app/admin/templates/messages.html:152
 msgid "Send"
 msgstr ""
 
-#: app/admin/templates/messages.html:212
+#: app/admin/templates/messages.html:160
 msgid "Remove from blacklist"
 msgstr ""
 
-#: app/admin/templates/messages.html:213
+#: app/admin/templates/messages.html:161
 msgid "Add to blacklist"
 msgstr ""
 
-#: app/admin/templates/messages.html:219
+#: app/admin/templates/messages.html:167
 msgid "This sender is not a phone number — no reply, no blacklist."
 msgstr ""
 
-#: app/admin/templates/messages.html:225
+#: app/admin/templates/messages.html:173
+#: app/admin/templates/verifications.html:26
 msgid "No records"
-msgstr ""
-
-#: app/admin/templates/messages.html:233
-msgid "‹ Back"
-msgstr ""
-
-#: app/admin/templates/messages.html:235
-#, python-format
-msgid "Page %(page)s of %(pages)s"
-msgstr ""
-
-#: app/admin/templates/messages.html:237
-msgid "Forward ›"
 msgstr ""
 
 #: app/admin/templates/modem.html:3
