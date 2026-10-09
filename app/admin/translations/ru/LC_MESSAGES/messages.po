@@ -1018,6 +1018,10 @@ msgstr "Остались записи удалённых приложений"
 msgid "SMS"
 msgstr "СМС"
 
+#: app/admin/templates/base.html:95
+msgid "Verifications"
+msgstr "Верификации"
+
 #: app/admin/templates/base.html:92
 msgid "Blacklist"
 msgstr "Чёрный список"

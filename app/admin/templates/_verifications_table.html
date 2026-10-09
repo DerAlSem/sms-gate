@@ -1,0 +1,69 @@
+{# A verification and every rung attempted for it, one header row with the rungs as
+   sub-rows. Shared by the messages view (under one number's expanded row, no phone
+   column — the number is the context there) and the verifications page (many numbers,
+   with_phone=true — the number is the question there).
+
+   The code is absent by construction: both queries behind this table list their
+   columns and leave `code` out. The cost is printed as recorded: a refund zeroes it,
+   and a gross figure beside it would put back the asterisk that removing it was meant
+   to retire. #}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      {% if with_phone %}<th>{% trans %}Phone{% endtrans %}</th>{% endif %}
+      <th>{% trans %}Application{% endtrans %}</th>
+      <th>{% trans %}Status{% endtrans %}</th>
+      <th>{% trans %}Proved by{% endtrans %}</th>
+      <th>{% trans %}Rung{% endtrans %}</th>
+      <th>{% trans %}Vendor outcome{% endtrans %}</th>
+      <th>{% trans %}Vendor reference{% endtrans %}</th>
+      <th>{% trans %}Cost{% endtrans %}</th>
+      <th>{% trans %}Refunded{% endtrans %}</th>
+      <th>{% trans %}Started{% endtrans %}</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for v in verifications %}
+    {% set mine = rungs.get(v.id, []) %}
+    {% set span = [mine | length, 1] | max %}
+    <tr id="verification-{{ v.id }}">
+      <td rowspan="{{ span }}"><code>{{ v.id }}</code></td>
+      {% if with_phone %}<td rowspan="{{ span }}"><code>{{ v.phone }}</code></td>{% endif %}
+      <td rowspan="{{ span }}"><code>{{ v.app_id }}</code></td>
+      <td rowspan="{{ span }}">
+        <span class="status status-{{ v.status }}">{{ v.status }}</span>
+        {% if v.reason %}<br><span class="muted" style="font-size:11px;">{{ v.reason }}</span>{% endif %}
+      </td>
+      <td rowspan="{{ span }}">{{ v.confirmed_by or '—' }}</td>
+      {% if mine %}
+        {% set r = mine[0] %}
+        <td><code>{{ r.route }}</code></td>
+        <td>{{ r.outcome or '—' }}{% if r.reason %}<br><span class="muted" style="font-size:11px;">{{ r.reason }}</span>{% endif %}</td>
+        <td class="muted">{{ r.vendor_ref or '—' }}</td>
+        <td>{% if r.cost is none %}—{% else %}{{ r.cost }}{% endif %}</td>
+        <td>{% if r.refunded %}{% trans %}yes{% endtrans %}{% else %}—{% endif %}</td>
+        {# nowrap: a timestamp broken across three lines by a narrow column reads as
+           a broken value rather than a long one. #}
+        <td class="muted" style="white-space:nowrap;">{{ r.started_at | msk }}</td>
+      {% else %}
+        {# Always 6 — the six rung columns — whichever layout: the phone column, when
+           present, is filled by its own rowspan cell above, not by this span. #}
+        <td colspan="6" class="muted">{% trans %}No rung was attempted{% endtrans %}</td>
+      {% endif %}
+    </tr>
+    {% for r in mine[1:] %}
+    <tr>
+      <td><code>{{ r.route }}</code></td>
+      <td>{{ r.outcome or '—' }}{% if r.reason %}<br><span class="muted" style="font-size:11px;">{{ r.reason }}</span>{% endif %}</td>
+      <td class="muted">{{ r.vendor_ref or '—' }}</td>
+      <td>{% if r.cost is none %}—{% else %}{{ r.cost }}{% endif %}</td>
+      <td>{% if r.refunded %}{% trans %}yes{% endtrans %}{% else %}—{% endif %}</td>
+      <td class="muted" style="white-space:nowrap;">{{ r.started_at | msk }}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+  </tbody>
+</table>
+</div>

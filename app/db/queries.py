@@ -2263,23 +2263,33 @@ async def delete_app(app_id: str) -> None:
     await db.commit()
 
 
+# The columns the two verification lists may read, **without `code`**. One list for
+# `verifications_for_phone` and `list_verifications_page` on purpose: the guarantee
+# that a live secret never reaches a template is a property of this tuple, not of two
+# hand-typed SELECTs that a later column addition would have to remember twice — and
+# a slip in one of them would break it for one surface only, with nothing red.
+_VERIFICATION_LIST_COLUMNS = (
+    "id", "app_id", "status", "route", "confirmed_by", "reason",
+    "attempts", "created_at", "expires_at", "confirmed_at",
+)
+
+
 async def verifications_for_phone(
     phone: str, limit: int = 20
 ) -> list[aiosqlite.Row]:
     """This number's verifications, newest first, **without the code**.
 
-    The columns are listed rather than starred, and that is the guarantee rather than a
-    style: `SELECT *` here would hand a live secret to a template, and the one screen
-    that renders a subscriber's number renders it next to their conversation. A column
-    added to the table later must be added here deliberately.
+    The columns come from `_VERIFICATION_LIST_COLUMNS` rather than a star, and that is
+    the guarantee rather than a style: `SELECT *` here would hand a live secret to a
+    template, and the one screen that renders a subscriber's number renders it next to
+    their conversation.
 
     Capped for the reason the dialog is: the panel is re-rendered after every action on
     the list page.
     """
     db = await get_db()
     async with db.execute(
-        "SELECT id, app_id, status, route, confirmed_by, reason, attempts, "
-        "       created_at, expires_at, confirmed_at "
+        f"SELECT {', '.join(_VERIFICATION_LIST_COLUMNS)} "
         "  FROM verifications WHERE phone = ? "
         " ORDER BY created_at DESC, id DESC LIMIT ?",
         (phone, limit),
@@ -2308,6 +2318,62 @@ async def rungs_for_verifications(
         async for row in cursor:
             grouped[row["verification_id"]].append(row)
     return grouped
+
+
+async def list_verifications_page(
+    period: str, phone: str | None, limit: int, offset: int
+) -> list[aiosqlite.Row]:
+    """One page of every number's verifications, newest first, **without the code**.
+
+    The columns come from `_VERIFICATION_LIST_COLUMNS` for the same reason
+    `verifications_for_phone` reads them there: `SELECT *` here would hand a live
+    secret to a template, and unlike the phone view this page renders many numbers
+    at once.
+
+    Exists because the messages view reaches a number's verifications only through that
+    number's SMS row — and flash_call or `tg_user` place no message, so there is nothing
+    to expand. This list is the one surface that does not depend on a route writing
+    messages.
+
+    The tie-break on `id` is load-bearing for the same reason it is on the thread page:
+    CURRENT_TIMESTAMP has one-second resolution, and a run of verifications created
+    together must not land on two pages or on neither.
+    """
+    where, params = _verifications_window(period, phone)
+    db = await get_db()
+    async with db.execute(
+        f"SELECT phone, {', '.join(_VERIFICATION_LIST_COLUMNS)} "
+        "  FROM verifications"
+        f"{where}"
+        " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+        [*params, limit, offset],
+    ) as cursor:
+        return list(await cursor.fetchall())
+
+
+async def count_verifications_page(period: str, phone: str | None) -> int:
+    """How many verifications the list's filters select, for the pager."""
+    where, params = _verifications_window(period, phone)
+    db = await get_db()
+    async with db.execute(
+        f"SELECT COUNT(*) FROM verifications{where}", params
+    ) as cursor:
+        row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+
+def _verifications_window(period: str, phone: str | None) -> tuple[str, list[Any]]:
+    """(sql, params) for the WHERE the list and its count share."""
+    where: list[str] = []
+    params: list[Any] = []
+    lower = periods.bound(period)
+    if lower is not None:
+        where.append("created_at > datetime('now', ?)")
+        params.append(lower)
+    if phone:
+        where.append("phone LIKE ?")
+        params.append(f"%{phone}%")
+    return ((" WHERE " + " AND ".join(where)) if where else ""), params
 
 
 # --- Ported from the messengers branch (reach-people-in-messengers) for the `tg_user`

@@ -3,7 +3,7 @@ id: doc-1
 title: admin-sms-console
 type: specification
 created_date: '2026-09-25 11:58'
-updated_date: '2026-09-25 11:58'
+updated_date: '2026-10-09 11:52'
 ---
 # admin-sms-console Specification
 
@@ -456,3 +456,53 @@ render with that content reported as unavailable rather than failing.
 - **WHEN** an operator opens the modem diagnostics page while the modem is unplugged
 - **THEN** the page renders, reporting that the values could not be read, rather than returning an error
 
+
+
+### Requirement: Verifications are listed however their route reached the person
+
+The console SHALL list verifications on a page of their own, `/admin/verifications`,
+reachable from one navigation entry beside the SMS view. The list SHALL NOT depend on a
+message existing for the number: a route that places no message — flash_call dials,
+tg_user writes to a messenger — leaves nothing to expand on the SMS view, and this list
+is the surface that shows such a verification anyway.
+
+Every listed verification SHALL carry its number, its application, its status, its
+selected route and when it began, with each rung attempted shown beside it: the rung's
+route, the vendor's outcome and its reason, the vendor's own reference, the cost as
+recorded, and the refund mark. Rungs SHALL be inline rather than behind a click — the
+question is asked about whichever row the eye lands on.
+
+The queries behind this list and behind the SMS view's per-number panel SHALL select
+their columns from one shared list that does not include `code`: both surfaces render a
+number next to its live secret, and the secret must not be the third thing on either.
+
+The list SHALL be bounded by the same periods as the SMS view, filterable by a phone
+fragment, and ordered newest first with a tie-break on id, so that verifications sharing
+a one-second timestamp page deterministically.
+
+#### Scenario: A flash_call verification with no message at all is visible
+
+- **WHEN** a verification was carried by flash_call and the number has no message in
+  either direction
+- **THEN** it appears on the verifications page with its route, the vendor's outcome,
+  the vendor's own reference, the cost as recorded, and when it began
+
+#### Scenario: Every route is listed alike
+
+- **WHEN** verifications were carried by different routes — one by sms_out, one by
+  tg_user, one by flash_call
+- **THEN** all appear in the same list, each with its rungs, and a verification with no
+  rung attempted yet shows that no rung was attempted
+
+#### Scenario: The code reaches neither screen
+
+- **WHEN** a pending verification with a live code is rendered on the verifications page
+  or under a number's conversation
+- **THEN** the code appears on neither, and the rows the queries hand to both surfaces
+  carry no code column at all
+
+#### Scenario: The phone filter and the period bound the list
+
+- **WHEN** the list is filtered by a phone fragment or bounded by a period
+- **THEN** only verifications whose number matches the fragment and whose beginning
+  falls inside the window are listed, and all time lifts the bound

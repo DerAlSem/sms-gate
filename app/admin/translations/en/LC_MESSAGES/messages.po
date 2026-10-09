@@ -929,6 +929,10 @@ msgstr ""
 msgid "SMS"
 msgstr ""
 
+#: app/admin/templates/base.html:95
+msgid "Verifications"
+msgstr ""
+
 #: app/admin/templates/base.html:92
 msgid "Blacklist"
 msgstr ""

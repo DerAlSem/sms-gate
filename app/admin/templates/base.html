@@ -31,6 +31,9 @@
   .status-pending   { background: #e0e7ff; color: #3730a3; }
   .status-sent      { background: #dbeafe; color: #1e40af; }
   .status-delivered { background: #d1fae5; color: #065f46; }
+  /* A verification's success word — the same green family as a delivered message, so
+     the two read as one outcome on the pages that show both. */
+  .status-confirmed { background: #d1fae5; color: #065f46; }
   .status-failed    { background: #fee2e2; color: #991b1b; }
   .status-expired   { background: #fef3c7; color: #92400e; }
   form.filters { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; flex-wrap: wrap; }
@@ -96,6 +99,10 @@
   {% set pq = ('?period=' ~ period) if (period is defined and period and period != '30d') else '' %}
   <nav>
     <a href="/admin/messages{{ pq }}" class="{% if active == 'messages' %}active{% endif %}">{% trans %}SMS{% endtrans %}</a>
+    {# Verifications beside SMS: both are traffic history, and a verification carried
+       by a route that writes no message (flash_call, tg_user) has no row on the SMS
+       page at all — this is the only list that shows it (SG-45). #}
+    <a href="/admin/verifications{{ pq }}" class="{% if active == 'verifications' %}active{% endif %}">{% trans %}Verifications{% endtrans %}</a>
     <a href="/admin/blacklist" class="{% if active == 'blacklist' %}active{% endif %}">{% trans %}Blacklist{% endtrans %}</a>
     <a href="/admin/ranges" class="{% if active == 'ranges' %}active{% endif %}">{% trans %}Prefixes{% endtrans %}</a>
     <a href="/admin/stats{{ pq }}" class="{% if active == 'stats' %}active{% endif %}">{% trans %}Statistics{% endtrans %}</a>

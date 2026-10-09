@@ -1,0 +1,12 @@
+{# The pager of a list page. Callers set `pager_qs` to the query fragment a page turn
+   must carry: their filters already encoded, plus whatever they keep open (the SMS
+   view's expanded row). `page` and `pages` come from the view. #}
+<div class="pager">
+  {% if page > 1 %}
+    <a href="?page={{ page - 1 }}{{ pager_qs }}">{% trans %}‹ Back{% endtrans %}</a>
+  {% endif %}
+  <span class="info">{% trans page=page, pages=pages or 1 %}Page {{ page }} of {{ pages }}{% endtrans %}</span>
+  {% if page < pages %}
+    <a href="?page={{ page + 1 }}{{ pager_qs }}">{% trans %}Forward ›{% endtrans %}</a>
+  {% endif %}
+</div>

@@ -336,6 +336,55 @@ async def admin_message_block(
     return _back_to_view(period, phone, status, direction, page, open)
 
 
+@router.get("/verifications")
+async def admin_verifications(
+    request: Request,
+    period: str | None = None,
+    phone: str | None = None,
+    page: int = 1,
+    _: str = Depends(admin_auth),
+):
+    """Every number's verifications, on a page of their own.
+
+    The messages view reaches a verification through its number's SMS row, which works
+    only while a route that writes messages exists: flash_call dials and tg_user writes
+    to a messenger, so a verification carried by either is invisible at any click —
+    there is no row to expand. This page lists verifications whatever their route did,
+    rungs and vendor references and costs included (SG-45).
+    """
+    period = periods.resolve(period)
+    page = max(page, 1)
+    offset = (page - 1) * PAGE_SIZE
+
+    rows = await queries.list_verifications_page(period, phone, PAGE_SIZE, offset)
+    total = await queries.count_verifications_page(period, phone)
+    pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
+    # One query for the whole page rather than one per verification — the same economy
+    # the expanded message row makes.
+    rungs = await queries.rungs_for_verifications([v["id"] for v in rows])
+
+    return render(
+        "verifications.html",
+        request,
+        {
+            "verifications": rows,
+            "rungs": rungs,
+            "period": period,
+            "periods": periods.PERIODS,
+            "period_links": {
+                p: "/admin/verifications"
+                + _view_query(period=p, phone=phone or "")
+                for p in periods.PERIODS
+            },
+            "phone": phone or "",
+            "page": page,
+            "pages": pages,
+            "total": total,
+            "active": "verifications",
+        },
+    )
+
+
 @router.get("/blacklist")
 async def admin_blacklist(
     request: Request,
